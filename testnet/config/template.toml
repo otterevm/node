@@ -21,8 +21,7 @@ skip_timeout_commit = true
 listen_addr = "/ip4/0.0.0.0/tcp/${CONSENSUS_PORT}"
 
 # Persistent peers to maintain connections with
-# Format: "node_id@address"
-persistent_peers = "${PEERS}"
+persistent_peers = [${PEERS}]
 
 # Allow duplicate IPs in peer connections
 allow_duplicate_ip = true
@@ -33,8 +32,16 @@ allow_duplicate_ip = true
 # Transport protocol
 transport = "tcp"
 
+[consensus.p2p.discovery]
 # Enable peer discovery
-discovery = false
+enabled = false
+
+[consensus.p2p.protocol]
+type = "gossipsub"
+mesh_n = 6
+mesh_n_high = 12
+mesh_n_low = 4
+mesh_outbound_min = 2
 
 # WAL (Write-Ahead Log) configuration
 [wal]
