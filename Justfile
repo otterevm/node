@@ -14,7 +14,7 @@ build-all-release extra_args="": (_build-release "tempo" extra_args)
 [doc('Builds all tempo binaries')]
 build-all extra_args="": (_build "tempo" extra_args)
 
-_build-release binary extra_args="": (_build binary "-r " + extra_args)
+_build-release binary extra_args="": (_build binary "--profile profiling " + extra_args)
 
 _build binary extra_args="":
     CROSS_CONTAINER_IN_CONTAINER={{act_debug_mode}} RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
