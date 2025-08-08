@@ -9,8 +9,8 @@ use crate::contracts::{
 #[rustfmt::skip]
 impl<'a, S: StorageProvider> Precompile for TIP20Factory<'a, S> {
     fn call(&mut self, calldata: &[u8], msg_sender: &Address) -> PrecompileResult {
-        let selector: [u8; 4] = calldata.get(..4).ok_or_else(|| { 
-            PrecompileError::Other("Invalid input: missing function selector".to_string()) 
+        let selector: [u8; 4] = calldata.get(..4).ok_or_else(|| {
+            PrecompileError::Other("Invalid input: missing function selector".to_string())
         })?.try_into().expect("TODO: handle error");
 
         match selector {
@@ -20,7 +20,7 @@ impl<'a, S: StorageProvider> Precompile for TIP20Factory<'a, S> {
             ITIP20Factory::createTokenCall::SELECTOR => {
                 mutate::<ITIP20Factory::createTokenCall, _>(calldata, msg_sender, |s, call| self.create_token(s, call))
             },
-            _ => Err(PrecompileError::Other("Unknown function selector".to_string())) 
+            _ => Err(PrecompileError::Other("Unknown function selector".to_string()))
         }
     }
 }
