@@ -10,7 +10,6 @@ members = [
   "crates/consensus",
   "crates/evm",
   "crates/precompiles",
-  "crates/consensus",
   "crates/telemetry-util",
 ]
 
