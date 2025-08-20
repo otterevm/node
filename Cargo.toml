@@ -114,12 +114,13 @@ reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", rev = "61
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", rev = "61662098aa7acb110a78d8fc8dfc0f6e6ed7de3b", package = "reth-engine-local" }
 reth-ethereum-consensus = { git = "https://github.com/paradigmxyz/reth", rev = "61662098aa7acb110a78d8fc8dfc0f6e6ed7de3b", package = "reth-ethereum-consensus" }
 alloy-network = { version = "1.0.12" }
+alloy-contract = { version = "1.0.12" }
 alloy-rpc-types-eth = { version = "1.0.12" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth", rev = "61662098aa7acb110a78d8fc8dfc0f6e6ed7de3b", features = [
   "std",
   "optional-checks",
 ] }
-alloy = { version = "1.0.12", default-features = false }
+alloy = { version = "1.0.12", default-features = false, features = ["contract"] }
 alloy-evm = "0.18.3"
 alloy-consensus = { version = "1.0.12", features = ["serde-bincode-compat"] }
 alloy-eips = { version = "1.0.12", features = ["serde"] }

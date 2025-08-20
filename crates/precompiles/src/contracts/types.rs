@@ -2,6 +2,7 @@ use alloy::sol;
 
 sol! {
     #[derive(Debug, PartialEq, Eq)]
+    #[sol(rpc)]
     interface IRolesAuth {
         // Role Management Functions
         function grantRole(bytes32 role, address account) external;
@@ -20,6 +21,7 @@ sol! {
     }
 
     #[derive(Debug, PartialEq, Eq)]
+    #[sol(rpc)]
     interface ITIP20 {
         // Standard token functions
         function name() external view returns (string);
@@ -84,6 +86,7 @@ sol! {
     }
 
     #[derive(Debug, PartialEq, Eq)]
+    #[sol(rpc)]
     interface ITIP20Factory {
         event TokenCreated(uint256 indexed tokenId, string name, string symbol, string currency, address admin);
 
@@ -130,11 +133,13 @@ sol! {
     }
 
     #[derive(Debug, PartialEq, Eq)]
+    #[sol(rpc)]
     interface ITIP4217Registry {
         function getCurrencyDecimals(string currency) external view returns (uint8);
     }
 
     #[derive(Debug, PartialEq, Eq)]
+    #[sol(rpc)]
     interface IFeeManager {
         // Structs (represented as tuples in Solidity interface)
         struct Pool {
