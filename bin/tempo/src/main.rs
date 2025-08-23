@@ -27,12 +27,23 @@ use reth_node_builder::{
 };
 use reth_provider::DatabaseProviderFactory;
 use std::{fs, future, sync::Arc};
+use pyroscope::PyroscopeAgent;
+use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 use tempo_chainspec::spec::TempoChainSpecParser;
 use tempo_node::{args::TempoArgs, node::TempoNode};
 use tracing::info;
 
 fn main() {
     reth_cli_util::sigsegv_handler::install();
+
+    let pprof_config = PprofConfig::new().sample_rate(100);
+    let backend_impl = pprof_backend(pprof_config);
+
+    let agent = PyroscopeAgent::builder("https://profiles-prod-001.grafana.net", "tempo-node")
+        .basic_auth("1331201", "glc_eyJvIjoiMTQ5NTE3OSIsIm4iOiJzdGFjay0xMzMxMjAxLWhwLXdyaXRlLXRlbXBvLW5vZGUtdGVzdCIsImsiOiJ0STI5NUxyOHQyZjM3ZVkySExDTTlhM0siLCJtIjp7InIiOiJwcm9kLXVzLWVhc3QtMCJ9fQ==")
+        .backend(backend_impl)
+        .build().unwrap();
+    agent.start().unwrap();
 
     // Enable backtraces unless a RUST_BACKTRACE value has already been explicitly provided.
     if std::env::var_os("RUST_BACKTRACE").is_none() {
