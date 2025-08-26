@@ -6,54 +6,21 @@ use alloy::{
     transports::http::reqwest::Url,
 };
 use futures::future::try_join_all;
-use reth_chainspec::ChainSpec;
 use reth_ethereum::tasks::TaskManager;
 use reth_node_builder::{NodeBuilder, NodeConfig, NodeHandle};
 use reth_node_core::args::RpcServerArgs;
 use std::sync::Arc;
+use tempo_chainspec::spec::TempoChainSpec;
 use tempo_node::node::TempoNode;
 use tempo_precompiles::{
-    TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS,
+    TIP403_REGISTRY_ADDRESS,
     contracts::{
-        ITIP20::{self, ITIP20Instance},
-        ITIP20Factory,
-        tip20::ISSUER_ROLE,
-        token_id_to_address,
-        types::{IRolesAuth, ITIP403Registry},
+        ITIP20::{self},
+        types::ITIP403Registry,
     },
 };
 
-async fn setup_test_token(
-    provider: impl Clone + alloy::providers::Provider,
-    caller: Address,
-) -> eyre::Result<ITIP20Instance<impl Clone + alloy::providers::Provider>> {
-    let factory = ITIP20Factory::new(TIP20_FACTORY_ADDRESS, provider.clone());
-    let receipt = factory
-        .createToken(
-            "Test".to_string(),
-            "TEST".to_string(),
-            "USD".to_string(),
-            caller,
-        )
-        .send()
-        .await?
-        .get_receipt()
-        .await?;
-    let event = ITIP20Factory::TokenCreated::decode_log(&receipt.logs()[0].inner).unwrap();
-
-    let token_addr = token_id_to_address(event.tokenId.to());
-    let token = ITIP20::new(token_addr, provider.clone());
-    let roles = IRolesAuth::new(*token.address(), provider);
-
-    roles
-        .grantRole(*ISSUER_ROLE, caller)
-        .send()
-        .await?
-        .get_receipt()
-        .await?;
-
-    Ok(token)
-}
+use crate::utils::setup_test_token;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_tip20_transfer() -> eyre::Result<()> {
@@ -61,16 +28,15 @@ async fn test_tip20_transfer() -> eyre::Result<()> {
 
     let tasks = TaskManager::current();
     let executor = tasks.executor();
-
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
 
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -95,8 +61,6 @@ async fn test_tip20_transfer() -> eyre::Result<()> {
     let provider = ProviderBuilder::new()
         .wallet(wallet)
         .connect_http(http_url.clone());
-
-    // Deploy and setup token
     let token = setup_test_token(provider.clone(), caller).await?;
 
     // Create accounts with random balances
@@ -118,7 +82,7 @@ async fn test_tip20_transfer() -> eyre::Result<()> {
     // Mint tokens to each account
     let mut pending_txs = vec![];
     for (account, _, balance) in &account_data {
-        pending_txs.push(token.mint(*account, *balance).send().await?);
+        pending_txs.push(token.mint(*account, *balance).gas_price(0).send().await?);
     }
 
     for tx in pending_txs.drain(..) {
@@ -146,7 +110,11 @@ async fn test_tip20_transfer() -> eyre::Result<()> {
         // Simulate the tx and send
         let success = token.transfer(recipient, sender_balance).call().await?;
         assert!(success);
-        let pending_tx = token.transfer(recipient, sender_balance).send().await?;
+        let pending_tx = token
+            .transfer(recipient, sender_balance)
+            .gas_price(0)
+            .send()
+            .await?;
 
         tx_data.push((pending_tx, sender_balance, recipient, recipient_balance));
     }
@@ -186,16 +154,15 @@ async fn test_tip20_mint() -> eyre::Result<()> {
 
     let tasks = TaskManager::current();
     let executor = tasks.executor();
-
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
 
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -236,7 +203,7 @@ async fn test_tip20_mint() -> eyre::Result<()> {
     // Mint tokens to each account
     let mut pending_txs = vec![];
     for (account, balance) in &account_data {
-        pending_txs.push(token.mint(*account, *balance).send().await?);
+        pending_txs.push(token.mint(*account, *balance).gas_price(0).send().await?);
     }
 
     for (tx, (account, expected_balance)) in pending_txs.drain(..).zip(account_data.iter()) {
@@ -277,16 +244,15 @@ async fn test_tip20_transfer_from() -> eyre::Result<()> {
 
     let tasks = TaskManager::current();
     let executor = tasks.executor();
-
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
 
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -331,6 +297,7 @@ async fn test_tip20_transfer_from() -> eyre::Result<()> {
     let total_balance: U256 = account_data.iter().map(|(_, balance)| *balance).sum();
     token
         .mint(caller, total_balance)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -341,7 +308,13 @@ async fn test_tip20_transfer_from() -> eyre::Result<()> {
     for (signer, balance) in account_data.iter() {
         let allowance = token.allowance(caller, signer.address()).call().await?;
         assert_eq!(allowance, U256::ZERO);
-        pending_txs.push(token.approve(signer.address(), *balance).send().await?);
+        pending_txs.push(
+            token
+                .approve(signer.address(), *balance)
+                .gas_price(0)
+                .send()
+                .await?,
+        );
     }
 
     for tx in pending_txs.drain(..) {
@@ -377,6 +350,7 @@ async fn test_tip20_transfer_from() -> eyre::Result<()> {
 
         let pending_tx = spender_token
             .transferFrom(caller, recipient, *allowance)
+            .gas_price(0)
             .send()
             .await?;
 
@@ -404,16 +378,15 @@ async fn test_tip20_transfer_with_memo() -> eyre::Result<()> {
 
     let tasks = TaskManager::current();
     let executor = tasks.executor();
-
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
 
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -445,6 +418,7 @@ async fn test_tip20_transfer_with_memo() -> eyre::Result<()> {
     let recipient = Address::random();
     token
         .mint(caller, transfer_amount)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -454,6 +428,7 @@ async fn test_tip20_transfer_with_memo() -> eyre::Result<()> {
     let memo = FixedBytes::<32>::random();
     let receipt = token
         .transferWithMemo(recipient, transfer_amount, memo)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -485,16 +460,15 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
 
     let tasks = TaskManager::current();
     let executor = tasks.executor();
-
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
 
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -526,6 +500,7 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
     // Create a blacklist policy
     let policy_receipt = registry
         .createPolicy(admin, ITIP403Registry::PolicyType::BLACKLIST)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -542,6 +517,7 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
     // Update the token policy to the blacklist
     token
         .changeTransferPolicyId(policy_id)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -564,6 +540,7 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
     try_join_all(blacklisted_accounts.iter().map(|account| async {
         registry
             .modifyPolicyBlacklist(policy_id, account.address(), true)
+            .gas_price(0)
             .send()
             .await
             .expect("Could not send tx")
@@ -576,6 +553,7 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
     try_join_all(accounts.iter().map(|account| async {
         token
             .mint(account.address(), U256::from(1000))
+            .gas_price(0)
             .send()
             .await
             .expect("Could not send tx")
@@ -614,6 +592,7 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
 
             token
                 .transfer(Address::random(), U256::ONE)
+                .gas_price(0)
                 .send()
                 .await
                 .expect("Could not send tx")
@@ -632,16 +611,15 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
 
     let tasks = TaskManager::current();
     let executor = tasks.executor();
-
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
 
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -673,6 +651,7 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
     // Create a whitelist policy
     let policy_receipt = registry
         .createPolicy(admin, ITIP403Registry::PolicyType::WHITELIST)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -689,6 +668,7 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
     // Update the token policy to the whitelist
     token
         .changeTransferPolicyId(policy_id)
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
@@ -720,6 +700,7 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
     try_join_all(whitelisted_accounts.iter().map(|account| async {
         registry
             .modifyPolicyWhitelist(policy_id, *account, true)
+            .gas_price(0)
             .send()
             .await
             .expect("Could not send tx")
@@ -732,6 +713,7 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
     try_join_all(accounts.iter().map(|account| async {
         token
             .mint(account.address(), U256::from(1000))
+            .gas_price(0)
             .send()
             .await
             .expect("Could not send tx")
@@ -777,6 +759,7 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
             .map(|(token, recipient)| async {
                 token
                     .transfer(*recipient, U256::ONE)
+                    .gas_price(0)
                     .send()
                     .await
                     .expect("Could not send tx")

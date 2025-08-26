@@ -5,11 +5,11 @@ use alloy::{
     sol_types::SolEvent,
     transports::http::reqwest::Url,
 };
-use reth_chainspec::ChainSpec;
 use reth_ethereum::tasks::TaskManager;
 use reth_node_builder::{NodeBuilder, NodeConfig, NodeHandle};
 use reth_node_core::args::RpcServerArgs;
 use std::sync::Arc;
+use tempo_chainspec::spec::TempoChainSpec;
 use tempo_node::node::TempoNode;
 use tempo_precompiles::{
     TIP20_FACTORY_ADDRESS,
@@ -21,15 +21,14 @@ async fn test_create_token() -> eyre::Result<()> {
     let tasks = TaskManager::current();
     let executor = tasks.executor();
 
-    let chain_spec = ChainSpec::from_genesis(serde_json::from_str(include_str!(
+    let chain_spec = TempoChainSpec::from_genesis(serde_json::from_str(include_str!(
         "../assets/test-genesis.json"
     ))?);
-
-    let node_config = NodeConfig::test()
-        .with_chain(Arc::new(chain_spec))
+    let mut node_config = NodeConfig::new(Arc::new(chain_spec))
         .with_unused_ports()
         .dev()
         .with_rpc(RpcServerArgs::default().with_unused_ports().with_http());
+    node_config.txpool.minimal_protocol_basefee = 0;
 
     let NodeHandle {
         node,
@@ -71,6 +70,7 @@ async fn test_create_token() -> eyre::Result<()> {
             "USD".to_string(),
             caller,
         )
+        .gas_price(0)
         .send()
         .await?
         .get_receipt()
