@@ -3,7 +3,6 @@
 //! [`alto`]: https://github.com/commonwarexyx/alto
 
 use std::num::{NonZeroU64, NonZeroUsize};
-use std::sync::Arc;
 use std::time::Duration;
 
 use commonware_broadcast::buffered;
@@ -16,12 +15,15 @@ use eyre::WrapErr as _;
 use futures_util::future::try_join_all;
 use governor::Quota;
 use rand::{CryptoRng, Rng};
-use reth::payload::PayloadBuilderHandle;
-use reth_chainspec::ChainSpec;
-use reth_node_builder::{BeaconConsensusEngineHandle, NodeTypes};
-use reth_node_ethereum::EthereumNode;
+use reth_node_builder::rpc::RethRpcAddOns;
+use reth_node_builder::{
+    FullNode, FullNodeComponents, FullNodeTypes, NodePrimitives, NodeTypes, PayloadTypes,
+};
 
-use tempo_commonware_node_cryptography::{BlsScheme, GroupShare, PrivateKey, PublicKey, PublicPolynomial};
+use reth_provider::DatabaseProviderFactory;
+use tempo_commonware_node_cryptography::{
+    BlsScheme, GroupShare, PrivateKey, PublicKey, PublicPolynomial,
+};
 
 use super::block::Block;
 use super::supervisor::Supervisor;
@@ -51,20 +53,34 @@ const MAX_REPAIR: u64 = 20;
 pub struct Builder<
     TBlocker,
     TContext,
+    TFullNodeComponents,
+    TRethRpcAddons,
     // TODO: add the indexer. It's part of alto and we have skipped it, for now.
     // TIndexer,
-> {
+> where
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
+{
     /// The contextg
     pub context: TContext,
 
     pub fee_recipient: alloy_primitives::Address,
 
-    pub chainspec: Arc<ChainSpec>,
-    pub execution_engine: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    pub execution_payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
+    pub execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
 
+    // pub chainspec: Arc<TempoChainSpec>,
+    // pub execution_engine: ConsensusEngineHandle<TNodeTypes::Payload>,
+    // pub execution_payload_builder: PayloadBuilderHandle<TNodeTypes::Payload>,
     /// A handle to the reth execution node so that consensus can drive execution.
     // pub execution_node: FullNode<TExecutionNode, TExecutionNodeAddons>,
+    //
     pub blocker: TBlocker,
     pub partition_prefix: String,
     pub blocks_freezer_table_initial_size: u32,
@@ -90,12 +106,24 @@ pub struct Builder<
     // pub indexer: Option<TIndexer>,
 }
 
-impl<TBlocker, TContext> Builder<TBlocker, TContext>
+impl<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
+    Builder<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <TFullNodeComponents::Types as NodeTypes>::Primitives:
+        NodePrimitives<BlockHeader = alloy_consensus::Header>,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
 {
-    pub async fn init(self) -> Engine<TBlocker, TContext> {
+    pub async fn init(self) -> Engine<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons> {
         let supervisor = Supervisor::new(
             self.polynomial.clone(),
             self.participants.clone(),
@@ -116,35 +144,37 @@ where
         // Create the buffer pool
         let buffer_pool = PoolRef::new(BUFFER_POOL_PAGE_SIZE, BUFFER_POOL_CAPACITY);
 
-        let (syncer, syncer_mailbox): (_, marshal::Mailbox<BlsScheme, Block>) =
-            marshal::Actor::init(
-                self.context.with_label("sync"),
-                marshal::Config {
-                    public_key: self.signer.public_key(),
-                    identity: *self.polynomial.constant(),
-                    coordinator: supervisor.clone(),
-                    partition_prefix: self.partition_prefix.clone(),
-                    mailbox_size: self.mailbox_size,
-                    backfill_quota: self.backfill_quota,
-                    view_retention_timeout: self
-                        .activity_timeout
-                        .saturating_mul(SYNCER_ACTIVITY_TIMEOUT_MULTIPLIER),
-                    namespace: crate::config::NAMESPACE.to_vec(),
-                    prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
-                    immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
-                    freezer_table_initial_size: self.blocks_freezer_table_initial_size,
-                    freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
-                    freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
-                    freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
-                    freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
-                    freezer_journal_buffer_pool: buffer_pool.clone(),
-                    replay_buffer: REPLAY_BUFFER,
-                    write_buffer: WRITE_BUFFER,
-                    codec_config: (),
-                    max_repair: MAX_REPAIR,
-                },
-            )
-            .await;
+        let (syncer, syncer_mailbox): (
+            _,
+            marshal::Mailbox<BlsScheme, Block<reth_ethereum_primitives::Block>>,
+        ) = marshal::Actor::init(
+            self.context.with_label("sync"),
+            marshal::Config {
+                public_key: self.signer.public_key(),
+                identity: *self.polynomial.constant(),
+                coordinator: supervisor.clone(),
+                partition_prefix: self.partition_prefix.clone(),
+                mailbox_size: self.mailbox_size,
+                backfill_quota: self.backfill_quota,
+                view_retention_timeout: self
+                    .activity_timeout
+                    .saturating_mul(SYNCER_ACTIVITY_TIMEOUT_MULTIPLIER),
+                namespace: crate::config::NAMESPACE.to_vec(),
+                prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
+                immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                freezer_table_initial_size: self.blocks_freezer_table_initial_size,
+                freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
+                freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
+                freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
+                freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
+                freezer_journal_buffer_pool: buffer_pool.clone(),
+                replay_buffer: REPLAY_BUFFER,
+                write_buffer: WRITE_BUFFER,
+                codec_config: (),
+                max_repair: MAX_REPAIR,
+            },
+        )
+        .await;
 
         let execution_driver = super::execution_driver::Builder {
             context: self.context.with_label("execution_driver"),
@@ -152,9 +182,10 @@ where
             fee_recipient: self.fee_recipient,
             mailbox_size: self.mailbox_size,
             syncer_mailbox: syncer_mailbox.clone(),
-            chainspec: self.chainspec,
-            engine_handle: self.execution_engine,
-            payload_builder: self.execution_payload_builder,
+            execution_node: self.execution_node,
+            // chainspec: self.chainspec,
+            // engine_handle: self.execution_engine,
+            // payload_builder: self.execution_payload_builder,
         }
         .init();
 
@@ -206,25 +237,38 @@ where
     }
 }
 
-/// The consensus engine connecting the consensus mechanism to execution node.
-pub struct Engine<
-    // TODO: understand what exactly this blocker does.
+pub struct Engine<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
+where
     TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
     // XXX: alto also defines an Indexer trait (not part of commonwarexyz itself); we will
     // not define it for nwo.
     // TIndexer,
-> {
+{
     context: TContext,
 
     /// broadcasts messages to and cahces messages from untrusted peers.
     // XXX: alto calls this `buffered`. That's confusing. We call it `broadcast`.
-    broadcast: buffered::Engine<TContext, PublicKey, Block>,
-    broadcast_mailbox: buffered::Mailbox<PublicKey, Block>,
+    broadcast: buffered::Engine<TContext, PublicKey, Block<reth_ethereum_primitives::Block>>,
+    broadcast_mailbox: buffered::Mailbox<PublicKey, Block<reth_ethereum_primitives::Block>>,
 
     /// The core of the application, the glue between commonware-xyz consensus and reth-execution.
-    execution_driver: crate::consensus::execution_driver::ExecutionDriver<TContext>,
-    execution_driver_mailbox: crate::consensus::execution_driver::Mailbox,
+    execution_driver: crate::consensus::execution_driver::ExecutionDriver<
+        TContext,
+        TFullNodeComponents,
+        TRethRpcAddons,
+    >,
+    execution_driver_mailbox:
+        crate::consensus::execution_driver::Mailbox<reth_ethereum_primitives::Block>,
 
     /// Responsible for syncing(?) messages from/to other nodes.
     // FIXME: This is a complex beast, interacting with very many parts of the system. At
@@ -234,15 +278,31 @@ pub struct Engine<
     // its peers...
     //
     // Alto calls this `marshal`, we opt to call it `syncer` which seems marginally more expressive.
-    syncer: marshal::Actor<Block, TContext, BlsScheme, PublicKey, Supervisor>,
+    syncer: marshal::Actor<
+        Block<reth_ethereum_primitives::Block>,
+        TContext,
+        BlsScheme,
+        PublicKey,
+        Supervisor,
+    >,
 
     consensus: crate::consensus::Consensus<TContext, TBlocker>,
 }
 
-impl<TBlocker, TContext> Engine<TBlocker, TContext>
+impl<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
+    Engine<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
 {
     pub fn start(
         self,

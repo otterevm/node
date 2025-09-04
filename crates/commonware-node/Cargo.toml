@@ -9,6 +9,9 @@ workspace = true
 [dependencies]
 tempo-commonware-node-config.workspace = true
 tempo-commonware-node-cryptography.workspace = true
+tempo-chainspec.workspace = true
+tempo-faucet.workspace = true
+tempo-node.workspace = true
 
 sequential-futures-queue.workspace = true
 
@@ -44,20 +47,25 @@ thiserror = "2.0.14"
 tokio = { version = "1.47.1", default-features = false, features = ["macros", "sync"] }
 tracing-subscriber = "0.3.19"
 
-reth = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-consensus = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-node-core = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-tasks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
-reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
+reth.workspace = true
+reth-cli.workspace = true
+reth-chainspec.workspace = true
+reth-cli-commands.workspace = true
+reth-cli-runner.workspace = true
+reth-consensus.workspace = true
+reth-db.workspace = true
+reth-ethereum-cli.workspace = true
+reth-ethereum-engine-primitives.workspace = true
+reth-ethereum-primitives.workspace = true
+reth-evm.workspace = true
+reth-execution-types.workspace = true
+reth-node-builder.workspace = true
+reth-node-ethereum.workspace = true
+reth-node-core.workspace = true
+reth-primitives-traits.workspace = true
+reth-provider.workspace = true
+reth-tasks.workspace = true
+reth-trie-db.workspace = true
 
 tracing = "0.1.41"
 pin-project-lite = "0.2.16"

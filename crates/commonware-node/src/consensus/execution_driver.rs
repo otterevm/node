@@ -15,10 +15,14 @@ use futures_util::future::{BoxFuture, Either, try_join};
 use futures_util::{FutureExt as _, SinkExt as _, StreamExt as _, TryFutureExt};
 use rand::{CryptoRng, Rng};
 use reth::payload::PayloadBuilderHandle;
-use reth_chainspec::ChainSpec;
-use reth_node_builder::{BeaconConsensusEngineHandle, NodeTypes};
+use reth_ethereum_engine_primitives::EthBuiltPayload;
+use reth_node_builder::rpc::RethRpcAddOns;
+use reth_node_builder::{
+    ConsensusEngineHandle, FullNode, FullNodeComponents, FullNodeTypes, NodePrimitives, NodeTypes,
+    PayloadTypes,
+};
 
-use reth_node_ethereum::EthereumNode;
+use reth_provider::DatabaseProviderFactory;
 use sequential_futures_queue::SequentialFuturesQueue;
 use tokio::sync::RwLock;
 use tracing::{Level, info, instrument};
@@ -27,13 +31,18 @@ use tempo_commonware_node_cryptography::{BlsScheme, Digest};
 
 use super::{View, block::Block};
 
-pub struct Builder<
-    TContext,
-    // XXX: these would be for passing in the entire node handle. Unclear how to
-    // line up all the type constraints. See commented out execution_node field.
-    // TExecutionNode: FullNodeComponents,
-    // TExecutionNodeAddons: NodeAddOns<TExecutionNode>,
-> {
+pub struct Builder<TContext, TFullNodeComponents, TRethRpcAddons>
+where
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
+{
     /// The execution context of the commonwarexyz application (tokio runtime, etc).
     pub context: TContext,
 
@@ -44,16 +53,17 @@ pub struct Builder<
     /// before blocking.
     pub mailbox_size: usize,
 
-    pub syncer_mailbox: marshal::Mailbox<BlsScheme, Block>,
+    pub syncer_mailbox: marshal::Mailbox<BlsScheme, Block<reth_ethereum_primitives::Block>>,
 
     // TODO: I'd prefer to pass in the handle to the full node in here, but I am not
     // clear on how to line up the type constraints to end up with an ethnode (eth block, header, etc).
     //
     // So we follow tempo for now and just pass in chainspec, engine handle and payload builder directly.
     // execution_node: FullNode<TExecutionNode, TExecutionNodeAddons>,
-    pub chainspec: Arc<ChainSpec>,
-    pub engine_handle: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    pub payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
+    // pub chainspec: Arc<ChainSpec>,
+    // pub engine_handle: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
+    // pub payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
+    pub execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
 }
 
 // // impl<TContext, TExecutionNode, TExecutionNodeAddons>
@@ -62,11 +72,23 @@ pub struct Builder<
 //     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
 //     TExecutionNode: FullNodeComponents,
 //     TExecutionNodeAddons: NodeAddOns<TExecutionNode>,
-impl<TContext> Builder<TContext>
+impl<TContext, TFullNodeComponents, TRethRpcAddons>
+    Builder<TContext, TFullNodeComponents, TRethRpcAddons>
 where
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <TFullNodeComponents::Types as NodeTypes>::Primitives:
+        NodePrimitives<BlockHeader = alloy_consensus::Header>,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
 {
-    pub(super) fn init(self) -> ExecutionDriver<TContext> {
+    pub(super) fn init(self) -> ExecutionDriver<TContext, TFullNodeComponents, TRethRpcAddons> {
         let (tx, rx) = mpsc::channel(self.mailbox_size);
         let my_mailbox = Mailbox::from_sender(tx);
         ExecutionDriver {
@@ -78,33 +100,41 @@ where
             my_mailbox,
             syncer_mailbox: self.syncer_mailbox,
 
-            genesis_block: Arc::new(Block::genesis_from_chainspec(&self.chainspec)),
+            genesis_block: Arc::new(Block::genesis_from_chainspec(
+                &self.execution_node.chain_spec(),
+            )),
             latest_proposed_block: Arc::new(RwLock::new(None)),
 
-            engine_handle: self.engine_handle,
-            payload_builder: self.payload_builder,
-            // provider: self.provider,
+            execution_node: self.execution_node,
+
             finalization_queue: SequentialFuturesQueue::new(),
         }
     }
 }
 
-// pub struct ExecutionDriver<
-//     TExecutionNode: FullNodeComponents,
-//     TExecutionNodeAddons: NodeAddOns<TExecutionNode>,
-// > {
-pub struct ExecutionDriver<TContext> {
+pub struct ExecutionDriver<TContext, TFullNodeComponents, TRethRpcAddons>
+where
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
+{
     context: TContext,
 
     fee_recipient: alloy_primitives::Address,
 
-    from_consensus: mpsc::Receiver<Message>,
-    my_mailbox: Mailbox,
+    from_consensus: mpsc::Receiver<Message<reth_ethereum_primitives::Block>>,
+    my_mailbox: Mailbox<reth_ethereum_primitives::Block>,
 
-    syncer_mailbox: marshal::Mailbox<BlsScheme, Block>,
+    syncer_mailbox: marshal::Mailbox<BlsScheme, Block<reth_ethereum_primitives::Block>>,
 
-    genesis_block: Arc<Block>,
-    latest_proposed_block: Arc<RwLock<Option<Block>>>,
+    genesis_block: Arc<Block<reth_ethereum_primitives::Block>>,
+    latest_proposed_block: Arc<RwLock<Option<Block<reth_ethereum_primitives::Block>>>>,
 
     // TODO: I'd prefer to pass in the handle to the full node in here, but I am not
     // clear on how to line up the type constraints to end up with an ethnode (eth block, header, etc).
@@ -114,8 +144,9 @@ pub struct ExecutionDriver<TContext> {
     // // node handle up into a provider, engine handle and payload builder handle.
     // // But what's the point if we can just pass the whole thing in if we need it?
     // execution_node: FullNode<TExecutionNode, TExecutionNodeAddons>,
-    engine_handle: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
+    // engine_handle: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
+    // payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
+    execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
 
     /// A queue of finalizations, performed sequentially.
     ///
@@ -124,15 +155,21 @@ pub struct ExecutionDriver<TContext> {
     finalization_queue: SequentialFuturesQueue<BoxFuture<'static, eyre::Result<()>>>,
 }
 
-// impl<TExecutionNode, TExecutionNodeAddons> ExecutionDriver<TExecutionNode, TExecutionNodeAddons>
-// where
-//     TExecutionNode: FullNodeComponents,
-//     TExecutionNodeAddons: NodeAddOns<TExecutionNode>,
-impl<TContext> ExecutionDriver<TContext>
+impl<TContext, TFullNodeComponents, TRethRpcAddons>
+    ExecutionDriver<TContext, TFullNodeComponents, TRethRpcAddons>
 where
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
 {
-    pub(super) fn mailbox(&self) -> &Mailbox {
+    pub(super) fn mailbox(&self) -> &Mailbox<reth_ethereum_primitives::Block> {
         &self.my_mailbox
     }
 
@@ -164,7 +201,7 @@ where
         self.context.spawn_ref()(self.run())
     }
 
-    fn handle_message(&mut self, msg: Message) {
+    fn handle_message(&mut self, msg: Message<reth_ethereum_primitives::Block>) {
         match msg {
             Message::Broadcast(broadcast) => self.handle_broadcast(broadcast),
             Message::Finalized(finalized) => self.handle_finalized(*finalized),
@@ -187,9 +224,21 @@ where
             err(level = Level::ERROR))]
         async fn handle_broadcast(
             broadcast: Broadcast,
-            latest_proposed: Arc<RwLock<Option<Block>>>,
-            mut syncer: marshal::Mailbox<BlsScheme, Block>,
-        ) -> eyre::Result<()> {
+            latest_proposed: Arc<RwLock<Option<Block<reth_ethereum_primitives::Block>>>>,
+            mut syncer: marshal::Mailbox<BlsScheme, Block<reth_ethereum_primitives::Block>>,
+        ) -> eyre::Result<()>
+// // TODO: Figure out if we can reduce the trait bounds to just what's necessary.
+        // // Needed to repeat the generic parameter from the outer func (err code e0401).
+        // where
+        //     TFullNodeComponents: FullNodeComponents,
+        //     TFullNodeComponents::Types: NodeTypes,
+        //     <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+        //             PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+        //             ExecutionData = alloy_rpc_types_engine::ExecutionData,
+        //             BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        //         >,
+        //     <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+        {
             let Some(latest_proposed) = latest_proposed.read().await.clone() else {
                 return Err(eyre!("there was no latest block to broadcast"));
             };
@@ -205,7 +254,7 @@ where
     }
 
     /// Pushes a `finalized` request to the back of the finalization queue.
-    fn handle_finalized(&mut self, finalized: Finalized) {
+    fn handle_finalized(&mut self, finalized: Finalized<reth_ethereum_primitives::Block>) {
         self.finalization_queue
             .push(self.finalize(finalized).boxed());
     }
@@ -245,14 +294,24 @@ where
     // XXX: I wish this could have been implemented a bit more elegantly and
     // without the extra RunPropose indirection, but the requirement of feeding
     // in the context/system time when spawning makes this necessary.
-    fn propose(&self, propose: Propose) -> RunPropose {
+    fn propose(
+        &self,
+        propose: Propose,
+    ) -> RunPropose<
+        reth_ethereum_primitives::Block,
+        <TFullNodeComponents::Types as NodeTypes>::Payload,
+    > {
         RunPropose {
             request: propose,
-            engine: self.engine_handle.clone(),
+            engine: self
+                .execution_node
+                .add_ons_handle
+                .beacon_engine_handle
+                .clone(),
             fee_recipient: self.fee_recipient,
             genesis_block: self.genesis_block.clone(),
             latest_proposed_block: self.latest_proposed_block.clone(),
-            payload_builder: self.payload_builder.clone(),
+            payload_builder: self.execution_node.payload_builder_handle.clone(),
             syncer_mailbox: self.syncer_mailbox.clone(),
         }
     }
@@ -269,7 +328,11 @@ where
         err
     )]
     fn verify(&self, verify: Verify) -> impl Future<Output = eyre::Result<()>> + 'static {
-        let engine = self.engine_handle.clone();
+        let engine = self
+            .execution_node
+            .add_ons_handle
+            .beacon_engine_handle
+            .clone();
         let genesis_block = self.genesis_block.clone();
         let mut syncer_mailbox = self.syncer_mailbox.clone();
 
@@ -368,19 +431,24 @@ where
         err(level = Level::WARN),
         ret,
     )]
-    fn finalize(&self, finalized: Finalized) -> impl Future<Output = eyre::Result<()>> + 'static {
-        let engine = self.engine_handle.clone();
+    fn finalize(
+        &self,
+        finalized: Finalized<reth_ethereum_primitives::Block>,
+    ) -> impl Future<Output = eyre::Result<()>> + 'static {
+        let engine = self
+            .execution_node
+            .add_ons_handle
+            .beacon_engine_handle
+            .clone();
         // XXX: This async block *must* be the last expression in this
         // function so that `instrument` wraps the async block and not
         // statements before it.
         async move {
             let Finalized { block } = finalized;
 
+            let (block, hash) = block.clone().into_inner().split();
             let payload_status = engine
-                .new_payload(ExecutionData::from_block_unchecked(
-                    block.block_hash(),
-                    &*block,
-                ))
+                .new_payload(ExecutionData::from_block_unchecked(hash, &block))
                 .await
                 .wrap_err(
                     "failed sending new-payload request to execution \
@@ -398,13 +466,12 @@ where
                 `{payload_status}`"
             );
 
-            let block_hash = block.block_hash();
             let fcu_response = engine
                 .fork_choice_updated(
                     ForkchoiceState {
-                        head_block_hash: block_hash,
-                        safe_block_hash: block_hash,
-                        finalized_block_hash: block_hash,
+                        head_block_hash: hash,
+                        safe_block_hash: hash,
+                        finalized_block_hash: hash,
                     },
                     None,
                     reth_node_builder::EngineApiMessageVersion::V3,
@@ -427,17 +494,33 @@ where
 }
 
 /// Holds all objects to run a proposal via [`RunPropose::given_time`].
-struct RunPropose {
+struct RunPropose<TBlock, TPayload>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+    TPayload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = ExecutionData,
+            BuiltPayload = EthBuiltPayload,
+        >,
+{
     request: Propose,
-    engine: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
+    engine: ConsensusEngineHandle<TPayload>,
     fee_recipient: alloy_primitives::Address,
-    genesis_block: Arc<Block>,
-    latest_proposed_block: Arc<RwLock<Option<Block>>>,
-    payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
-    syncer_mailbox: marshal::Mailbox<BlsScheme, Block>,
+    genesis_block: Arc<Block<TBlock>>,
+    latest_proposed_block: Arc<RwLock<Option<Block<TBlock>>>>,
+    payload_builder: PayloadBuilderHandle<TPayload>,
+    syncer_mailbox: marshal::Mailbox<BlsScheme, Block<TBlock>>,
 }
 
-impl RunPropose {
+// impl<TBlock, TPayload> RunPropose<TBlock, TPayload>
+impl<TPayload> RunPropose<reth_ethereum_primitives::Block, TPayload>
+where
+    TPayload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = ExecutionData,
+            BuiltPayload = EthBuiltPayload,
+        >,
+{
     #[instrument(
         name = "propose",
         skip_all,
@@ -604,11 +687,18 @@ impl RunPropose {
         parent.timestamp = parent.timestamp(),
     )
 )]
-async fn verify_block(
-    engine: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    block: &Block,
-    parent: &Block,
-) -> eyre::Result<bool> {
+async fn verify_block<TPayload>(
+    engine: ConsensusEngineHandle<TPayload>,
+    block: &Block<reth_ethereum_primitives::Block>,
+    parent: &Block<reth_ethereum_primitives::Block>,
+) -> eyre::Result<bool>
+where
+    TPayload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = ExecutionData,
+            BuiltPayload = EthBuiltPayload,
+        >,
+{
     use alloy_rpc_types_engine::PayloadStatusEnum;
     if block.parent_digest() != parent.digest() {
         info!(
@@ -626,11 +716,9 @@ async fn verify_block(
         return Ok(false);
     }
 
+    let (block, hash) = block.clone().into_inner().split();
     let payload_status = engine
-        .new_payload(ExecutionData::from_block_unchecked(
-            block.block_hash(),
-            block,
-        ))
+        .new_payload(ExecutionData::from_block_unchecked(hash, &block))
         .await
         .wrap_err("failed sending `new payload` message to execution layer to validate block")?;
     match payload_status.status {
@@ -653,7 +741,10 @@ async fn verify_block(
     }
 }
 
-impl Automaton for Mailbox {
+impl<TBlock> Automaton for Mailbox<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     type Context = super::Context;
 
     type Digest = Digest;
@@ -720,7 +811,10 @@ impl Automaton for Mailbox {
     }
 }
 
-impl Relay for Mailbox {
+impl<TBlock> Relay for Mailbox<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     type Digest = Digest;
 
     async fn broadcast(&mut self, digest: Self::Digest) {
@@ -732,8 +826,11 @@ impl Relay for Mailbox {
     }
 }
 
-impl Reporter for Mailbox {
-    type Activity = Block;
+impl<TBlock> Reporter for Mailbox<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
+    type Activity = Block<TBlock>;
 
     async fn report(&mut self, block: Self::Activity) {
         // TODO: panicking here is really not necessary. Just log at the ERROR or WARN levels instead?
@@ -745,12 +842,18 @@ impl Reporter for Mailbox {
 }
 
 #[derive(Clone)]
-pub struct Mailbox {
-    to_execution_driver: mpsc::Sender<Message>,
+pub struct Mailbox<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
+    to_execution_driver: mpsc::Sender<Message<TBlock>>,
 }
 
-impl Mailbox {
-    fn from_sender(to_execution_driver: mpsc::Sender<Message>) -> Self {
+impl<TBlock> Mailbox<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
+    fn from_sender(to_execution_driver: mpsc::Sender<Message<TBlock>>) -> Self {
         Self {
             to_execution_driver,
         }
@@ -759,9 +862,12 @@ impl Mailbox {
 
 /// Messages forwarded from consensus to execution driver.
 // TODO: add trace spans into all of these messages.
-enum Message {
+enum Message<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     Broadcast(Broadcast),
-    Finalized(Box<Finalized>),
+    Finalized(Box<Finalized<TBlock>>),
     Genesis(Genesis),
     Propose(Propose),
     Verify(Verify),
@@ -771,7 +877,10 @@ struct Genesis {
     response: oneshot::Sender<Digest>,
 }
 
-impl From<Genesis> for Message {
+impl<TBlock> From<Genesis> for Message<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     fn from(value: Genesis) -> Self {
         Self::Genesis(value)
     }
@@ -783,7 +892,10 @@ struct Propose {
     response: oneshot::Sender<Digest>,
 }
 
-impl From<Propose> for Message {
+impl<TBlock> From<Propose> for Message<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     fn from(value: Propose) -> Self {
         Self::Propose(value)
     }
@@ -793,7 +905,10 @@ struct Broadcast {
     payload: Digest,
 }
 
-impl From<Broadcast> for Message {
+impl<TBlock> From<Broadcast> for Message<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     fn from(value: Broadcast) -> Self {
         Self::Broadcast(value)
     }
@@ -806,18 +921,27 @@ struct Verify {
     response: oneshot::Sender<bool>,
 }
 
-impl From<Verify> for Message {
+impl<TBlock> From<Verify> for Message<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
     fn from(value: Verify) -> Self {
         Self::Verify(value)
     }
 }
 
-struct Finalized {
-    block: Block,
+struct Finalized<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
+    block: Block<TBlock>,
 }
 
-impl From<Finalized> for Message {
-    fn from(value: Finalized) -> Self {
+impl<TBlock> From<Finalized<TBlock>> for Message<TBlock>
+where
+    TBlock: reth_primitives_traits::Block + 'static,
+{
+    fn from(value: Finalized<TBlock>) -> Self {
         Self::Finalized(value.into())
     }
 }

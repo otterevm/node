@@ -6,19 +6,29 @@ use commonware_p2p::authenticated::discovery;
 use commonware_runtime::{Handle, Metrics as _};
 use eyre::{WrapErr as _, eyre};
 use futures_util::{FutureExt as _, future::try_join_all};
-use reth::payload::PayloadBuilderHandle;
-use reth_chainspec::ChainSpec;
-use reth_node_builder::{BeaconConsensusEngineHandle, NodeHandle, NodeTypes};
-use reth_node_ethereum::EthereumNode;
+use reth_ethereum_cli;
+use reth_node_builder::{
+    FullNode, FullNodeComponents, FullNodeTypes, NodeHandle, NodePrimitives, NodeTypes,
+    PayloadTypes, rpc::RethRpcAddOns,
+};
+use reth_node_ethereum::EthEvmConfig;
+use reth_provider::DatabaseProviderFactory;
+use tempo_chainspec::spec::{TempoChainSpec, TempoChainSpecParser};
+use tempo_faucet::faucet::{TempoFaucetExt, TempoFaucetExtApiServer as _};
+use tempo_node::{args::TempoArgs, node::TempoNode};
 
-use crate::config::{
-    BACKFILL_BY_DIGEST_CHANNE_IDENTL, BACKFILL_QUOTA, BLOCKS_FREEZER_TABLE_INITIAL_SIZE_BYTES,
-    BROADCASTER_CHANNEL_IDENT, BROADCASTER_LIMIT, FETCH_TIMEOUT,
-    FINALIZED_FREEZER_TABLE_INITIAL_SIZE_BYTES, LEADER_TIMEOUT, MAX_FETCH_SIZE_BYTES,
-    NOTARIZATION_TIMEOUT, NUMBER_CONCURRENT_FETCHES, NUMBER_MAX_FETCHES, NUMBER_OF_VIEWS_TO_TRACK,
-    NUMBER_OF_VIEWS_UNTIL_LEADER_SKIP, PENDING_CHANNEL_IDENT, PENDING_LIMIT,
-    RECOVERED_CHANNEL_IDENT, RECOVERED_LIMIT, RESOLVER_CHANNEL_IDENT, RESOLVER_LIMIT,
-    TIME_TO_NULLIFY_RETRY,
+use crate::{
+    config::{
+        BACKFILL_BY_DIGEST_CHANNE_IDENTL, BACKFILL_QUOTA, BLOCKS_FREEZER_TABLE_INITIAL_SIZE_BYTES,
+        BROADCASTER_CHANNEL_IDENT, BROADCASTER_LIMIT, FETCH_TIMEOUT,
+        FINALIZED_FREEZER_TABLE_INITIAL_SIZE_BYTES, LEADER_TIMEOUT, MAX_FETCH_SIZE_BYTES,
+        NOTARIZATION_TIMEOUT, NUMBER_CONCURRENT_FETCHES, NUMBER_MAX_FETCHES,
+        NUMBER_OF_VIEWS_TO_TRACK, NUMBER_OF_VIEWS_UNTIL_LEADER_SKIP, PENDING_CHANNEL_IDENT,
+        PENDING_LIMIT, RECOVERED_CHANNEL_IDENT, RECOVERED_LIMIT, RESOLVER_CHANNEL_IDENT,
+        RESOLVER_LIMIT, TIME_TO_NULLIFY_RETRY,
+    },
+    execution::TempoConsensus,
+    reth_glue::ContextEnrichedArgs,
 };
 use tempo_commonware_node_cryptography::{PrivateKey, PublicKey};
 
@@ -42,6 +52,8 @@ pub struct Args {
     /// directives see the tracing-subscriber documentation [1].
     ///
     /// 1: https://docs.rs/tracing-subscriber/0.3.19/tracing_subscriber/filter/struct.EnvFilter.html
+    // TODO: look into how commonware and reth set up their logging/tracing/metrics.
+    // reth has `LogArgs` for example, which we are altogether ignoring for now.
     #[clap(
         long,
         value_name = "DIRECTIVE",
@@ -49,22 +61,22 @@ pub struct Args {
     )]
     filter_directives: String,
 
-    // XXX: Don't use any extra subcmds for now. It'd just be confusing until we figure out a
-    // good way to launch nodes that follows reth's convention.
-    #[command(flatten)]
-    inner: reth_cli_commands::NodeCommand<crate::chainspec::Parser, ConsensusSpecificArgs>,
+    #[command(subcommand)]
+    inner: reth_ethereum_cli::interface::Commands<TempoChainSpecParser, TempoSpecificArgs>,
 }
 
 /// Args for setting up the consensuns-part of the node (everything non-reth).
 #[derive(Clone, Debug, clap::Args)]
-struct ConsensusSpecificArgs {
+pub(crate) struct TempoSpecificArgs {
     #[clap(long, value_name = "FILE")]
     consensus_config: camino::Utf8PathBuf,
+
+    #[command(flatten)]
+    faucet_args: tempo_faucet::args::FaucetArgs,
 }
 
 impl Args {
     pub fn run(self) -> eyre::Result<()> {
-        use commonware_runtime::Runner as _;
         use tracing_subscriber::fmt;
         use tracing_subscriber::fmt::format::FmtSpan;
         use tracing_subscriber::prelude::*;
@@ -77,82 +89,128 @@ impl Args {
             .with(env_filter)
             .init();
 
-        let consensus_config = tempo_commonware_node_config::Config::from_file(
-            &self.inner.ext.consensus_config,
-        )
-        .wrap_err_with(|| {
-            format!(
-                "failed parsing consensus config from provided argument `{}`",
-                self.inner.ext.consensus_config
+        let mut runtime_config = commonware_runtime::tokio::Config::default();
+        if let reth_ethereum_cli::interface::Commands::Node(node_cmd) = &self.inner {
+            let consensus_config =
+                tempo_commonware_node_config::Config::from_file(&node_cmd.ext.consensus_config)
+                    .wrap_err_with(|| {
+                        format!(
+                            "failed parsing consensus config from provided argument `{}`",
+                            node_cmd.ext.consensus_config
+                        )
+                    })?;
+            runtime_config = runtime_config
+                .with_tcp_nodelay(Some(true))
+                .with_worker_threads(consensus_config.worker_threads)
+                .with_storage_directory(&consensus_config.storage_directory)
+                .with_catch_panics(true);
+        };
+
+        let runner = commonware_runtime::tokio::Runner::new(runtime_config);
+
+        let components = |spec: Arc<TempoChainSpec>| {
+            (
+                EthEvmConfig::new(spec.clone()),
+                // TODO: provide a placeholder for this.
+                TempoConsensus::new(spec),
             )
-        })?;
+        };
+        crate::reth_glue::with_runner_and_components::<TempoChainSpecParser, TempoNode>(
+            runner,
+            self.inner,
+            components,
+            async move |builder, args| {
+                let ContextEnrichedArgs {
+                    context: Some(context),
+                    args,
+                } = args
+                else {
+                    panic!(
+                        "runtime context must have been passed in via the reth-commonware glue; this is a bug"
+                    );
+                };
 
-        let runtime_config = commonware_runtime::tokio::Config::default()
-            .with_tcp_nodelay(Some(true))
-            .with_worker_threads(consensus_config.worker_threads)
-            .with_storage_directory(&consensus_config.storage_directory)
-            .with_catch_panics(true);
+                let consensus_config =
+                    tempo_commonware_node_config::Config::from_file(&args.consensus_config)
+                        .wrap_err_with(|| {
+                            format!(
+                                "failed parsing consensus config from provided argument `{}`",
+                                args.consensus_config
+                            )
+                        })?;
 
-        let executor = commonware_runtime::tokio::Runner::new(runtime_config);
-        executor.start(move |context| async move {
-            // TODO: tuck this glue + node launching logic into a helper function.
-            // The type complexity naming the `reth_node_builder::NodeHandle` is pretty
-            // annoying, so we leave it in-line for now.
-            let crate::reth_glue::NodeWithGlue {
-                task_manager: _task_manager,
-                builder,
-            } = crate::reth_glue::NodeWithGlue::from_node_command(self.inner)
-                .wrap_err("failed initializing reth node")?;
+                let NodeHandle {
+                    node,
+                    node_exit_future,
+                } = builder
+                    // TODO: just a placeholder until we can line up the types.
+                    //
+                    // Should this `TempoNode` even be aware of consensus specific args?
+                    // It's odd that all of the arguments are only ever applied
+                    // *outside* of it.
+                    .node(TempoNode::new(TempoArgs {
+                        no_consensus: false,
+                        malachite_args: Default::default(),
+                        faucet_args: args.faucet_args.clone(),
+                    }))
+                    .extend_rpc_modules(move |ctx| {
+                        if args.faucet_args.enabled {
+                            let txpool = ctx.pool().clone();
+                            let ext = TempoFaucetExt::new(
+                                txpool,
+                                args.faucet_args.address(),
+                                args.faucet_args.amount(),
+                                args.faucet_args.provider(),
+                            );
 
-            let execution_node = builder
-                .node(crate::execution::Node::new())
-                // TODO: add tables to store information in the execution node's db?
-                // An alternative would be to make use of the commonwarexyz storage system.
-                // Probably makes sense to have it all in one spot.
-                // .try_apply(|mut ctx| ctx.db_mut().create_tables_for::<Tables>())
-                // .wrap_err(
-                //     "failed initializing consensus-specific database tables on execution node",
-                // )?
-                .launch()
+                            ctx.modules.merge_configured(ext.into_rpc())?;
+                        }
+                        Ok(())
+                    })
+                    // TODO: figure out if commonware information should be
+                    // stored in reth or not.
+                    //
+                    // The commented out code is a remnant of malachite, but
+                    // commonware keeps its own storage next to reth.
+                    // .apply(|mut ctx| {
+                    //     let db = ctx.db_mut();
+                    //     db.create_tables_for::<reth_malachite::store::tables::Tables>()
+                    //         .expect("Failed to create consensus tables");
+                    //     ctx
+                    // })
+                    .launch()
+                    .await
+                    .wrap_err("launching execution node failed")?;
+
+                let ConsensusStack {
+                    network,
+                    consensus_engine,
+                } = launch_consensus_stack(
+                    &context,
+                    &consensus_config,
+                    node.clone(),
+                    // chainspec,
+                    // execution_engine,
+                    // execution_payload_builder,
+                )
                 .await
-                .wrap_err("launching execution node failed")?;
+                .wrap_err("failed to initialize consensus stack")?;
 
-            let NodeHandle {
-                node,
-                node_exit_future,
-            } = execution_node;
-
-            let chainspec = node.chain_spec();
-            let execution_engine = node.add_ons_handle.beacon_engine_handle.clone();
-            let execution_payload_builder = node.payload_builder_handle.clone();
-
-            let ConsensusStack {
-                network,
-                consensus_engine,
-            } = launch_consensus_stack(
-                &context,
-                &consensus_config,
-                chainspec,
-                execution_engine,
-                execution_payload_builder,
-            )
-            .await
-            .wrap_err("failed to initialize consensus stack")?;
-
-            try_join_all(vec![
-                async move { network.await.wrap_err("network failed") }.boxed(),
-                async move {
-                    consensus_engine
-                        .await
-                        .wrap_err("consensus engine failed")
-                        .flatten()
-                }
-                .boxed(),
-                async move { node_exit_future.await.wrap_err("execution node failed") }.boxed(),
-            ])
-            .await
-            .map(|_| ())
-        })
+                try_join_all(vec![
+                    async move { network.await.wrap_err("network failed") }.boxed(),
+                    async move {
+                        consensus_engine
+                            .await
+                            .wrap_err("consensus engine failed")
+                            .flatten()
+                    }
+                    .boxed(),
+                    async move { node_exit_future.await.wrap_err("execution node failed") }.boxed(),
+                ])
+                .await
+                .map(|_| ())
+            },
+        )
     }
 }
 
@@ -161,13 +219,34 @@ struct ConsensusStack {
     consensus_engine: Handle<eyre::Result<()>>,
 }
 
-async fn launch_consensus_stack(
+// async fn launch_consensus_stack<TNodeTypes: NodeTypes>(
+//     context: &commonware_runtime::tokio::Context,
+//     config: &tempo_commonware_node_config::Config,
+//     chainspec: Arc<TempoChainSpec>,
+//     execution_engine: ConsensusEngineHandle<TNodeTypes::Payload>,
+//     execution_payload_builder: PayloadBuilderHandle<TNodeTypes::Payload>,
+// ) -> eyre::Result<ConsensusStack> {
+async fn launch_consensus_stack<TFullNodeComponents, TRethRpcAddons>(
     context: &commonware_runtime::tokio::Context,
     config: &tempo_commonware_node_config::Config,
-    chainspec: Arc<ChainSpec>,
-    execution_engine: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    execution_payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
-) -> eyre::Result<ConsensusStack> {
+    execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
+    // chainspec: Arc<TempoChainSpec>,
+    // execution_engine: ConsensusEngineHandle<TNodeTypes::Payload>,
+    // execution_payload_builder: PayloadBuilderHandle<TNodeTypes::Payload>,
+) -> eyre::Result<ConsensusStack>
+where
+    TFullNodeComponents: FullNodeComponents,
+    TFullNodeComponents::Types: NodeTypes,
+    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
+            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
+            ExecutionData = alloy_rpc_types_engine::ExecutionData,
+            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
+        >,
+    <TFullNodeComponents::Types as NodeTypes>::Primitives:
+        NodePrimitives<BlockHeader = alloy_consensus::Header>,
+    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
+    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
+{
     let (mut network, mut oracle) =
         instantiate_network(context, config).wrap_err("failed to start network")?;
 
@@ -193,10 +272,11 @@ async fn launch_consensus_stack(
         context: context.with_label("engine"),
 
         fee_recipient: config.fee_recipient,
-        chainspec,
-        execution_engine,
-        execution_payload_builder,
 
+        execution_node,
+        // chainspec: node.chain_spec(),
+        // execution_engine: node.add_ons_handle.consensus_engine_handle().clone(),
+        // execution_payload_builder: node.payload_builder_handle.clone(),
         blocker: oracle,
         // TODO: Set this through config?
         partition_prefix: "engine".into(),
