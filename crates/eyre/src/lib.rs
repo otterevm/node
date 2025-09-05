@@ -1,7 +1,5 @@
 //! Hooks to format eyre reports with their source chain attached.
 
-use std::fmt::Write as _;
-
 /// Installs the hook as the global error report hook.
 ///
 /// **NOTE**: It must be called before any `eyre::Report`s are constructed
