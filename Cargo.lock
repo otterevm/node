@@ -12659,6 +12659,7 @@ dependencies = [
  "tempo-chainspec",
  "tempo-commonware-node-config",
  "tempo-commonware-node-cryptography",
+ "tempo-consensus",
  "tempo-faucet",
  "tempo-node",
  "thiserror 2.0.16",

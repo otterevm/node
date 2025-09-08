@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 tempo-commonware-node-config.workspace = true
 tempo-commonware-node-cryptography.workspace = true
+tempo-consensus.workspace = true
 tempo-chainspec.workspace = true
 tempo-faucet.workspace = true
 tempo-node.workspace = true

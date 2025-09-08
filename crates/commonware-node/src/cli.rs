@@ -27,7 +27,6 @@ use crate::{
         PENDING_LIMIT, RECOVERED_CHANNEL_IDENT, RECOVERED_LIMIT, RESOLVER_CHANNEL_IDENT,
         RESOLVER_LIMIT, TIME_TO_NULLIFY_RETRY,
     },
-    execution::TempoConsensus,
     reth_glue::ContextEnrichedArgs,
 };
 use tempo_commonware_node_cryptography::{PrivateKey, PublicKey};
@@ -111,8 +110,7 @@ impl Args {
         let components = |spec: Arc<TempoChainSpec>| {
             (
                 EthEvmConfig::new(spec.clone()),
-                // TODO: provide a placeholder for this.
-                TempoConsensus::new(spec),
+                tempo_consensus::TempoConsensus::new(spec),
             )
         };
         crate::reth_glue::with_runner_and_components::<TempoChainSpecParser, TempoNode>(
