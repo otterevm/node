@@ -84,8 +84,8 @@ sequenceDiagram
   SY->>ED: parent
   ED->>EE: fork_choice_update(head == safe == finalized == parent.hash)
   EE->>ED: payload_id
-  ED->>EB: resolve_id(payload_id)
-  EB->>ED: proposal := EthBuiltPayload
+  ED-->>EB: resolve_id(payload_id)
+  EB-->>ED: proposal := EthBuiltPayload
   ED->>CL: proposal.digest
   CL->>ED: Relay::broadcast(proposal.digest)
   ED->>SY: broadcast(proposal)
