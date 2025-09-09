@@ -7,15 +7,11 @@ use commonware_runtime::{Handle, Metrics as _};
 use eyre::{WrapErr as _, eyre};
 use futures_util::{FutureExt as _, future::try_join_all};
 use reth_ethereum_cli;
-use reth_node_builder::{
-    FullNode, FullNodeComponents, FullNodeTypes, NodeHandle, NodePrimitives, NodeTypes,
-    PayloadTypes, rpc::RethRpcAddOns,
-};
+use reth_node_builder::NodeHandle;
 use reth_node_ethereum::EthEvmConfig;
-use reth_provider::DatabaseProviderFactory;
 use tempo_chainspec::spec::{TempoChainSpec, TempoChainSpecParser};
 use tempo_faucet::faucet::{TempoFaucetExt, TempoFaucetExtApiServer as _};
-use tempo_node::{args::TempoArgs, node::TempoNode};
+use tempo_node::{TempoFullNode, args::TempoArgs, node::TempoNode};
 
 use crate::{
     config::{
@@ -222,29 +218,14 @@ struct ConsensusStack {
 //     execution_engine: ConsensusEngineHandle<TNodeTypes::Payload>,
 //     execution_payload_builder: PayloadBuilderHandle<TNodeTypes::Payload>,
 // ) -> eyre::Result<ConsensusStack> {
-async fn launch_consensus_stack<TFullNodeComponents, TRethRpcAddons>(
+async fn launch_consensus_stack(
     context: &commonware_runtime::tokio::Context,
     config: &tempo_commonware_node_config::Config,
-    execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
+    execution_node: TempoFullNode,
     // chainspec: Arc<TempoChainSpec>,
     // execution_engine: ConsensusEngineHandle<TNodeTypes::Payload>,
     // execution_payload_builder: PayloadBuilderHandle<TNodeTypes::Payload>,
-) -> eyre::Result<ConsensusStack>
-where
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <TFullNodeComponents::Types as NodeTypes>::Primitives: NodePrimitives<
-            Block = reth_ethereum_primitives::Block,
-            BlockHeader = alloy_consensus::Header,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
-{
+) -> eyre::Result<ConsensusStack> {
     let (mut network, mut oracle) =
         instantiate_network(context, config).wrap_err("failed to start network")?;
 

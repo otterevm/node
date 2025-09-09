@@ -17,12 +17,11 @@ use futures_util::{
 use rand::{CryptoRng, Rng};
 use reth::payload::PayloadBuilderHandle;
 use reth_ethereum_engine_primitives::EthBuiltPayload;
-use reth_node_builder::{
-    ConsensusEngineHandle, FullNode, FullNodeComponents, FullNodeTypes, NodePrimitives, NodeTypes,
-    PayloadTypes, rpc::RethRpcAddOns,
-};
+use reth_node_builder::{ConsensusEngineHandle, PayloadTypes};
+use reth_node_ethereum::EthEngineTypes;
+use tempo_node::TempoFullNode;
 
-use reth_provider::{BlockReader as _, DatabaseProviderFactory};
+use reth_provider::BlockReader as _;
 use sequential_futures_queue::SequentialFuturesQueue;
 use tokio::sync::RwLock;
 use tracing::{Level, info, instrument};
@@ -31,18 +30,7 @@ use tempo_commonware_node_cryptography::{BlsScheme, Digest};
 
 use super::{View, block::Block};
 
-pub struct Builder<TContext, TFullNodeComponents, TRethRpcAddons>
-where
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
-{
+pub struct Builder<TContext> {
     /// The execution context of the commonwarexyz application (tokio runtime, etc).
     pub context: TContext,
 
@@ -55,15 +43,7 @@ where
 
     pub syncer_mailbox: marshal::Mailbox<BlsScheme, Block<reth_ethereum_primitives::Block>>,
 
-    // TODO: I'd prefer to pass in the handle to the full node in here, but I am not
-    // clear on how to line up the type constraints to end up with an ethnode (eth block, header, etc).
-    //
-    // So we follow tempo for now and just pass in chainspec, engine handle and payload builder directly.
-    // execution_node: FullNode<TExecutionNode, TExecutionNodeAddons>,
-    // pub chainspec: Arc<ChainSpec>,
-    // pub engine_handle: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    // pub payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
-    pub execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
+    pub execution_node: TempoFullNode,
 }
 
 // // impl<TContext, TExecutionNode, TExecutionNodeAddons>
@@ -72,27 +52,11 @@ where
 //     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
 //     TExecutionNode: FullNodeComponents,
 //     TExecutionNodeAddons: NodeAddOns<TExecutionNode>,
-impl<TContext, TFullNodeComponents, TRethRpcAddons>
-    Builder<TContext, TFullNodeComponents, TRethRpcAddons>
+impl<TContext> Builder<TContext>
 where
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <TFullNodeComponents::Types as NodeTypes>::Primitives: NodePrimitives<
-            Block = reth_ethereum_primitives::Block,
-            BlockHeader = alloy_consensus::Header,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
 {
-    pub(super) fn try_init(
-        self,
-    ) -> eyre::Result<ExecutionDriver<TContext, TFullNodeComponents, TRethRpcAddons>> {
+    pub(super) fn try_init(self) -> eyre::Result<ExecutionDriver<TContext>> {
         let (tx, rx) = mpsc::channel(self.mailbox_size);
         let my_mailbox = Mailbox::from_sender(tx);
 
@@ -130,18 +94,7 @@ where
     }
 }
 
-pub struct ExecutionDriver<TContext, TFullNodeComponents, TRethRpcAddons>
-where
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
-{
+pub struct ExecutionDriver<TContext> {
     context: TContext,
 
     fee_recipient: alloy_primitives::Address,
@@ -154,17 +107,7 @@ where
     genesis_block: Arc<Block<reth_ethereum_primitives::Block>>,
     latest_proposed_block: Arc<RwLock<Option<Block<reth_ethereum_primitives::Block>>>>,
 
-    // TODO: I'd prefer to pass in the handle to the full node in here, but I am not
-    // clear on how to line up the type constraints to end up with an ethnode (eth block, header, etc).
-    //
-    // So we follow tempo for now and just pass in chainspec, engine handle and payload builder directly.
-    // // XXX: unclear if this is excessive or not. tempo-malachite just splits this
-    // // node handle up into a provider, engine handle and payload builder handle.
-    // // But what's the point if we can just pass the whole thing in if we need it?
-    // execution_node: FullNode<TExecutionNode, TExecutionNodeAddons>,
-    // engine_handle: BeaconConsensusEngineHandle<<EthereumNode as NodeTypes>::Payload>,
-    // payload_builder: PayloadBuilderHandle<<EthereumNode as NodeTypes>::Payload>,
-    execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
+    execution_node: TempoFullNode,
 
     /// A queue of finalizations, performed sequentially.
     ///
@@ -173,19 +116,9 @@ where
     finalization_queue: SequentialFuturesQueue<BoxFuture<'static, eyre::Result<()>>>,
 }
 
-impl<TContext, TFullNodeComponents, TRethRpcAddons>
-    ExecutionDriver<TContext, TFullNodeComponents, TRethRpcAddons>
+impl<TContext> ExecutionDriver<TContext>
 where
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
 {
     pub(super) fn mailbox(&self) -> &Mailbox<reth_ethereum_primitives::Block> {
         &self.my_mailbox
@@ -304,10 +237,7 @@ where
     fn propose(
         &self,
         propose: Propose,
-    ) -> RunPropose<
-        reth_ethereum_primitives::Block,
-        <TFullNodeComponents::Types as NodeTypes>::Payload,
-    > {
+    ) -> RunPropose<reth_ethereum_primitives::Block, EthEngineTypes> {
         RunPropose {
             request: propose,
             engine: self

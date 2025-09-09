@@ -16,15 +16,10 @@ use eyre::WrapErr as _;
 use futures_util::future::try_join_all;
 use governor::Quota;
 use rand::{CryptoRng, Rng};
-use reth_node_builder::{
-    FullNode, FullNodeComponents, FullNodeTypes, NodePrimitives, NodeTypes, PayloadTypes,
-    rpc::RethRpcAddOns,
-};
-
-use reth_provider::DatabaseProviderFactory;
 use tempo_commonware_node_cryptography::{
     BlsScheme, GroupShare, PrivateKey, PublicKey, PublicPolynomial,
 };
+use tempo_node::TempoFullNode;
 
 use super::{block::Block, supervisor::Supervisor};
 
@@ -53,33 +48,20 @@ const MAX_REPAIR: u64 = 20;
 pub struct Builder<
     TBlocker,
     TContext,
-    TFullNodeComponents,
-    TRethRpcAddons,
     // TODO: add the indexer. It's part of alto and we have skipped it, for now.
     // TIndexer,
-> where
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
-{
+> {
     /// The contextg
     pub context: TContext,
 
     pub fee_recipient: alloy_primitives::Address,
 
-    pub execution_node: FullNode<TFullNodeComponents, TRethRpcAddons>,
+    pub execution_node: TempoFullNode,
 
     // pub chainspec: Arc<TempoChainSpec>,
     // pub execution_engine: ConsensusEngineHandle<TNodeTypes::Payload>,
     // pub execution_payload_builder: PayloadBuilderHandle<TNodeTypes::Payload>,
     /// A handle to the reth execution node so that consensus can drive execution.
-    // pub execution_node: FullNode<TExecutionNode, TExecutionNodeAddons>,
     //
     pub blocker: TBlocker,
     pub partition_prefix: String,
@@ -106,28 +88,12 @@ pub struct Builder<
     // pub indexer: Option<TIndexer>,
 }
 
-impl<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
-    Builder<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
+impl<TBlocker, TContext> Builder<TBlocker, TContext>
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <TFullNodeComponents::Types as NodeTypes>::Primitives: NodePrimitives<
-            Block = reth_ethereum_primitives::Block,
-            BlockHeader = alloy_consensus::Header,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
 {
-    pub async fn try_init(
-        self,
-    ) -> eyre::Result<Engine<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>> {
+    pub async fn try_init(self) -> eyre::Result<Engine<TBlocker, TContext>> {
         let supervisor = Supervisor::new(
             self.polynomial.clone(),
             self.participants.clone(),
@@ -242,19 +208,10 @@ where
     }
 }
 
-pub struct Engine<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
+pub struct Engine<TBlocker, TContext>
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents>,
     // XXX: alto also defines an Indexer trait (not part of commonwarexyz itself); we will
     // not define it for now.
     // TIndexer,
@@ -267,11 +224,7 @@ where
     broadcast_mailbox: buffered::Mailbox<PublicKey, Block<reth_ethereum_primitives::Block>>,
 
     /// The core of the application, the glue between commonware-xyz consensus and reth-execution.
-    execution_driver: crate::consensus::execution_driver::ExecutionDriver<
-        TContext,
-        TFullNodeComponents,
-        TRethRpcAddons,
-    >,
+    execution_driver: crate::consensus::execution_driver::ExecutionDriver<TContext>,
     execution_driver_mailbox:
         crate::consensus::execution_driver::Mailbox<reth_ethereum_primitives::Block>,
 
@@ -294,20 +247,10 @@ where
     consensus: crate::consensus::Consensus<TContext, TBlocker>,
 }
 
-impl<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
-    Engine<TBlocker, TContext, TFullNodeComponents, TRethRpcAddons>
+impl<TBlocker, TContext> Engine<TBlocker, TContext>
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock + governor::clock::Clock + Rng + CryptoRng + Spawner + Storage + Metrics,
-    TFullNodeComponents: FullNodeComponents,
-    TFullNodeComponents::Types: NodeTypes,
-    <TFullNodeComponents::Types as NodeTypes>::Payload: PayloadTypes<
-            PayloadAttributes = alloy_rpc_types_engine::PayloadAttributes,
-            ExecutionData = alloy_rpc_types_engine::ExecutionData,
-            BuiltPayload = reth_ethereum_engine_primitives::EthBuiltPayload,
-        >,
-    <<TFullNodeComponents as FullNodeTypes>::Provider as DatabaseProviderFactory>::ProviderRW: Send,
-    TRethRpcAddons: RethRpcAddOns<TFullNodeComponents> + 'static,
 {
     pub fn start(
         self,
