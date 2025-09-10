@@ -8,7 +8,6 @@ use alloy_primitives::B256;
 use bytes::{Buf, BufMut};
 use commonware_codec::{EncodeSize, Read, Write};
 use commonware_cryptography::{Committable, Digestible};
-use reth_chainspec::EthChainSpec;
 use reth_node_core::primitives::SealedBlock;
 use tempo_commonware_node_cryptography::Digest;
 
@@ -30,27 +29,6 @@ impl<TBlock> Block<TBlock>
 where
     TBlock: reth_primitives_traits::Block,
 {
-    /// Constructs a block given `chainspec`.
-    ///
-    /// At its core, this will return a wrapped [`alloy_consensus::Block`]
-    /// with its header set to `chainspec.genesis_header` and an empty
-    /// body.
-    pub fn genesis_from_chainspec<TChainSpec>(chainspec: &TChainSpec) -> Self
-    where
-        TChainSpec: EthChainSpec<Header = TBlock::Header>,
-    {
-        // XXX Use reth_node_core::primitives::SealedBlock here because
-        // it provides direct conversion to alloy::Sealed.
-        Self::from_execution_block(SealedBlock::from_parts_unhashed(
-            chainspec.genesis_header().clone(),
-            Default::default(),
-        ))
-        // Self::from_execution_block(SealedBlock::new_unhashed(alloy_consensus::Block::new(
-        //     chainspec.genesis_header().clone(),
-        //     alloy_consensus::BlockBody::default(),
-        // )))
-    }
-
     pub fn from_execution_block(block: SealedBlock<TBlock>) -> Self {
         Self(block)
     }
