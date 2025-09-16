@@ -186,7 +186,7 @@ async fn resolve_all_peers(
                 })?
                 .collect::<Vec<_>>();
             info!(
-                %peer, name, potential_addresses = %addrs.iter().format(", "),
+                %peer, name, potential_addresses = %addrs.iter().join(", "),
                 "resolved DNS name to IPs; taking the first one"
             );
             let addr = addrs.first().ok_or_else(|| {
