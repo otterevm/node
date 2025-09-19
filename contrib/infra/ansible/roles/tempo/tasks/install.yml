@@ -38,4 +38,4 @@
     mode: '0644'
   become: yes
   notify: reload systemd
-  when: tempo_commonware == 'true'
+  when: tempo_commonware is defined and tempo_commonware == 'true'
