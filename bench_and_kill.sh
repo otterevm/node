@@ -1,6 +1,54 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
+
+LOG_FILE="${TEMPO_LOG_FILE:-debug.log}"
+JSON_OUTPUT=""
+ANALYZE_LABEL=""
+QUIET_ANALYZE=0
+
+usage() {
+  cat <<EOF
+Usage: ./bench_and_kill.sh [options]
+
+Options:
+  --log <path>           Path to debug log produced by tempo node (default: debug.log)
+  --json-output <path>   Write summary metrics JSON to the given path
+  --label <name>         Label to include in the metrics JSON
+  --quiet                Suppress verbose analysis output
+  -h, --help             Show this help message
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --log)
+      LOG_FILE="$2"
+      shift 2
+      ;;
+    --json-output)
+      JSON_OUTPUT="$2"
+      shift 2
+      ;;
+    --label)
+      ANALYZE_LABEL="$2"
+      shift 2
+      ;;
+    --quiet)
+      QUIET_ANALYZE=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
 
 echo "Step 1: Running tempo-bench with max-tps..."
 cargo run --bin tempo-bench run-max-tps \
@@ -22,10 +70,25 @@ echo "Found tempo process with PID: $TEMPO_PID"
 
 echo ""
 echo "Step 3: Killing tempo node..."
-kill $TEMPO_PID
+kill "$TEMPO_PID"
 
 echo "Tempo process killed successfully"
 
 echo ""
-echo "Step 4: Analyzing logs..."
-python3 analyze_log.py
+echo "Step 4: Analyzing logs (${LOG_FILE})..."
+ANALYZE_ARGS=(--log "${LOG_FILE}")
+
+if [[ -n "${JSON_OUTPUT}" ]]; then
+  mkdir -p "$(dirname "${JSON_OUTPUT}")"
+  ANALYZE_ARGS+=(--json "${JSON_OUTPUT}")
+fi
+
+if [[ -n "${ANALYZE_LABEL}" ]]; then
+  ANALYZE_ARGS+=(--label "${ANALYZE_LABEL}")
+fi
+
+if [[ ${QUIET_ANALYZE} -eq 1 ]]; then
+  ANALYZE_ARGS+=(--quiet)
+fi
+
+python3 analyze_log.py "${ANALYZE_ARGS[@]}"
