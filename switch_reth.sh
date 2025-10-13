@@ -4,16 +4,15 @@
 
 set -e
 
-CURRENT_COMMIT="1619408"
-OLD_COMMIT="c02a68dc78eb4e080288ed6779439fd1d3169667"
+FEATURE_COMMIT="1619408"
+MAIN_COMMIT="d2070f4de34f523f6097ebc64fa9d63a04878055"
 
 print_usage() {
-    echo "Usage: ./switch_reth.sh [main|current|old]"
+    echo "Usage: ./switch_reth.sh [feature|main]"
     echo ""
     echo "Options:"
-    echo "  main     - Switch to reth main branch"
-    echo "  current  - Switch to current commit $CURRENT_COMMIT"
-    echo "  old      - Switch to old commit $OLD_COMMIT"
+    echo "  feature  - Switch to commit 1619408 (feature commit)"
+    echo "  main     - Switch to commit d2070f4 (main reth commit)"
     echo ""
     echo "After switching, run: cargo update -p reth && cargo build"
 }
@@ -24,25 +23,15 @@ if [ $# -eq 0 ]; then
 fi
 
 case "$1" in
+    feature)
+        echo "Switching to feature commit $FEATURE_COMMIT..."
+        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "[^"]*"/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "'$FEATURE_COMMIT'"/g' Cargo.toml
+        echo "✓ Switched to feature commit $FEATURE_COMMIT"
+        ;;
     main)
-        echo "Switching to reth main branch..."
-        # Replace rev with branch = "main"
-        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "[^"]*"/git = "https:\/\/github.com\/paradigmxyz\/reth", branch = "main"/g' Cargo.toml
-        echo "✓ Switched to main branch"
-        ;;
-    current)
-        echo "Switching to current commit $CURRENT_COMMIT..."
-        # Replace with the current commit
-        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", branch = "main"/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "'$CURRENT_COMMIT'"/g' Cargo.toml
-        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "[^"]*"/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "'$CURRENT_COMMIT'"/g' Cargo.toml
-        echo "✓ Switched to current commit"
-        ;;
-    old)
-        echo "Switching to old commit $OLD_COMMIT..."
-        # Replace with the old commit
-        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", branch = "main"/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "'$OLD_COMMIT'"/g' Cargo.toml
-        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "[^"]*"/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "'$OLD_COMMIT'"/g' Cargo.toml
-        echo "✓ Switched to old commit"
+        echo "Switching to main commit $MAIN_COMMIT..."
+        sed -i '' 's/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "[^"]*"/git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "'$MAIN_COMMIT'"/g' Cargo.toml
+        echo "✓ Switched to main commit $MAIN_COMMIT"
         ;;
     *)
         echo "Error: Unknown option '$1'"
@@ -52,9 +41,47 @@ case "$1" in
 esac
 
 echo ""
-echo "Next steps:"
-echo "  1. cargo update -p reth"
-echo "  2. cargo build"
+echo "Updating dependencies..."
+cargo update -p reth
+
 echo ""
-echo "Or run both together:"
-echo "  cargo update -p reth && cargo build"
+echo "Building tempo with new reth version..."
+cargo build --release
+
+echo ""
+echo "✓ Build complete! Tempo is now ready to run with the new reth version."
+echo ""
+echo "Starting tempo node..."
+echo ""
+
+tempo node \
+  --http \
+  --http.addr 0.0.0.0 \
+  --http.port 8545 \
+  --http.api all \
+  --datadir ./data \
+  --dev \
+  --dev.block-time 1s \
+  --chain genesis.json \
+  --engine.disable-precompile-cache \
+  --builder.gaslimit 3000000000 \
+  --builder.max-tasks 8 \
+  --builder.deadline 4 \
+  --txpool.pending-max-count 10000000000000 \
+  --txpool.basefee-max-count 10000000000000 \
+  --txpool.queued-max-count 10000000000000 \
+  --txpool.pending-max-size 10000 \
+  --txpool.basefee-max-size 10000 \
+  --txpool.queued-max-size 10000 \
+  --txpool.max-new-pending-txs-notifications 10000000 \
+  --txpool.max-account-slots 500000 \
+  --txpool.max-pending-txns 10000000000000 \
+  --txpool.max-new-txns 10000000000000 \
+  --txpool.disable-transactions-backup \
+  --txpool.additional-validation-tasks 8 \
+  --txpool.minimal-protocol-fee 0 \
+  --txpool.minimum-priority-fee 0 \
+  --rpc.max-connections 429496729 \
+  --rpc.max-request-size 1000000 \
+  --rpc.max-response-size 1000000 \
+  --max-tx-reqs 1000000 2>&1 | tee >(rg "build_payload|Received block from consensus engine|State root task finished|Block added to canonical chain" > debug.log)

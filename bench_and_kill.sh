@@ -25,3 +25,7 @@ echo "Step 3: Killing tempo node..."
 kill $TEMPO_PID
 
 echo "Tempo process killed successfully"
+
+echo ""
+echo "Step 4: Analyzing logs..."
+python3 analyze_log.py
