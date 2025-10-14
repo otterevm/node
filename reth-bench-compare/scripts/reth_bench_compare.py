@@ -639,7 +639,7 @@ def print_comparison(before_file: Path, after_file: Path) -> None:
 
 def main() -> None:
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    base_logs_dir = SCRIPT_DIR / "python_analysis" / "logs"
+    base_logs_dir = SCRIPT_DIR / "reth-bench-compare" / "logs"
     run_dir = base_logs_dir / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     main_log = run_dir / "debug_main.log"
