@@ -307,11 +307,16 @@ impl<'a, S: StorageProvider> StablecoinExchange<'a, S> {
             .to::<u128>()
     }
 
-    pub fn create_pair(&mut self, base: &Address) -> B256 {
+    pub fn create_pair(&mut self, base: &Address) -> Result<B256, StablecoinExchangeError> {
         let quote =
             TIP20Token::new(address_to_token_id_unchecked(base), self.storage).quote_token();
 
         let book_key = compute_book_key(*base, quote);
+
+        if Orderbook::exists(book_key, self.storage, self.address) {
+            return Err(StablecoinExchangeError::pair_already_exists());
+        }
+
         let book = Orderbook::new(*base, quote);
         book.store(self.storage, self.address);
 
@@ -328,7 +333,7 @@ impl<'a, S: StorageProvider> StablecoinExchange<'a, S> {
             )
             .expect("Event emission failed");
 
-        book_key
+        Ok(book_key)
     }
 
     /// Place a limit order on the orderbook
@@ -1424,7 +1429,9 @@ mod tests {
         );
 
         // Create the pair before placing orders
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         // Place the bid order
         let order_id = exchange
@@ -1487,7 +1494,9 @@ mod tests {
         let (base_token, quote_token) =
             setup_test_tokens(exchange.storage, &admin, &alice, exchange.address, amount);
         // Create the pair before placing orders
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_id = exchange
             .place(&alice, base_token, amount, false, tick) // is_bid = false for ask
@@ -1554,7 +1563,9 @@ mod tests {
             exchange.address,
             expected_escrow,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_id = exchange
             .place_flip(&alice, base_token, amount, true, tick, flip_tick)
@@ -1625,7 +1636,10 @@ mod tests {
             exchange.address,
             expected_escrow,
         );
-        exchange.create_pair(&base_token);
+
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         // Place the bid order
         let order_id = exchange
@@ -1690,7 +1704,9 @@ mod tests {
         );
 
         // Create the pair
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_id_0 = exchange
             .place(&alice, base_token, amount, true, tick)
@@ -1778,7 +1794,9 @@ mod tests {
             exchange.address,
             expected_escrow,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         // Place the bid order and cancel
         let order_id = exchange
@@ -1833,7 +1851,9 @@ mod tests {
             exchange.address,
             2_000_000u128,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_amount = 1_000_000u128;
         exchange
@@ -1871,7 +1891,9 @@ mod tests {
             exchange.address,
             2_000_000u128,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_amount = 1_000_000u128;
         exchange
@@ -1911,7 +1933,9 @@ mod tests {
             exchange.address,
             2_000_000u128,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_amount = 1_000_000u128;
         exchange
@@ -1959,7 +1983,9 @@ mod tests {
             exchange.address,
             2_000_000u128,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         let order_amount = 1_000_000u128;
         exchange
@@ -2013,7 +2039,9 @@ mod tests {
             exchange.address,
             expected_escrow * 2,
         );
-        exchange.create_pair(&base_token);
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         // Place a flip bid order
         let flip_order_id = exchange
@@ -2047,7 +2075,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pair_created_event() {
+    fn test_pair_created() {
         let mut storage = HashMapStorageProvider::new(1);
         let mut exchange = StablecoinExchange::new(&mut storage);
         exchange.initialize();
@@ -2065,7 +2093,9 @@ mod tests {
         );
 
         // Create the pair
-        let key = exchange.create_pair(&base_token);
+        let key = exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
 
         // Verify PairCreated event was emitted
         let events = &exchange.storage.events[&exchange.address];
@@ -2079,5 +2109,31 @@ mod tests {
             })
             .into_log_data()
         );
+    }
+
+    #[test]
+    fn test_pair_already_created() {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut exchange = StablecoinExchange::new(&mut storage);
+        exchange.initialize();
+
+        let admin = Address::random();
+        let alice = Address::random();
+
+        // Setup tokens
+        let (base_token, _) = setup_test_tokens(
+            exchange.storage,
+            &admin,
+            &alice,
+            exchange.address,
+            1_000_000u128,
+        );
+
+        exchange
+            .create_pair(&base_token)
+            .expect("Could not create pair");
+
+        let result = exchange.create_pair(&base_token);
+        assert_eq!(result, Err(StablecoinExchangeError::pair_already_exists()));
     }
 }

@@ -393,6 +393,7 @@ sol! {
         error MaxInputExceeded();
         error InsufficientOutput();
         error PairDoesNotExist();
+        error PairAlreadyExists();
     }
 }
 
@@ -606,6 +607,11 @@ impl StablecoinExchangeError {
     /// Creates an error when an order does not exist.
     pub const fn pair_does_not_exist() -> Self {
         Self::PairDoesNotExist(IStablecoinExchange::PairDoesNotExist {})
+    }
+
+    /// Creates an error when a pair already exists
+    pub const fn pair_already_exists() -> Self {
+        Self::PairAlreadyExists(IStablecoinExchange::PairAlreadyExists {})
     }
 
     /// Creates an error for unauthorized access.
