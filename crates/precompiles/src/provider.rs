@@ -5,7 +5,6 @@ use revm::{Database, interpreter::instructions::utility::IntoAddress};
 
 use crate::{
     DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS, storage::slots::mapping_slot, tip_fee_manager,
-    tip20,
 };
 
 /// Trait to provide [`StateProvider`] access to TIPFeeManager storage to fetch fee token data and balances
@@ -94,7 +93,8 @@ pub trait TIPFeeDatabaseExt: Database {
         };
 
         // Query the user's balance in the determined fee token's TIP20 contract
-        let balance_slot = mapping_slot(fee_payer, tip20::slots::BALANCES);
+        // TODO(rusowsky): use constant
+        let balance_slot = mapping_slot(fee_payer, U256::from(10));
         let balance = self.storage(fee_token, balance_slot)?;
 
         Ok(balance)

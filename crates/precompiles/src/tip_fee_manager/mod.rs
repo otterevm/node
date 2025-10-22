@@ -12,7 +12,7 @@ use crate::{
         amm::{PoolKey, TIPFeeAMM},
         slots::{collected_fees_slot, user_token_slot, validator_token_slot},
     },
-    tip20::{ITIP20, TIP20Token, address_to_token_id_unchecked, is_tip20},
+    tip20::{ITIP20, TIP20Token, TIP20TokenCall, address_to_token_id_unchecked, is_tip20},
 };
 
 // Re-export PoolKey for backward compatibility with tests

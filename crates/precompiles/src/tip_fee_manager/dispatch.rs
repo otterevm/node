@@ -108,7 +108,8 @@ mod tests {
         storage::hashmap::HashMapStorageProvider,
         tip_fee_manager::{TIPFeeAMMError, TipFeeManager, amm::PoolKey},
         tip20::{
-            ISSUER_ROLE, ITIP20, TIP20Token, address_to_token_id_unchecked, token_id_to_address,
+            ISSUER_ROLE, ITIP20, TIP20Token, TIP20TokenCall, address_to_token_id_unchecked,
+            token_id_to_address,
         },
     };
     use alloy::{

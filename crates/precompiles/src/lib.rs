@@ -1,6 +1,10 @@
 //! Tempo precompile implementations.
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![feature(adt_const_params)]
+
+// Re-export procedural macros for storage abstractions
+pub use tempo_precompiles_macros::contract;
 
 pub mod linking_usd;
 pub mod nonce;
@@ -51,9 +55,9 @@ pub const STABLECOIN_EXCHANGE_ADDRESS: Address =
 pub const NONCE_PRECOMPILE_ADDRESS: Address =
     address!("0x4E4F4E4345000000000000000000000000000000");
 
-const METADATA_GAS: u64 = 50;
-const VIEW_FUNC_GAS: u64 = 100;
-const MUTATE_FUNC_GAS: u64 = 1000;
+pub const METADATA_GAS: u64 = 50;
+pub const VIEW_FUNC_GAS: u64 = 100;
+pub const MUTATE_FUNC_GAS: u64 = 1000;
 
 pub trait Precompile {
     fn call(&mut self, calldata: &[u8], msg_sender: &Address) -> PrecompileResult;
@@ -190,7 +194,7 @@ impl LinkingUSDPrecompile {
 }
 
 #[inline]
-fn metadata<T: SolCall>(result: T::Return) -> PrecompileResult {
+pub fn metadata<T: SolCall>(result: T::Return) -> PrecompileResult {
     Ok(PrecompileOutput::new(
         METADATA_GAS,
         T::abi_encode_returns(&result).into(),
@@ -198,7 +202,7 @@ fn metadata<T: SolCall>(result: T::Return) -> PrecompileResult {
 }
 
 #[inline]
-fn view<T: SolCall>(calldata: &[u8], f: impl FnOnce(T) -> T::Return) -> PrecompileResult {
+pub fn view<T: SolCall>(calldata: &[u8], f: impl FnOnce(T) -> T::Return) -> PrecompileResult {
     let Ok(call) = T::abi_decode(calldata) else {
         return Ok(PrecompileOutput::new_reverted(VIEW_FUNC_GAS, Bytes::new()));
     };
@@ -255,7 +259,7 @@ pub fn mutate<T: SolCall, E: SolInterface>(
 }
 
 #[inline]
-fn mutate_void<T: SolCall, E: SolInterface>(
+pub fn mutate_void<T: SolCall, E: SolInterface>(
     calldata: &[u8],
     sender: &Address,
     f: impl FnOnce(&Address, T) -> Result<(), E>,

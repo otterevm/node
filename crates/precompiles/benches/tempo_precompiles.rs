@@ -4,7 +4,7 @@ use std::hint::black_box;
 use tempo_precompiles::{
     LINKING_USD_ADDRESS,
     storage::hashmap::HashMapStorageProvider,
-    tip20::{ISSUER_ROLE, ITIP20, PAUSE_ROLE, TIP20Token, UNPAUSE_ROLE},
+    tip20::{ISSUER_ROLE, ITIP20, PAUSE_ROLE, TIP20Token, TIP20TokenCall, UNPAUSE_ROLE},
     tip20_factory::{ITIP20Factory, TIP20Factory},
     tip403_registry::{ITIP403Registry, TIP403Registry},
 };
@@ -244,7 +244,7 @@ fn tip20_view(c: &mut Criterion) {
 
         b.iter(|| {
             let token = black_box(&mut token);
-            let result = token.domain_separator();
+            let result = token.DOMAIN_SEPARATOR();
             black_box(result);
         });
     });

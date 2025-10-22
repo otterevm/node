@@ -23,7 +23,7 @@ use crate::{
         compute_book_key, next_initialized_ask_tick, next_initialized_bid_tick,
     },
     storage::{PrecompileStorageProvider, StorageOps, slots::mapping_slot},
-    tip20::{ITIP20, TIP20Error, TIP20Token, address_to_token_id_unchecked},
+    tip20::{ITIP20, TIP20Error, TIP20Token, TIP20TokenCall, address_to_token_id_unchecked},
 };
 use alloy::primitives::{Address, B256, Bytes, IntoLogData, U256};
 use revm::{precompile::PrecompileError, state::Bytecode};
@@ -105,7 +105,7 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
     }
 
     /// Fetch order from storage. If the order is currently pending or filled, this function returns
-    /// `StablecoinExchangeError::OrderDoesNotExist`   
+    /// `StablecoinExchangeError::OrderDoesNotExist`
     pub fn get_order(&mut self, order_id: u128) -> Result<Order, StablecoinExchangeError> {
         let order = Order::from_storage(order_id, self.storage, self.address);
 
@@ -1322,7 +1322,9 @@ impl<'a, S: PrecompileStorageProvider> StorageOps for StablecoinExchange<'a, S> 
 #[cfg(test)]
 mod tests {
     use crate::{
-        linking_usd::TRANSFER_ROLE, storage::hashmap::HashMapStorageProvider, tip20::ISSUER_ROLE,
+        linking_usd::TRANSFER_ROLE,
+        storage::{ContractStorage, hashmap::HashMapStorageProvider},
+        tip20::ISSUER_ROLE,
     };
 
     use super::*;
@@ -1368,8 +1370,9 @@ mod tests {
             .expect("Quote approve failed");
 
         // Initialize base token  and mint amount
-        let mut base = TIP20Token::new(1, quote.token.storage);
-        base.initialize("BASE", "BASE", "USD", quote.token.token_address, admin)
+        let token_address = quote.token.address();
+        let mut base = TIP20Token::new(1, quote.token.storage());
+        base.initialize("BASE", "BASE", "USD", token_address, admin)
             .expect("Base token initialization failed");
 
         let mut base_roles = base.get_roles_contract();
@@ -1393,7 +1396,7 @@ mod tests {
         )
         .expect("Base mint failed");
 
-        (base.token_address, quote.token.token_address)
+        (base.address(), quote.token.address())
     }
 
     #[test]

@@ -11809,8 +11809,22 @@ dependencies = [
  "reth-storage-api",
  "revm",
  "tempo-contracts",
+ "tempo-precompiles-macros",
  "thiserror 2.0.17",
  "tracing",
+]
+
+[[package]]
+name = "tempo-precompiles-macros"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "proc-macro2",
+ "quote",
+ "revm",
+ "syn 2.0.106",
+ "tempo-contracts",
+ "tempo-precompiles",
 ]
 
 [[package]]

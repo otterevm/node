@@ -25,9 +25,9 @@ use tempo_precompiles::{
     LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     linking_usd::LinkingUSD,
     stablecoin_exchange::StablecoinExchange,
-    storage::evm::EvmPrecompileStorageProvider,
+    storage::{ContractStorage, evm::EvmPrecompileStorageProvider},
     tip_fee_manager::{IFeeManager, ITIPFeeAMM, TipFeeManager},
-    tip20::{ISSUER_ROLE, ITIP20, TIP20Token},
+    tip20::{ISSUER_ROLE, ITIP20, TIP20Token, TIP20TokenCall},
     tip20_factory::{ITIP20Factory, TIP20Factory},
 };
 
@@ -334,7 +334,7 @@ fn create_and_mint_token(
             .expect("Could not mint fee token");
     }
 
-    Ok((token_id, token.token_address))
+    Ok((token_id, token.address()))
 }
 
 fn initialize_linking_usd(
