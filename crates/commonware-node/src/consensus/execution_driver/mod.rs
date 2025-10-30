@@ -12,6 +12,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use alloy_consensus::BlockHeader;
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::PayloadId;
 use commonware_consensus::{
@@ -295,7 +296,7 @@ impl Inner<Init> {
                 ))
            },
 
-            res = self.clone().propose(context, parent, round) => {
+            res = self.clone().propose(context.clone(), parent, round) => {
                 res.wrap_err("failed creating a proposal")
             }
         )?;
@@ -310,7 +311,23 @@ impl Inner<Init> {
 
         {
             let mut lock = self.state.latest_proposed_block.write().await;
-            *lock = Some(consensus_block);
+            *lock = Some(consensus_block.clone());
+        }
+
+        let is_good = verify_block(
+            context,
+            self.execution_node
+                .add_ons_handle
+                .beacon_engine_handle
+                .clone(),
+            &consensus_block,
+            parent.1.0,
+        )
+        .await
+        .wrap_err("failed verifying block against execution layer")?;
+
+        if !is_good {
+            eyre::bail!("proposal failed validation");
         }
 
         if let Err(error) = self
@@ -522,7 +539,7 @@ impl Inner<Init> {
                 .beacon_engine_handle
                 .clone(),
             &block,
-            &parent,
+            parent.hash(),
         )
         .await
         .wrap_err("failed verifying block against execution layer")?;
@@ -627,27 +644,21 @@ struct Init {
         block.digest = %block.digest(),
         block.height = block.height(),
         block.timestamp = block.timestamp(),
-        parent.digest = %parent.digest(),
-        parent.height = parent.height(),
-        parent.timestamp = parent.timestamp(),
+        parent.digest = ?parent_hash,
     )
 )]
 async fn verify_block<TContext: Pacer>(
     context: TContext,
     engine: ConsensusEngineHandle<TempoPayloadTypes>,
     block: &Block,
-    parent: &Block,
+    parent_hash: B256,
 ) -> eyre::Result<bool> {
     use alloy_rpc_types_engine::PayloadStatusEnum;
-    if block.parent_digest() != parent.digest() {
+    if block.parent_hash() != parent_hash {
         info!(
             "parent digest stored in block must match the digest of the parent \
             argument but doesn't"
         );
-        return Ok(false);
-    }
-    if block.height() != parent.height().saturating_add(1) {
-        info!("block's height must be +1 that of the parent but isn't");
         return Ok(false);
     }
     let block = block.clone().into_inner();
