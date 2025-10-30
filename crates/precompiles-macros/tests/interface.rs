@@ -90,57 +90,56 @@ impl<S: storage::PrecompileStorageProvider> TestTokenCall for TestToken<'_, S> {
     fn transfer(
         &mut self,
         s: Address,
-        call: ITestToken::transferCall,
+        to: Address,
+        amount: U256,
     ) -> tempo_precompiles::error::Result<bool> {
         let balance = self._get_balances(s)?;
-        if call.amount > balance {
+        if amount > balance {
             return Err(tempo_precompiles::error::TempoPrecompileError::Fatal(
                 format!(
                     "InsufficientBalance: requested {}, available {}",
-                    call.amount, balance
+                    amount, balance
                 ),
             ));
         }
-        self._set_balances(s, balance - call.amount)?;
-        let to_balance = self._get_balances(call.to)?;
-        self._set_balances(call.to, to_balance + call.amount)?;
+        self._set_balances(s, balance - amount)?;
+        let to_balance = self._get_balances(to)?;
+        self._set_balances(to, to_balance + amount)?;
         Ok(true)
     }
 
     fn approve(
         &mut self,
         s: Address,
-        call: ITestToken::approveCall,
+        spender: Address,
+        amount: U256,
     ) -> tempo_precompiles::error::Result<bool> {
-        self._set_allowances(s, call.spender, call.amount)?;
+        self._set_allowances(s, spender, amount)?;
         Ok(true)
     }
 
     fn mint(
         &mut self,
         _s: Address,
-        call: ITestToken::mintCall,
+        to: Address,
+        amount: U256,
     ) -> tempo_precompiles::error::Result<()> {
-        let balance = self._get_balances(call.to)?;
-        self._set_balances(call.to, balance + call.amount)?;
+        let balance = self._get_balances(to)?;
+        self._set_balances(to, balance + amount)?;
         Ok(())
     }
 
-    fn burn(
-        &mut self,
-        s: Address,
-        call: ITestToken::burnCall,
-    ) -> tempo_precompiles::error::Result<()> {
+    fn burn(&mut self, s: Address, amount: U256) -> tempo_precompiles::error::Result<()> {
         let balance = self._get_balances(s)?;
-        if call.amount > balance {
+        if amount > balance {
             return Err(tempo_precompiles::error::TempoPrecompileError::Fatal(
                 format!(
                     "InsufficientBalance: requested {}, available {}",
-                    call.amount, balance
+                    amount, balance
                 ),
             ));
         }
-        self._set_balances(s, balance - call.amount)?;
+        self._set_balances(s, balance - amount)?;
         Ok(())
     }
 }
@@ -664,51 +663,50 @@ fn test_multi_interface_contract() {
         fn transfer(
             &mut self,
             s: Address,
-            call: ITestToken::transferCall,
+            to: Address,
+            amount: U256,
         ) -> tempo_precompiles::error::Result<bool> {
             let balance = self._get_balances(s)?;
-            if call.amount > balance {
+            if amount > balance {
                 return Err(tempo_precompiles::error::TempoPrecompileError::Fatal(
                     "InsufficientBalance".to_string(),
                 ));
             }
-            self._set_balances(s, balance - call.amount)?;
-            let to_balance = self._get_balances(call.to)?;
-            self._set_balances(call.to, to_balance + call.amount)?;
+            self._set_balances(s, balance - amount)?;
+            let to_balance = self._get_balances(to)?;
+            self._set_balances(to, to_balance + amount)?;
             Ok(true)
         }
 
         fn approve(
             &mut self,
             s: Address,
-            call: ITestToken::approveCall,
+            spender: Address,
+            amount: U256,
         ) -> tempo_precompiles::error::Result<bool> {
-            self._set_allowances(s, call.spender, call.amount)?;
+            self._set_allowances(s, spender, amount)?;
             Ok(true)
         }
 
         fn mint(
             &mut self,
             _s: Address,
-            call: ITestToken::mintCall,
+            to: Address,
+            amount: U256,
         ) -> tempo_precompiles::error::Result<()> {
-            let balance = self._get_balances(call.to)?;
-            self._set_balances(call.to, balance + call.amount)?;
+            let balance = self._get_balances(to)?;
+            self._set_balances(to, balance + amount)?;
             Ok(())
         }
 
-        fn burn(
-            &mut self,
-            s: Address,
-            call: ITestToken::burnCall,
-        ) -> tempo_precompiles::error::Result<()> {
+        fn burn(&mut self, s: Address, amount: U256) -> tempo_precompiles::error::Result<()> {
             let balance = self._get_balances(s)?;
-            if call.amount > balance {
+            if amount > balance {
                 return Err(tempo_precompiles::error::TempoPrecompileError::Fatal(
                     "InsufficientBalance".to_string(),
                 ));
             }
-            self._set_balances(s, balance - call.amount)?;
+            self._set_balances(s, balance - amount)?;
             Ok(())
         }
 

@@ -52,17 +52,18 @@ impl<S: storage::PrecompileStorageProvider> MiniTokenCall for MiniToken<'_, S> {
     fn mint(
         &mut self,
         _s: Address,
-        call: IMiniToken::mintCall,
+        to: Address,
+        amount: U256,
     ) -> tempo_precompiles::error::Result<()> {
-        let balance = self._get_balances(call.to)?;
-        self._set_balances(call.to, balance + call.amount)?;
+        let balance = self._get_balances(to)?;
+        self._set_balances(to, balance + amount)?;
 
         // Emit Transfer event from zero address
         let zero = Address::ZERO;
-        self._emit_transfer(zero, call.to, call.amount)?;
+        self._emit_transfer(zero, to, amount)?;
 
         // Emit Mint event
-        self._emit_mint(call.to, call.amount)?;
+        self._emit_mint(to, amount)?;
         Ok(())
     }
 }

@@ -50,12 +50,17 @@ pub(crate) fn gen_dispatcher(
     }
 }
 
-// TODO(rusowsky): flatten call so that users can pass params directly.
 /// Generates an individual match arm for a function.
 fn gen_match_arm(trait_name: &Ident, result: &GetterFn<'_>) -> TokenStream {
     let func = &result.function;
     let call_type = &func.call_type_path;
     let method_name = format_ident!("{}", func.name);
+
+    // Extract parameter field accessors from the call struct
+    let param_fields = func.params.iter().map(|(name, _)| {
+        let field_name = format_ident!("{}", name);
+        quote! { call.#field_name }
+    });
 
     match func.kind() {
         FunctionKind::Metadata => {
@@ -66,10 +71,15 @@ fn gen_match_arm(trait_name: &Ident, result: &GetterFn<'_>) -> TokenStream {
             }
         }
         FunctionKind::View => {
+            let call_expr = if func.params.is_empty() {
+                quote! { #trait_name::#method_name(self) }
+            } else {
+                quote! { #trait_name::#method_name(self, #(#param_fields),*) }
+            };
             quote! {
                 #call_type::SELECTOR => {
                     crate::view::<#call_type>(calldata, |call| {
-                        #trait_name::#method_name(self, call)
+                        #call_expr
                     })
                 }
             }
@@ -78,7 +88,7 @@ fn gen_match_arm(trait_name: &Ident, result: &GetterFn<'_>) -> TokenStream {
             let call_expr = if func.params.is_empty() {
                 quote! { #trait_name::#method_name(self, *s) }
             } else {
-                quote! { #trait_name::#method_name(self, *s, call) }
+                quote! { #trait_name::#method_name(self, *s, #(#param_fields),*) }
             };
             quote! {
                 #call_type::SELECTOR => {
@@ -94,7 +104,7 @@ fn gen_match_arm(trait_name: &Ident, result: &GetterFn<'_>) -> TokenStream {
             let call_expr = if func.params.is_empty() {
                 quote! { #trait_name::#method_name(self, *s) }
             } else {
-                quote! { #trait_name::#method_name(self, *s, call) }
+                quote! { #trait_name::#method_name(self, *s, #(#param_fields),*) }
             };
             quote! {
                 #call_type::SELECTOR => {

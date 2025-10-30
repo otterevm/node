@@ -225,17 +225,77 @@ fn gen_call_trait(
         .map(|result| gen_call_trait_method(result))
         .collect();
 
+    // Collect auto-implemented getter signatures
+    let auto_impl_getters: Vec<String> = match_results
+        .iter()
+        .filter(|result| !matches!(result.field_match, GetterInfo::NoMatch))
+        .map(|result| format!("- `{}`", gen_method_signature(result.function)))
+        .collect();
+
+    let trait_doc = if auto_impl_getters.is_empty() {
+        quote! {
+            /// Trait for contract call implementation.
+        }
+    } else {
+        let getter_list = auto_impl_getters.join("\n");
+        let doc = format!(
+            "Trait for contract call implementation.\n\n## Auto-implemented getters:\n{getter_list}\n"
+        );
+        quote! {
+            #[doc = #doc]
+        }
+    };
+
     quote! {
-        /// Auto-generated trait for contract call implementation.
-        ///
-        /// Getter methods have default implementations.
+        #trait_doc
         pub trait #trait_name: #storage_trait_name {
             #(#interface_methods)*
         }
     }
 }
 
-// TODO(rusowsky): flatten call so that we users can pass params directly.
+/// Generates the function signature string for a method.
+fn gen_method_signature(func: &InterfaceFunction) -> String {
+    let return_type = &func.return_type;
+
+    let params_str = if func.is_view {
+        func.params
+            .iter()
+            .map(|(name, ty)| format!("{}: {}", name, quote!(#ty)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else {
+        // State-changing functions have msg_sender as first param
+        let mut params = vec!["msg_sender: Address".to_string()];
+        params.extend(
+            func.params
+                .iter()
+                .map(|(name, ty)| format!("{}: {}", name, quote!(#ty))),
+        );
+        params.join(", ")
+    };
+
+    format!(
+        "fn {}(&mut self, {}) -> Result<{}>",
+        func.name,
+        params_str,
+        quote!(#return_type)
+    )
+}
+
+/// Generates doc comment for a call trait method showing the function signature.
+fn gen_method_doc_comment(func: &InterfaceFunction, is_auto_implemented: bool) -> TokenStream {
+    let sig = gen_method_signature(func);
+    let auto_impl_note = if is_auto_implemented {
+        "\n///\n/// **Auto-implemented** - default implementation provided for getters."
+    } else {
+        ""
+    };
+    let doc = format!("```rust\n{sig}\n```{auto_impl_note}");
+
+    quote! { #[doc = #doc] }
+}
+
 /// Generates a call method defined in the contract's interface.
 fn gen_call_trait_method(result: &GetterFn<'_>) -> TokenStream {
     if let GetterInfo::NoMatch = &result.field_match {
@@ -243,31 +303,41 @@ fn gen_call_trait_method(result: &GetterFn<'_>) -> TokenStream {
     }
 
     let func = &result.function;
+    let doc_comment = gen_method_doc_comment(func, true); // true = auto-implemented
     let method_name = format_ident!("{}", func.name);
     let return_type = &func.return_type;
-    let call_type = &func.call_type_path;
     let has_params = !func.params.is_empty();
+
+    // Extract individual parameters
+    let params = func.params.iter().map(|(name, ty)| {
+        let param_name = format_ident!("{}", name);
+        quote! { #param_name: #ty }
+    });
 
     // Generate default impl for getter methods
     let body = gen_default_getter(result);
     match func.is_view {
         true if has_params => quote! {
-            fn #method_name(&mut self, call: #call_type) -> crate::error::Result<#return_type> {
+            #doc_comment
+            fn #method_name(&mut self, #(#params),*) -> crate::error::Result<#return_type> {
                 #body
             }
         },
         true => quote! {
+            #doc_comment
             fn #method_name(&mut self) -> crate::error::Result<#return_type> {
                 #body
             }
         },
         false if has_params => quote! {
-            fn #method_name(&mut self, msg_sender: ::alloy::primitives::Address, call: #call_type) -> crate::error::Result<#return_type> {
+            #doc_comment
+            fn #method_name(&mut self, msg_sender: Address, #(#params),*) -> crate::error::Result<#return_type> {
                 #body
             }
         },
         false => quote! {
-            fn #method_name(&mut self, msg_sender: ::alloy::primitives::Address) -> crate::error::Result<#return_type> {
+            #doc_comment
+            fn #method_name(&mut self, msg_sender: Address) -> crate::error::Result<#return_type> {
                 #body
             }
         },
@@ -284,7 +354,7 @@ fn gen_default_getter(result: &GetterFn<'_>) -> TokenStream {
         GetterInfo::Mapping { field, key_param } => {
             let getter_name = format_ident!("_get_{}", field.name);
             let key_field = format_ident!("{}", key_param);
-            quote! { self.#getter_name(call.#key_field) }
+            quote! { self.#getter_name(#key_field) }
         }
         GetterInfo::NestedMapping {
             field,
@@ -294,7 +364,7 @@ fn gen_default_getter(result: &GetterFn<'_>) -> TokenStream {
             let getter_name = format_ident!("_get_{}", field.name);
             let key1_field = format_ident!("{}", key1_param);
             let key2_field = format_ident!("{}", key2_param);
-            quote! { self.#getter_name(call.#key1_field, call.#key2_field) }
+            quote! { self.#getter_name(#key1_field, #key2_field) }
         }
         GetterInfo::NoMatch => unreachable!("NoMatch should not generate default body"),
     }
@@ -303,23 +373,33 @@ fn gen_default_getter(result: &GetterFn<'_>) -> TokenStream {
 /// Generates a trait method signature (no implementation).
 fn gen_call_sig(result: &GetterFn<'_>) -> TokenStream {
     let func = &result.function;
+    let doc_comment = gen_method_doc_comment(func, false);
     let method_name = format_ident!("{}", func.name);
     let return_type = &func.return_type;
-    let call_type = &func.call_type_path;
     let has_params = !func.params.is_empty();
+
+    // Extract individual parameters
+    let params = func.params.iter().map(|(name, ty)| {
+        let param_name = format_ident!("{}", name);
+        quote! { #param_name: #ty }
+    });
 
     match func.is_view {
         true if has_params => quote! {
-            fn #method_name(&mut self, call: #call_type) -> crate::error::Result<#return_type>;
+            #doc_comment
+            fn #method_name(&mut self, #(#params),*) -> crate::error::Result<#return_type>;
         },
         true => quote! {
+            #doc_comment
             fn #method_name(&mut self) -> crate::error::Result<#return_type>;
         },
         false if has_params => quote! {
-            fn #method_name(&mut self, msg_sender: ::alloy::primitives::Address, call: #call_type) -> crate::error::Result<#return_type>;
+            #doc_comment
+            fn #method_name(&mut self, msg_sender: Address, #(#params),*) -> crate::error::Result<#return_type>;
         },
         false => quote! {
-            fn #method_name(&mut self, msg_sender: ::alloy::primitives::Address) -> crate::error::Result<#return_type>;
+            #doc_comment
+            fn #method_name(&mut self, msg_sender: Address) -> crate::error::Result<#return_type>;
         },
     }
 }
