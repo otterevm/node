@@ -1,8 +1,10 @@
 pub mod dex;
+pub mod policy;
 
 mod request;
 
 pub use dex::{TempoDex, TempoDexApiServer};
+pub use policy::{TempoPolicy, TempoPolicyApiServer};
 pub use request::TempoTransactionRequest;
 
 use crate::{TempoNetwork, node::TempoNode};
