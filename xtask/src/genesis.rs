@@ -26,6 +26,7 @@ use tempo_evm::evm::{TempoEvm, TempoEvmFactory};
 use tempo_precompiles::{
     LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     linking_usd::{LinkingUSD, TRANSFER_ROLE},
+    nonce::NonceManager,
     stablecoin_exchange::StablecoinExchange,
     storage::evm::EvmPrecompileStorageProvider,
     tip_fee_manager::{IFeeManager, ITIPFeeAMM, TipFeeManager},
@@ -69,6 +70,10 @@ pub(crate) struct GenesisArgs {
     /// Genesis block gas limit
     #[arg(long, default_value_t = 17000000000000)]
     pub gas_limit: u64,
+
+    /// Adagio hardfork activation timestamp (defaults to 0 = active at genesis)
+    #[arg(long, default_value_t = 0)]
+    pub adagio_time: u64,
 }
 
 impl GenesisArgs {
@@ -143,6 +148,9 @@ impl GenesisArgs {
 
         println!("Initializing stablecoin exchange");
         initialize_stablecoin_exchange(&mut evm)?;
+
+        println!("Initializing nonce manager");
+        initialize_nonce_manager(&mut evm)?;
 
         println!("Minting pairwise FeeAMM liquidity");
         mint_pairwise_liquidity(
@@ -235,7 +243,7 @@ impl GenesisArgs {
             },
         );
 
-        let chain_config = ChainConfig {
+        let mut chain_config = ChainConfig {
             chain_id: self.chain_id,
             homestead_block: Some(0),
             eip150_block: Some(0),
@@ -256,6 +264,12 @@ impl GenesisArgs {
             deposit_contract_address: Some(address!("0x00000000219ab540356cBB839Cbe05303d7705Fa")),
             ..Default::default()
         };
+
+        // Add Tempo hardfork times to extra_fields
+        chain_config.extra_fields.insert(
+            "adagioTime".to_string(),
+            serde_json::json!(self.adagio_time),
+        );
 
         let mut genesis = Genesis::default()
             .with_gas_limit(self.gas_limit)
@@ -435,6 +449,15 @@ fn initialize_stablecoin_exchange(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre:
 
     let mut exchange = StablecoinExchange::new(&mut provider);
     exchange.initialize()?;
+
+    Ok(())
+}
+
+fn initialize_nonce_manager(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre::Result<()> {
+    let block = evm.block.clone();
+    let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
+    let mut provider = EvmPrecompileStorageProvider::new(evm_internals, 1);
+    NonceManager::new(&mut provider).initialize()?;
 
     Ok(())
 }
