@@ -30,7 +30,7 @@ use revm::{
 };
 use tempo_contracts::{
     DEFAULT_7702_DELEGATE_ADDRESS,
-    precompiles::{FeeManagerError, TIPFeeAMMError},
+    precompiles::{FeeManagerError, SignatureType as PrecompileSignatureType, TIPFeeAMMError},
 };
 use tempo_precompiles::{
     TIP_FEE_MANAGER_ADDRESS,
@@ -41,7 +41,7 @@ use tempo_precompiles::{
     tip_fee_manager::TipFeeManager,
     tip20::{self},
 };
-use tempo_primitives::transaction::{AASignature, calc_gas_balance_spending};
+use tempo_primitives::transaction::{AASignature, SignatureType, calc_gas_balance_spending};
 
 use crate::{TempoEvm, TempoInvalidTransaction, common::TempoStateAccess, evm::TempoContext};
 
@@ -666,16 +666,12 @@ where
                 );
 
                 let access_key_addr = key_auth.key_id;
-                // Convert to B256 for precompile storage (pad address to 32 bytes)
-                let mut access_key_hash_bytes = [0u8; 32];
-                access_key_hash_bytes[12..].copy_from_slice(access_key_addr.as_slice());
-                let access_key_hash = B256::from(access_key_hash_bytes);
 
-                // Convert signature type to u8
-                let signature_type: u8 = match key_auth.key_type {
-                    tempo_primitives::transaction::SignatureType::Secp256k1 => 0,
-                    tempo_primitives::transaction::SignatureType::P256 => 1,
-                    tempo_primitives::transaction::SignatureType::WebAuthn => 2,
+                // Convert signature type to precompile SignatureType enum
+                let signature_type = match key_auth.key_type {
+                    SignatureType::Secp256k1 => PrecompileSignatureType::Secp256k1,
+                    SignatureType::P256 => PrecompileSignatureType::P256,
+                    SignatureType::WebAuthn => PrecompileSignatureType::WebAuthn,
                 };
 
                 // Convert limits to the format expected by the precompile
@@ -690,7 +686,7 @@ where
 
                 // Create the authorize key call
                 let authorize_call = authorizeKeyCall {
-                    publicKey: access_key_hash,
+                    keyId: access_key_addr,
                     signatureType: signature_type,
                     expiry: key_auth.expiry,
                     limits: precompile_limits,
@@ -760,16 +756,11 @@ where
                     tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
                 );
 
-                // Convert Address to B256 for storage lookup (pad address to 32 bytes)
-                let mut keychain_pub_key_hash_bytes = [0u8; 32];
-                keychain_pub_key_hash_bytes[12..].copy_from_slice(access_key_addr.as_slice());
-                let keychain_pub_key_hash = B256::from(keychain_pub_key_hash_bytes);
-
                 // Validate that user_address has authorized this access key in the keychain
                 keychain
                     .validate_keychain_authorization(
                         user_address,
-                        &keychain_pub_key_hash,
+                        &access_key_addr,
                         block.timestamp().to::<u64>(),
                     )
                     .map_err(|e| {
@@ -779,6 +770,22 @@ where
                             },
                         )
                     })?;
+
+                // Set the transaction key in the keychain precompile
+                // This marks that the current transaction is using an access key
+                // The TIP20 precompile will read this during execution to enforce spending limits
+                keychain
+                    .set_transaction_key(user_address, &access_key_addr)
+                    .map_err(|e| EVMError::Custom(e.to_string()))?;
+            } else {
+                // Root key transaction - set transaction key to ZERO
+                let mut keychain = AccountKeychain::new(
+                    &mut storage_provider,
+                    tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
+                );
+                keychain
+                    .set_transaction_key(user_address, &Address::ZERO)
+                    .map_err(|e| EVMError::Custom(e.to_string()))?;
             }
         }
 

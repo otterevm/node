@@ -39,12 +39,17 @@ pub struct AATxEnv {
 
     /// Whether the transaction is a subblock transaction.
     pub subblock_transaction: bool,
-    
+
     /// Optional key authorization for provisioning access keys
     pub key_authorization: Option<tempo_primitives::transaction::KeyAuthorization>,
 
     /// Transaction signature hash (for signature verification)
     pub tx_hash: B256,
+
+    /// The access key ID used to sign this transaction (if any)
+    /// This is set during validation when a Keychain signature is detected
+    /// and is used to enforce spending limits during execution
+    pub access_key_id: Option<Address>,
 }
 /// Tempo transaction environment.
 #[derive(Debug, Clone, Default, derive_more::Deref, derive_more::DerefMut)]
@@ -373,12 +378,10 @@ impl FromRecoveredTx<AASigned> for TempoTxEnv {
                 aa_calls: calls.clone(),
                 aa_authorization_list: aa_authorization_list.clone(),
                 nonce_key: *nonce_key,
-<<<<<<< HEAD
                 subblock_transaction: aa_signed.tx().subblock_proposer().is_some(),
-=======
                 key_authorization: key_authorization.clone(),
                 tx_hash: aa_signed.signature_hash(),
->>>>>>> 30cf8368 (chore: basic version working)
+                access_key_id: None, // Set during validation for Keychain signatures
             })),
         }
     }
