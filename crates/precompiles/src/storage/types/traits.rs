@@ -77,7 +77,7 @@ pub trait Storable: Sized {
 /// to determine the final storage location. This trait provides the
 /// byte representation used in that hash.
 pub trait StorageKey {
-    fn as_storage_bytes(&self) -> &[u8];
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]>;
 }
 
 // -- STORAGE TYPE IMPLEMENTATIONS ---------------------------------------------
@@ -238,78 +238,43 @@ impl Storable for String {
 
 impl StorageKey for Address {
     #[inline]
-    fn as_storage_bytes(&self) -> &[u8] {
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
         self.as_slice()
     }
 }
 
 impl StorageKey for U256 {
     #[inline]
-    fn as_storage_bytes(&self) -> &[u8] {
-        // U256 needs to be converted to bytes; we'll use a thread-local buffer
-        // This is safe because the lifetime is tied to the borrow
-        thread_local! {
-            static BUFFER: std::cell::RefCell<[u8; 32]> = const { std::cell::RefCell::new([0u8; 32]) };
-        }
-
-        BUFFER.with(|buf| {
-            let mut buffer = buf.borrow_mut();
-            *buffer = self.to_be_bytes();
-            // SAFETY: The buffer lives in TLS and we're returning a reference
-            // that cannot outlive this function call. The caller must use it
-            // immediately before any other code can access the TLS buffer.
-            unsafe { std::slice::from_raw_parts(buffer.as_ptr(), 32) }
-        })
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
+        self.to_be_bytes::<32>()
     }
 }
 
 impl StorageKey for B256 {
     #[inline]
-    fn as_storage_bytes(&self) -> &[u8] {
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
         self.as_slice()
     }
 }
 
 impl StorageKey for FixedBytes<4> {
     #[inline]
-    fn as_storage_bytes(&self) -> &[u8] {
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
         self.as_slice()
     }
 }
 
 impl StorageKey for u64 {
     #[inline]
-    fn as_storage_bytes(&self) -> &[u8] {
-        thread_local! {
-            static BUFFER: std::cell::RefCell<[u8; 8]> = const { std::cell::RefCell::new([0u8; 8]) };
-        }
-
-        BUFFER.with(|buf| {
-            let mut buffer = buf.borrow_mut();
-            *buffer = self.to_be_bytes();
-            // SAFETY: The buffer lives in TLS and we're returning a reference
-            // that cannot outlive this function call. The caller must use it
-            // immediately before any other code can access the TLS buffer.
-            unsafe { std::slice::from_raw_parts(buffer.as_ptr(), 8) }
-        })
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
+        self.to_be_bytes()
     }
 }
 
 impl StorageKey for u128 {
     #[inline]
-    fn as_storage_bytes(&self) -> &[u8] {
-        thread_local! {
-            static BUFFER: std::cell::RefCell<[u8; 16]> = const { std::cell::RefCell::new([0u8; 16]) };
-        }
-
-        BUFFER.with(|buf| {
-            let mut buffer = buf.borrow_mut();
-            *buffer = self.to_be_bytes();
-            // SAFETY: The buffer lives in TLS and we're returning a reference
-            // that cannot outlive this function call. The caller must use it
-            // immediately before any other code can access the TLS buffer.
-            unsafe { std::slice::from_raw_parts(buffer.as_ptr(), 16) }
-        })
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
+        self.to_be_bytes()
     }
 }
 
@@ -589,30 +554,30 @@ mod tests {
     fn test_address_as_storage_bytes() {
         let addr = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
         let bytes = addr.as_storage_bytes();
-        assert_eq!(bytes.len(), 20);
-        assert_eq!(bytes, addr.as_slice());
+        assert_eq!(bytes.as_ref().len(), 20);
+        assert_eq!(bytes.as_ref(), addr.as_slice());
     }
 
     #[test]
     fn test_u256_as_storage_bytes() {
         let value = U256::from(0x123456789abcdef_u64);
         let bytes = value.as_storage_bytes();
-        assert_eq!(bytes.len(), 32);
+        assert_eq!(bytes.as_ref().len(), 32);
     }
 
     #[test]
     fn test_b256_as_storage_bytes() {
         let value = B256::from([0x42u8; 32]);
         let bytes = value.as_storage_bytes();
-        assert_eq!(bytes.len(), 32);
-        assert_eq!(bytes, value.as_slice());
+        assert_eq!(bytes.as_ref().len(), 32);
+        assert_eq!(bytes.as_ref(), value.as_slice());
     }
 
     #[test]
     fn test_u64_as_storage_bytes() {
         let value = 0x123456789abcdef_u64;
         let bytes = value.as_storage_bytes();
-        assert_eq!(bytes.len(), 8);
-        assert_eq!(bytes, &value.to_be_bytes());
+        assert_eq!(bytes.as_ref().len(), 8);
+        assert_eq!(bytes.as_ref(), &value.to_be_bytes());
     }
 }
