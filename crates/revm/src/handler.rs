@@ -41,7 +41,7 @@ use tempo_precompiles::{
     tip_fee_manager::TipFeeManager,
     tip20::{self},
 };
-use tempo_primitives::transaction::{AASignature, SignatureType, calc_gas_balance_spending};
+use tempo_primitives::transaction::{AASignature, PrimitiveSignature, SignatureType, calc_gas_balance_spending};
 
 use crate::{TempoEvm, TempoInvalidTransaction, common::TempoStateAccess, evm::TempoContext};
 
@@ -751,13 +751,14 @@ where
                 .map(|key_auth| key_auth.key_id == access_key_addr)
                 .unwrap_or(false);
 
+            // Always need to set the transaction key for Keychain signatures
+            let mut keychain = AccountKeychain::new(
+                &mut storage_provider,
+                tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
+            );
+
             if !is_authorizing_this_key {
                 // Not authorizing this key in the same transaction, so validate it exists now
-                let mut keychain = AccountKeychain::new(
-                    &mut storage_provider,
-                    tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
-                );
-
                 // Validate that user_address has authorized this access key in the keychain
                 keychain
                     .validate_keychain_authorization(
@@ -772,23 +773,14 @@ where
                             },
                         )
                     })?;
-
-                // Set the transaction key in the keychain precompile
-                // This marks that the current transaction is using an access key
-                // The TIP20 precompile will read this during execution to enforce spending limits
-                keychain
-                    .set_transaction_key(user_address, &access_key_addr)
-                    .map_err(|e| EVMError::Custom(e.to_string()))?;
-            } else {
-                // Root key transaction - set transaction key to ZERO
-                let mut keychain = AccountKeychain::new(
-                    &mut storage_provider,
-                    tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
-                );
-                keychain
-                    .set_transaction_key(user_address, &Address::ZERO)
-                    .map_err(|e| EVMError::Custom(e.to_string()))?;
             }
+
+            // Set the transaction key in the keychain precompile
+            // This marks that the current transaction is using an access key
+            // The TIP20 precompile will read this during execution to enforce spending limits
+            keychain
+                .set_transaction_key(user_address, &access_key_addr)
+                .map_err(|e| EVMError::Custom(e.to_string()))?;
         }
 
         let mut fee_manager = TipFeeManager::new(&mut storage_provider);
