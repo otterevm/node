@@ -5,7 +5,6 @@
 #![allow(incomplete_features)]
 
 pub mod error;
-pub mod utils;
 pub use error::{IntoPrecompileResult, Result};
 pub mod linking_usd;
 pub mod nonce;
