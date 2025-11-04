@@ -13,6 +13,7 @@ use tempo_precompiles_macros::Storable;
 
 use super::{TIP20Token, TIP20Token_ITIP20Rewards};
 
+/// Precision multiplier for reward calculations (1e18)
 pub const ACC_PRECISION: U256 = uint!(1000000000000000000_U256);
 
 /// Reward stream data structure occupying 4 consecutive storage slots.
