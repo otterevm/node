@@ -2,8 +2,18 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use eyre::WrapErr as _;
+use futures::StreamExt;
 use reth_db::mdbx::DatabaseArguments;
-use reth_ethereum::tasks::{TaskExecutor, TaskManager};
+use reth_ethereum::{
+    network::{
+        Peers,
+        api::{
+            NetworkEventListenerProvider, PeersInfo,
+            events::{NetworkEvent, PeerEvent},
+        },
+    },
+    tasks::{TaskExecutor, TaskManager},
+};
 use reth_node_builder::{NodeBuilder, NodeConfig};
 use reth_node_core::{
     args::{DatadirArgs, PayloadBuilderArgs, RpcServerArgs},
@@ -175,6 +185,35 @@ pub struct ExecutionNode {
     pub _exit_fut: NodeExitFuture,
 }
 
+impl ExecutionNode {
+    /// Connect peers bidirectionally.
+    pub async fn connect_peer(&self, other: &Self) {
+        let self_record = self.node.network.local_node_record();
+        let other_record = other.node.network.local_node_record();
+        let mut events = self.node.network.event_listener();
+
+        self.node
+            .network
+            .add_trusted_peer(other_record.id, other_record.tcp_addr());
+
+        match events.next().await {
+            Some(NetworkEvent::Peer(PeerEvent::PeerAdded(_))) => (),
+            ev => panic!("Expected a peer added event, got: {ev:?}"),
+        }
+
+        match events.next().await {
+            Some(NetworkEvent::ActivePeerSession { .. }) => (),
+            ev => panic!("Expected an active peer session event, got: {ev:?}"),
+        }
+
+        tracing::debug!(
+            "Connected peers: {:?} -> {:?}",
+            self_record.id,
+            other_record.id
+        );
+    }
+}
+
 // TODO(janis): allow configuring this.
 fn chainspec() -> Arc<TempoChainSpec> {
     Arc::new(TempoChainSpec::from_genesis(
@@ -205,13 +244,13 @@ pub async fn launch_execution_node<P: AsRef<Path>>(
     datadir: P,
 ) -> eyre::Result<ExecutionNode> {
     let node_config = NodeConfig::new(chainspec())
-        .with_unused_ports()
         .with_rpc(
             RpcServerArgs::default()
                 .with_unused_ports()
                 .with_http()
                 .with_http_api(RpcModuleSelection::All),
         )
+        .with_unused_ports()
         .with_datadir_args(DatadirArgs {
             datadir: datadir.as_ref().to_path_buf().into(),
             ..DatadirArgs::default()
@@ -219,6 +258,10 @@ pub async fn launch_execution_node<P: AsRef<Path>>(
         .with_payload_builder(PayloadBuilderArgs {
             interval: Duration::from_millis(100),
             ..Default::default()
+        })
+        .apply(|mut c| {
+            c.network.discovery.disable_discovery = true;
+            c
         });
 
     let database = Arc::new(

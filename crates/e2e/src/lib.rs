@@ -25,6 +25,7 @@ use commonware_runtime::{
 };
 use commonware_utils::quorum;
 use futures::future::join_all;
+use reth_node_metrics::recorder::PrometheusRecorder;
 use tempo_commonware_node::subblocks;
 use tracing::debug;
 
@@ -109,15 +110,26 @@ pub async fn setup_validators(
 
     let mut public_keys = HashSet::new();
     let mut nodes = Vec::new();
-    for (i, (signer, share)) in signers.into_iter().zip(shares).enumerate() {
-        let public_key = signer.public_key();
-        public_keys.insert(public_key.clone());
+    let mut execution_nodes: Vec<ExecutionNode> = Vec::with_capacity(how_many as usize);
 
-        let uid = format!("validator-{public_key}");
-
+    for i in 0..how_many {
         let node = execution_runtime
             .spawn_node_blocking(&format!("node-{i}"))
             .expect("must be able to spawn nodes on the runtime");
+
+        // ensure EL p2p connectivity for backfill syncs
+        for existing_node in &execution_nodes {
+            existing_node.connect_peer(&node).await;
+        }
+
+        execution_nodes.push(node);
+    }
+
+    for (signer, share) in signers.into_iter().zip(shares) {
+        let public_key = signer.public_key();
+        public_keys.insert(public_key.clone());
+        let uid = format!("validator-{public_key}");
+        let node = execution_nodes.remove(0);
 
         let engine = tempo_commonware_node::consensus::Builder {
             context: context.with_label(&uid),
@@ -138,7 +150,7 @@ pub async fn setup_validators(
             time_for_peer_response: Duration::from_secs(2),
             views_to_track: 10,
             views_until_leader_skip: 5,
-            new_payload_wait_time: Duration::from_millis(750),
+            new_payload_wait_time: Duration::from_millis(100),
             time_to_build_subblock: Duration::from_millis(100),
             epoch_length,
         }
@@ -301,4 +313,15 @@ pub async fn link_validators(
             }
         }
     }
+}
+
+/// Get the number of pipeline runs from the Prometheus metrics recorder
+pub fn get_pipeline_runs(recorder: &PrometheusRecorder) -> u64 {
+    recorder
+        .handle()
+        .render()
+        .lines()
+        .find(|line| line.starts_with("reth_consensus_engine_beacon_pipeline_runs"))
+        .and_then(|line| line.split_whitespace().nth(1)?.parse().ok())
+        .unwrap_or(0)
 }
