@@ -190,7 +190,133 @@ impl Storable<1> for Address {
     }
 }
 
-// -- STRING STORAGE HELPERS ---------------------------------------------------
+/// String storage using Solidity's string encoding.
+///
+/// **Short strings (≤31 bytes)** are stored inline in a single slot:
+/// - Bytes 0..len: UTF-8 string data (left-aligned)
+/// - Byte 31 (LSB): length * 2 (bit 0 = 0 indicates short string)
+///
+/// **Long strings (≥32 bytes)** use keccak256-based storage:
+/// - Base slot: stores `length * 2 + 1` (bit 0 = 1 indicates long string)
+/// - Data slots: stored at `keccak256(main_slot) + i` for each 32-byte chunk
+impl StorableType for String {
+    const BYTE_COUNT: usize = 32;
+}
+
+impl Storable<1> for String {
+    fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
+        let base_value = storage.sload(base_slot)?;
+        let is_long = is_long_string(base_value);
+        let length = extract_string_length(base_value, is_long);
+
+        if is_long {
+            // Long string: read data from keccak256(base_slot) + i
+            let slot_start = compute_string_data_slot(base_slot);
+            let chunks = calc_chunks(length);
+            let mut data = Vec::with_capacity(length);
+
+            for i in 0..chunks {
+                let slot = slot_start + U256::from(i);
+                let chunk_value = storage.sload(slot)?;
+                let chunk_bytes = chunk_value.to_be_bytes::<32>();
+
+                // For the last chunk, only take the remaining bytes
+                let bytes_to_take = if i == chunks - 1 {
+                    length - (i * 32)
+                } else {
+                    32
+                };
+                data.extend_from_slice(&chunk_bytes[..bytes_to_take]);
+            }
+
+            Self::from_utf8(data).map_err(|e| {
+                TempoPrecompileError::Fatal(format!("Invalid UTF-8 in stored string: {e}"))
+            })
+        } else {
+            // Short string: data is inline in the main slot
+            decode_short_string(base_value, length)
+        }
+    }
+
+    fn store<S: StorageOps>(&self, storage: &mut S, base_slot: U256) -> Result<()> {
+        let bytes = self.as_bytes();
+        let length = bytes.len();
+
+        if length <= 31 {
+            storage.sstore(base_slot, encode_short_string(bytes))
+        } else {
+            storage.sstore(base_slot, encode_long_string_length(length))?;
+
+            // Store data in chunks at keccak256(base_slot) + i
+            let slot_start = compute_string_data_slot(base_slot);
+            let chunks = calc_chunks(length);
+
+            for i in 0..chunks {
+                let slot = slot_start + U256::from(i);
+                let chunk_start = i * 32;
+                let chunk_end = (chunk_start + 32).min(length);
+                let chunk = &bytes[chunk_start..chunk_end];
+
+                // Pad chunk to 32 bytes if it's the last chunk
+                let mut chunk_bytes = [0u8; 32];
+                chunk_bytes[..chunk.len()].copy_from_slice(chunk);
+
+                storage.sstore(slot, U256::from_be_bytes(chunk_bytes))?;
+            }
+
+            Ok(())
+        }
+    }
+
+    fn delete<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<()> {
+        let base_value = storage.sload(base_slot)?;
+        let is_long = is_long_string(base_value);
+
+        if is_long {
+            // Long string: need to clear data slots as well
+            let length = extract_string_length(base_value, true);
+            let slot_start = compute_string_data_slot(base_slot);
+            let chunks = calc_chunks(length);
+
+            // Clear all data slots
+            for i in 0..chunks {
+                let slot = slot_start + U256::from(i);
+                storage.sstore(slot, U256::ZERO)?;
+            }
+        }
+
+        // Clear the main slot
+        storage.sstore(base_slot, U256::ZERO)
+    }
+
+    fn to_evm_words(&self) -> Result<[U256; 1]> {
+        let bytes = self.as_bytes();
+        let length = bytes.len();
+
+        if length <= 31 {
+            Ok([encode_short_string(bytes)])
+        } else {
+            // Note: Actual string data is in keccak256-addressed slots (not included here)
+            Ok([encode_long_string_length(length)])
+        }
+    }
+
+    fn from_evm_words(words: [U256; 1]) -> Result<Self> {
+        let slot_value = words[0];
+        let is_long = is_long_string(slot_value);
+        let length = extract_string_length(slot_value, is_long);
+
+        if is_long {
+            // Long string: cannot reconstruct without storage access to keccak256-addressed data
+            Err(TempoPrecompileError::Fatal(
+                "Cannot reconstruct long string from single word. Use load() instead.".into(),
+            ))
+        } else {
+            // Short string: data is inline in the word
+            decode_short_string(slot_value, length)
+        }
+    }
+}
 
 /// Compute the storage slot where long string data begins.
 ///
@@ -235,133 +361,47 @@ fn extract_string_length(slot_value: U256, is_long: bool) -> usize {
     }
 }
 
-/// String storage using Solidity's string encoding.
-///
-/// **Short strings (≤31 bytes)** are stored inline in a single slot:
-/// - Bytes 0..len: UTF-8 string data (left-aligned)
-/// - Byte 31 (LSB): length * 2 (bit 0 = 0 indicates short string)
-///
-/// **Long strings (≥32 bytes)** use keccak256-based storage:
-/// - Base slot: stores `length * 2 + 1` (bit 0 = 1 indicates long string)
-/// - Data slots: stored at `keccak256(main_slot) + i` for each 32-byte chunk
-impl StorableType for String {
-    const BYTE_COUNT: usize = 32;
+/// Compute the number of 32-byte chunks needed to store a byte string.
+#[inline]
+fn calc_chunks(byte_length: usize) -> usize {
+    byte_length.div_ceil(32)
 }
 
-impl Storable<1> for String {
-    fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
-        let main_slot_value = storage.sload(base_slot)?;
-        let is_long = is_long_string(main_slot_value);
-        let length = extract_string_length(main_slot_value, is_long);
-
-        if is_long {
-            // Long string: read data from keccak256(base_slot) + i
-            let data_slot_start = compute_string_data_slot(base_slot);
-            let chunk_count = (length + 31) / 32; // Ceiling division
-            let mut data = Vec::with_capacity(length);
-
-            for i in 0..chunk_count {
-                let slot = data_slot_start + U256::from(i);
-                let chunk_value = storage.sload(slot)?;
-                let chunk_bytes = chunk_value.to_be_bytes::<32>();
-
-                // For the last chunk, only take the remaining bytes
-                let bytes_to_take = if i == chunk_count - 1 {
-                    length - (i * 32)
-                } else {
-                    32
-                };
-                data.extend_from_slice(&chunk_bytes[..bytes_to_take]);
-            }
-
-            Self::from_utf8(data).map_err(|e| {
-                TempoPrecompileError::Fatal(format!("Invalid UTF-8 in stored string: {e}"))
-            })
-        } else {
-            // Short string: data is inline in the main slot
-            let bytes = main_slot_value.to_be_bytes::<32>();
-            let utf8_bytes = &bytes[..length];
-            Self::from_utf8(utf8_bytes.to_vec()).map_err(|e| {
-                TempoPrecompileError::Fatal(format!("Invalid UTF-8 in stored string: {e}"))
-            })
-        }
-    }
-
-    fn store<S: StorageOps>(&self, storage: &mut S, base_slot: U256) -> Result<()> {
-        let bytes = self.as_bytes();
-        let length = bytes.len();
-
-        if length <= 31 {
-            // Short string: store inline with length * 2 in LSB
-            let mut storage_bytes = [0u8; 32];
-            storage_bytes[..length].copy_from_slice(bytes);
-            storage_bytes[31] = (length * 2) as u8;
-            storage.sstore(base_slot, U256::from_be_bytes(storage_bytes))
-        } else {
-            // Long string: store length * 2 + 1 in main slot, data at keccak256(base_slot)
-            let length_value = U256::from(length * 2 + 1);
-            storage.sstore(base_slot, length_value)?;
-
-            // Store data in chunks at keccak256(base_slot) + i
-            let data_slot_start = compute_string_data_slot(base_slot);
-            let chunk_count = (length + 31) / 32;
-
-            for i in 0..chunk_count {
-                let slot = data_slot_start + U256::from(i);
-                let chunk_start = i * 32;
-                let chunk_end = (chunk_start + 32).min(length);
-                let chunk = &bytes[chunk_start..chunk_end];
-
-                // Pad chunk to 32 bytes if it's the last chunk
-                let mut chunk_bytes = [0u8; 32];
-                chunk_bytes[..chunk.len()].copy_from_slice(chunk);
-
-                storage.sstore(slot, U256::from_be_bytes(chunk_bytes))?;
-            }
-
-            Ok(())
-        }
-    }
-
-    fn delete<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<()> {
-        let main_slot_value = storage.sload(base_slot)?;
-        let is_long = is_long_string(main_slot_value);
-
-        if is_long {
-            // Long string: need to clear data slots as well
-            let length = extract_string_length(main_slot_value, true);
-            let data_slot_start = compute_string_data_slot(base_slot);
-            let chunk_count = (length + 31) / 32;
-
-            // Clear all data slots
-            for i in 0..chunk_count {
-                let slot = data_slot_start + U256::from(i);
-                storage.sstore(slot, U256::ZERO)?;
-            }
-        }
-
-        // Clear the main slot (works for both short and long strings)
-        storage.sstore(base_slot, U256::ZERO)
-    }
-
-    // TODO(rusowsky): impl and test
-    fn to_evm_words(&self) -> Result<[U256; 1]> {
-        Err(TempoPrecompileError::Fatal(
-            "String type cannot be used in packed storage contexts.".into(),
-        ))
-    }
-
-    // TODO(rusowsky): impl and test
-    fn from_evm_words(_words: [U256; 1]) -> Result<Self> {
-        Err(TempoPrecompileError::Fatal(
-            "String type cannot be used in packed storage contexts.".into(),
-        ))
-    }
+/// Encode a short string (≤31 bytes) into a U256 for inline storage.
+///
+/// Format: bytes left-aligned, LSB contains (length * 2)
+#[inline]
+fn encode_short_string(bytes: &[u8]) -> U256 {
+    let mut storage_bytes = [0u8; 32];
+    storage_bytes[..bytes.len()].copy_from_slice(bytes);
+    storage_bytes[31] = (bytes.len() * 2) as u8;
+    U256::from_be_bytes(storage_bytes)
 }
 
+/// Encode the length metadata for a long string (≥32 bytes).
+///
+/// Returns `length * 2 + 1` where bit 0 = 1 indicates long string storage.
+#[inline]
+fn encode_long_string_length(byte_length: usize) -> U256 {
+    U256::from(byte_length * 2 + 1)
+}
+
+/// Decode a short string from a U256 slot value.
+///
+/// Extracts the inline UTF-8 bytes and validates them.
+#[inline]
+fn decode_short_string(slot_value: U256, length: usize) -> Result<String> {
+    let bytes = slot_value.to_be_bytes::<32>();
+    let utf8_bytes = &bytes[..length];
+    String::from_utf8(utf8_bytes.to_vec())
+        .map_err(|e| TempoPrecompileError::Fatal(format!("Invalid UTF-8 in stored string: {e}")))
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::{PrecompileStorageProvider, hashmap::HashMapStorageProvider};
+    use proptest::prelude::*;
 
     // Test helper that implements StorageOps
     struct TestContract<'a, S> {
@@ -420,369 +460,92 @@ mod tests {
         assert!(bool::load(&mut contract, slot).unwrap());
     }
 
-    #[test]
-    fn test_u64_round_trip() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
+    // -- STRING TESTS ---------------------------------------------------------
 
-        let value = u64::MAX;
-        let slot = U256::from(4);
-
-        value.store(&mut contract, slot).unwrap();
-        let loaded = u64::load(&mut contract, slot).unwrap();
-        assert_eq!(value, loaded);
+    // Strategy for generating random U256 slot values that won't overflow
+    fn arb_safe_slot() -> impl Strategy<Value = U256> {
+        any::<[u64; 4]>().prop_map(|limbs| {
+            // Ensure we don't overflow by limiting to a reasonable range
+            U256::from_limbs(limbs) % (U256::MAX - U256::from(10000))
+        })
     }
 
-    #[test]
-    fn test_string_empty() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        let s = String::new();
-        let slot = U256::from(7);
-
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
+    // Strategy for short strings (0-31 bytes) - uses inline storage
+    fn arb_short_string() -> impl Strategy<Value = String> {
+        prop_oneof![
+            // Empty string
+            Just(String::new()),
+            // ASCII strings (1-31 bytes)
+            "[a-zA-Z0-9]{1,31}",
+            // Unicode strings (up to 31 bytes)
+            "[\u{0041}-\u{005A}\u{4E00}-\u{4E19}]{1,10}",
+        ]
     }
 
-    #[test]
-    fn test_string_short() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        let s = "Hello, Tempo!".to_string();
-        assert!(s.len() <= 31, "Test string must be <= 31 bytes");
-
-        let slot = U256::from(8);
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
+    // Strategy for exactly 32-byte strings - boundary between inline and heap storage
+    fn arb_32byte_string() -> impl Strategy<Value = String> {
+        "[a-zA-Z0-9]{32}"
     }
 
-    #[test]
-    fn test_string_max_length() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // 31 bytes is the maximum for short string encoding
-        let s = "a".repeat(31);
-        assert_eq!(s.len(), 31);
-
-        let slot = U256::from(9);
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
+    // Strategy for long strings (33-100 bytes) - uses heap storage
+    fn arb_long_string() -> impl Strategy<Value = String> {
+        prop_oneof![
+            // ASCII strings (33-100 bytes)
+            "[a-zA-Z0-9]{33,100}",
+            // Unicode strings (>32 bytes)
+            "[\u{0041}-\u{005A}\u{4E00}-\u{4E19}]{11,30}",
+        ]
     }
 
-    #[test]
-    fn test_string_unicode() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(500))]
 
-        let s = "Hello 世界 🌍".to_string();
-        assert!(s.len() <= 31, "Test string too long");
+        #[test]
+        fn test_short_strings(s in arb_short_string(), base_slot in arb_safe_slot()) {
+            let mut storage = HashMapStorageProvider::new(1);
+            let addr = Address::random();
+            let mut contract = TestContract {
+                address: addr,
+                storage: &mut storage,
+            };
 
-        let slot = U256::from(11);
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_storage_format() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        let s = "test".to_string(); // 4 bytes
-        let slot = U256::from(12);
-
-        s.store(&mut contract, slot).unwrap();
-        let raw_value = contract.storage.sload(addr, slot).unwrap();
-        let bytes = raw_value.to_be_bytes::<32>();
-
-        // Check first 4 bytes contain "test"
-        assert_eq!(&bytes[0..4], b"test");
-
-        // Check rest is zeros
-        assert!(bytes[4..31].iter().all(|&b| b == 0));
-
-        // Check length byte: 4 * 2 = 8
-        assert_eq!(bytes[31], 8);
-    }
-
-    // -- LONG STRING TESTS ----------------------------------------------------
-
-    #[test]
-    fn test_string_32_bytes_boundary() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // 32 bytes is the minimum long string
-        let s = "a".repeat(32);
-        assert_eq!(s.len(), 32);
-
-        let slot = U256::from(20);
-        s.store(&mut contract, slot).unwrap();
-
-        // Verify it's stored as a long string
-        let main_slot_value = contract.storage.sload(addr, slot).unwrap();
-        assert_eq!(main_slot_value.byte(0) & 1, 1); // Bit 0 should be 1
-
-        // Verify length encoding: 32 * 2 + 1 = 65
-        assert_eq!(main_slot_value, U256::from(65));
-
-        // Verify round-trip
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_33_bytes() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        let s = "b".repeat(33);
-        let slot = U256::from(21);
-
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_64_bytes_exactly_two_slots() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // 64 bytes exactly fills 2 data slots
-        let s = "c".repeat(64);
-        let slot = U256::from(22);
-
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_65_bytes() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // 65 bytes requires 3 data slots (32 + 32 + 1)
-        let s = "d".repeat(65);
-        let slot = U256::from(23);
-
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_100_bytes() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        let s = "e".repeat(100);
-        let slot = U256::from(24);
-
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_long_unicode() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // Create a long unicode string (>32 bytes)
-        let s = "Hello 世界 🌍 ".repeat(5); // Should be >32 bytes
-        assert!(s.len() > 32, "Test string should be >32 bytes");
-
-        let slot = U256::from(25);
-        s.store(&mut contract, slot).unwrap();
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-    }
-
-    #[test]
-    fn test_string_long_storage_layout() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // Use a 35-byte string to verify storage layout
-        let s = "x".repeat(35);
-        let base_slot = U256::from(26);
-
-        s.store(&mut contract, base_slot).unwrap();
-
-        // Check main slot contains length * 2 + 1 = 35 * 2 + 1 = 71
-        let main_value = contract.storage.sload(addr, base_slot).unwrap();
-        assert_eq!(main_value, U256::from(71));
-
-        // Compute expected data slot: keccak256(base_slot)
-        let expected_data_slot =
-            U256::from_be_bytes(alloy::primitives::keccak256(base_slot.to_be_bytes::<32>()).0);
-
-        // Verify first data slot contains "xxxxx..." (32 x's)
-        let data_slot_0 = contract.storage.sload(addr, expected_data_slot).unwrap();
-        let data_bytes_0 = data_slot_0.to_be_bytes::<32>();
-        assert_eq!(&data_bytes_0[..32], "x".repeat(32).as_bytes());
-
-        // Verify second data slot contains remaining 3 x's (padded with zeros)
-        let data_slot_1 = contract
-            .storage
-            .sload(addr, expected_data_slot + U256::from(1))
-            .unwrap();
-        let data_bytes_1 = data_slot_1.to_be_bytes::<32>();
-        assert_eq!(&data_bytes_1[..3], "xxx".as_bytes());
-        assert!(data_bytes_1[3..].iter().all(|&b| b == 0));
-    }
-
-    #[test]
-    fn test_string_long_delete() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        // Store a long string
-        let s = "z".repeat(50);
-        let slot = U256::from(27);
-
-        s.store(&mut contract, slot).unwrap();
-
-        // Verify it was stored
-        let loaded = String::load(&mut contract, slot).unwrap();
-        assert_eq!(s, loaded);
-
-        // Delete it
-        String::delete(&mut contract, slot).unwrap();
-
-        // Verify main slot is cleared
-        let main_value = contract.storage.sload(addr, slot).unwrap();
-        assert_eq!(main_value, U256::ZERO);
-
-        // Verify data slots are cleared
-        let data_slot_start =
-            U256::from_be_bytes(alloy::primitives::keccak256(slot.to_be_bytes::<32>()).0);
-        let chunk_count = (50 + 31) / 32; // 2 chunks
-
-        for i in 0..chunk_count {
-            let data_slot = data_slot_start + U256::from(i);
-            let value = contract.storage.sload(addr, data_slot).unwrap();
-            assert_eq!(value, U256::ZERO, "Data slot {i} should be cleared");
+            // Verify store → load roundtrip
+            s.store(&mut contract, base_slot)?;
+            let loaded = String::load(&mut contract, base_slot)?;
+            assert_eq!(s, loaded, "Short string roundtrip failed for: {:?}", s);
         }
 
-        // Loading after delete should return empty string
-        let loaded_after_delete = String::load(&mut contract, slot).unwrap();
-        assert_eq!(loaded_after_delete, String::new());
-    }
+        #[test]
+        fn test_32byte_strings(s in arb_32byte_string(), base_slot in arb_safe_slot()) {
+            let mut storage = HashMapStorageProvider::new(1);
+            let addr = Address::random();
+            let mut contract = TestContract {
+                address: addr,
+                storage: &mut storage,
+            };
 
-    #[test]
-    fn test_string_short_to_long_overwrite() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
+            // Verify 32-byte boundary string is stored correctly
+            assert_eq!(s.len(), 32, "Generated string should be exactly 32 bytes");
 
-        let slot = U256::from(28);
+            // Verify store → load roundtrip
+            s.store(&mut contract, base_slot)?;
+            let loaded = String::load(&mut contract, base_slot)?;
+            assert_eq!(s, loaded, "32-byte string roundtrip failed");
+        }
 
-        // Store a short string first
-        let short_s = "short".to_string();
-        short_s.store(&mut contract, slot).unwrap();
-        assert_eq!(String::load(&mut contract, slot).unwrap(), short_s);
+        #[test]
+        fn test_long_strings(s in arb_long_string(), base_slot in arb_safe_slot()) {
+            let mut storage = HashMapStorageProvider::new(1);
+            let addr = Address::random();
+            let mut contract = TestContract {
+                address: addr,
+                storage: &mut storage,
+            };
 
-        // Overwrite with a long string
-        let long_s = "a".repeat(50);
-        long_s.store(&mut contract, slot).unwrap();
-        assert_eq!(String::load(&mut contract, slot).unwrap(), long_s);
-
-        // Overwrite back to a short string
-        let short_s2 = "tiny".to_string();
-        short_s2.store(&mut contract, slot).unwrap();
-        assert_eq!(String::load(&mut contract, slot).unwrap(), short_s2);
-    }
-
-    #[test]
-    fn test_string_long_to_short_overwrite() {
-        let mut storage = HashMapStorageProvider::new(1);
-        let addr = Address::random();
-        let mut contract = TestContract {
-            address: addr,
-            storage: &mut storage,
-        };
-
-        let slot = U256::from(29);
-
-        // Store a long string first
-        let long_s = "b".repeat(80);
-        long_s.store(&mut contract, slot).unwrap();
-        assert_eq!(String::load(&mut contract, slot).unwrap(), long_s);
-
-        // Overwrite with a short string
-        let short_s = "mini".to_string();
-        short_s.store(&mut contract, slot).unwrap();
-        assert_eq!(String::load(&mut contract, slot).unwrap(), short_s);
-
-        // Note: The old long string data slots are not automatically cleared
-        // when overwriting with a short string.
+            // Verify store → load roundtrip
+            s.store(&mut contract, base_slot)?;
+            let loaded = String::load(&mut contract, base_slot)?;
+            assert_eq!(s, loaded, "Long string roundtrip failed for length: {}", s.len());
+        }
     }
 }

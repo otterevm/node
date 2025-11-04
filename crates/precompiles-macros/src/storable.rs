@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields, Ident, Type};
 
-use crate::utils::{is_custom_struct, normalize_to_snake_case};
+use crate::utils::{is_custom_struct, is_dynamic_type, normalize_to_snake_case};
 
 /// Implements the `Storable` derive macro for a struct with slot packing.
 ///
@@ -173,6 +173,7 @@ fn gen_packing_module(fields: &[(&Ident, &Type)], mod_ident: &Ident) -> TokenStr
             let prev_idx = idx - 1;
             let (_, prev_ty) = &fields[prev_idx];
             let prev_is_struct = is_custom_struct(prev_ty);
+            let prev_is_dynamic = is_dynamic_type(prev_ty);
 
             let prev_slot = Ident::new(
                 &format!("FIELD_{prev_idx}_SLOT"),
@@ -193,6 +194,12 @@ fn gen_packing_module(fields: &[(&Ident, &Type)], mod_ident: &Ident) -> TokenStr
                     const PREV_SLOT: usize = #prev_slot + <#prev_ty>::SLOT_COUNT;
                     const PREV_OFFSET: usize = 0;
                 }
+            } else if prev_is_dynamic {
+                // Previous field was a dynamic type (String/Bytes) - advance by 1 slot and reset offset
+                quote! {
+                    const PREV_SLOT: usize = #prev_slot + 1;
+                    const PREV_OFFSET: usize = 0;
+                }
             } else {
                 // Previous field was primitive - continue from its end position
                 quote! {
@@ -202,11 +209,13 @@ fn gen_packing_module(fields: &[(&Ident, &Type)], mod_ident: &Ident) -> TokenStr
             }
         };
 
-        // Check if current field is a struct (Solidity rule: structs always start new slots)
+        // Check if current field is a struct or dynamic type
+        // (Solidity rule: structs and dynamic types always start new slots)
         let is_struct = is_custom_struct(ty);
+        let is_dynamic = is_dynamic_type(ty);
 
-        if is_struct {
-            // Struct field: must start on a new slot if PREV_OFFSET != 0
+        if is_struct || is_dynamic {
+            // Structs and dynamic type field must start on a new slot if PREV_OFFSET != 0
             quote! {
                 pub const #slot_const: usize = {
                     #prev_calculations
@@ -220,7 +229,7 @@ fn gen_packing_module(fields: &[(&Ident, &Type)], mod_ident: &Ident) -> TokenStr
                 pub const #offset_const: usize = 0;
             }
         } else {
-            // Primitive field: use standard packing logic
+            // Primitive field use standard packing logic
             quote! {
                 pub const #slot_const: usize = {
                     #prev_calculations
@@ -269,9 +278,10 @@ fn gen_load_impl(fields: &[(&Ident, &Type)], packing: &Ident) -> TokenStream {
         let bytes_const = Ident::new(&format!("FIELD_{idx}_BYTES"), proc_macro2::Span::call_site());
 
         let is_struct = is_custom_struct(ty);
+        let is_dynamic = is_dynamic_type(ty);
 
-        // Struct fields always use load() directly (never packed)
-        if is_struct {
+        // Struct and dynamic type fields always use load() directly (never packed)
+        if is_struct || is_dynamic {
             return quote! {
                 let #name = <#ty>::load(
                     storage,
@@ -351,9 +361,10 @@ fn gen_store_impl(fields: &[(&Ident, &Type)], packing: &Ident) -> TokenStream {
         let bytes_const = Ident::new(&format!("FIELD_{idx}_BYTES"), proc_macro2::Span::call_site());
 
         let is_struct = is_custom_struct(ty);
+        let is_dynamic = is_dynamic_type(ty);
 
-        // Struct fields always use store() directly (never packed)
-        if is_struct {
+        // Struct and dynamic type fields always use store() directly (never packed)
+        if is_struct || is_dynamic {
             return quote! {
                 self.#name.store(
                     storage,
@@ -444,6 +455,7 @@ fn gen_to_evm_words_impl(fields: &[(&Ident, &Type)], packing: &Ident) -> TokenSt
         );
 
         let is_struct = is_custom_struct(ty);
+        let is_dynamic = is_dynamic_type(ty);
 
         if is_struct {
             // Nested struct: copy all its words into consecutive slots
@@ -453,6 +465,14 @@ fn gen_to_evm_words_impl(fields: &[(&Ident, &Type)], packing: &Ident) -> TokenSt
                     for (i, word) in nested_words.iter().enumerate() {
                         result[#packing::#slot_const + i] = *word;
                     }
+                }
+            }
+        } else if is_dynamic {
+            // Dynamic type: copy its single word into the appropriate slot
+            quote! {
+                {
+                    let dynamic_words = self.#name.to_evm_words()?;
+                    result[#packing::#slot_const] = dynamic_words[0];
                 }
             }
         } else {
@@ -499,6 +519,7 @@ fn gen_from_evm_words_impl(fields: &[(&Ident, &Type)], packing: &Ident) -> Token
         );
 
         let is_struct = is_custom_struct(ty);
+        let is_dynamic = is_dynamic_type(ty);
 
         if is_struct {
             // Nested struct: extract consecutive words and convert to array
@@ -510,6 +531,14 @@ fn gen_from_evm_words_impl(fields: &[(&Ident, &Type)], packing: &Ident) -> Token
                         words[start + i]
                     });
                     <#ty>::from_evm_words(nested_words)?
+                };
+            }
+        } else if is_dynamic {
+            // Dynamic type: extract its single word
+            quote! {
+                let #name = {
+                    let word = words[#packing::#slot_const];
+                    <#ty>::from_evm_words([word])?
                 };
             }
         } else {

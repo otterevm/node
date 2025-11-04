@@ -237,6 +237,26 @@ pub(crate) fn is_custom_struct(ty: &Type) -> bool {
     )
 }
 
+/// Checks if a type is a dynamic type that forces slot boundaries.
+///
+/// Dynamic types (like `String` and `Bytes`) always:
+/// - Start at offset 0 of a new slot
+/// - Force the next field to start at a new slot
+/// - Cannot be packed with other fields
+///
+/// This matches Solidity's storage layout rules for dynamic types.
+pub(crate) fn is_dynamic_type(ty: &Type) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+
+    matches!(segment.ident.to_string().as_str(), "String" | "Bytes")
+}
+
 /// Extracts the identifier (last segment) from a type path.
 ///
 /// For example, given `Foo::Bar::Baz`, this returns `Ok(Baz)`.
@@ -350,5 +370,20 @@ mod tests {
         // Custom types should return false
         assert!(is_custom_struct(&parse_quote!(RewardStream)));
         assert!(is_custom_struct(&parse_quote!(MyCustomStruct)));
+    }
+
+    #[test]
+    fn test_is_dynamic_type() {
+        // Dynamic types
+        assert!(is_dynamic_type(&parse_quote!(String)));
+        assert!(is_dynamic_type(&parse_quote!(Bytes)));
+
+        // Non-dynamic types
+        assert!(!is_dynamic_type(&parse_quote!(bool)));
+        assert!(!is_dynamic_type(&parse_quote!(u8)));
+        assert!(!is_dynamic_type(&parse_quote!(u64)));
+        assert!(!is_dynamic_type(&parse_quote!(U256)));
+        assert!(!is_dynamic_type(&parse_quote!(Address)));
+        assert!(!is_dynamic_type(&parse_quote!(MyCustomStruct)));
     }
 }

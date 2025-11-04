@@ -292,6 +292,16 @@ fn test_slot_and_byte_counts() {
 
     // Multi-level nesting
     assert_eq!(DeepNested::SLOT_COUNT, 6);
+
+    // String types - force slot boundaries
+    assert_eq!(WithString::SLOT_COUNT, 3);
+    assert_eq!(WithString::BYTE_COUNT, 65); // 32 + 32 + 1
+
+    assert_eq!(MultipleStrings::SLOT_COUNT, 2);
+    assert_eq!(MultipleStrings::BYTE_COUNT, 64); // 32 + 32
+
+    assert_eq!(NestedWithString::SLOT_COUNT, 5);
+    assert_eq!(NestedWithString::BYTE_COUNT, 129); // 8 + (32 + 32 + 1) + 32
 }
 
 // -- TEST SLOT PACKING --------------------------------------------------------
@@ -465,5 +475,116 @@ proptest! {
         test_store_load::<DeepNested, _, 6>(&mut storage, base_slot, &value1)?;
         test_update::<DeepNested, _, 6>(&mut storage, base_slot + U256::from(1000), &value1, &value2)?;
         test_delete::<DeepNested, _, 6>(&mut storage, base_slot + U256::from(2000), &value1)?;
+    }
+}
+
+// -- STRING TESTS -------------------------------------------------------------
+
+// Rule 5: Strings force slot boundaries (like structs)
+#[derive(Default, Debug, Clone, PartialEq, Eq, Storable)]
+struct WithString {
+    pub a: u8,        // 1 byte    (slot 0, offset 0)
+    pub text: String, // dynamic   (slot 1, offset 0)
+    pub b: u8,        // 1 byte    (slot 2, offset 0)
+}
+
+fn arb_with_string() -> impl Strategy<Value = WithString> {
+    (any::<u8>(), arb_string(), any::<u8>()).prop_map(|(a, text, b)| WithString { a, text, b })
+}
+
+// String with multiple strings
+#[derive(Default, Debug, Clone, PartialEq, Eq, Storable)]
+struct MultipleStrings {
+    pub name: String, // dynamic (slot 0)
+    pub desc: String, // dynamic (slot 1)
+}
+
+fn arb_multiple_strings() -> impl Strategy<Value = MultipleStrings> {
+    (arb_string(), arb_string()).prop_map(|(name, desc)| MultipleStrings { name, desc })
+}
+
+// Nested struct containing a string
+#[derive(Default, Debug, Clone, PartialEq, Eq, Storable)]
+struct NestedWithString {
+    pub id: u64,          // 8 bytes (slot 0, offset 0)
+    pub data: WithString, // 3 slots (slots 1-3)
+    pub flag: bool,       // 1 byte  (slot 4, offset 0)
+}
+
+fn arb_nested_with_string() -> impl Strategy<Value = NestedWithString> {
+    (any::<u64>(), arb_with_string(), any::<bool>()).prop_map(|(id, data, flag)| NestedWithString {
+        id,
+        data,
+        flag,
+    })
+}
+
+// Strategy for generating random strings of various sizes
+fn arb_string() -> impl Strategy<Value = String> {
+    prop_oneof![
+        // Empty string
+        Just(String::new()),
+        // Short strings (1-31 bytes) - inline storage
+        "[a-zA-Z0-9]{1,31}",
+        // Boundary: exactly 31 bytes (last short string)
+        "[a-zA-Z0-9]{31}",
+        // Boundary: exactly 32 bytes (first long string)
+        "[a-zA-Z0-9]{32}",
+        // Long strings (33-100 bytes)
+        "[a-zA-Z0-9]{33,100}",
+        // Unicode strings
+        "[\u{0041}-\u{005A}\u{4E00}-\u{9FFF}]{1,20}",
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(100))]
+
+    #[test]
+    fn test_string_forces_slot_boundaries(
+        value1 in arb_with_string(),
+        value2 in arb_with_string(),
+        base_slot in arb_u256().prop_map(|v| {
+            // WithString uses 3 slots, max offset is 2000, prevent overflow
+            v % (U256::MAX - U256::from(2000 + 3))
+        })
+    ) {
+        let mut storage = create_storage();
+
+        test_store_load::<WithString, _, 3>(&mut storage, base_slot, &value1)?;
+        test_update::<WithString, _, 3>(&mut storage, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<WithString, _, 3>(&mut storage, base_slot + U256::from(2000), &value1)?;
+    }
+
+    #[test]
+    fn test_multiple_strings(
+        value1 in arb_multiple_strings(),
+        value2 in arb_multiple_strings(),
+        base_slot in arb_u256().prop_map(|v| {
+            // MultipleStrings uses 2 slots, max offset is 2000, prevent overflow
+            v % (U256::MAX - U256::from(2000 + 2))
+        })
+    ) {
+        let mut storage = create_storage();
+
+        test_store_load::<MultipleStrings, _, 2>(&mut storage, base_slot, &value1)?;
+        test_update::<MultipleStrings, _, 2>(&mut storage, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<MultipleStrings, _, 2>(&mut storage, base_slot + U256::from(2000), &value1)?;
+    }
+
+    #[test]
+    fn test_nested_struct_with_string(
+        value1 in arb_nested_with_string(),
+        value2 in arb_nested_with_string(),
+        base_slot in arb_u256().prop_map(|v| {
+            // NestedWithString uses 5 slots, max offset is 2000, prevent overflow
+            v % (U256::MAX - U256::from(2000 + 5))
+        })
+    ) {
+        let mut storage = create_storage();
+
+        test_store_load::<NestedWithString, _, 5>(&mut storage, base_slot, &value1)?;
+        test_update::<NestedWithString, _, 5>(&mut storage, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<NestedWithString, _, 5>(&mut storage, base_slot + U256::from(2000), &value1)?;
     }
 }
