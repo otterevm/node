@@ -19,6 +19,7 @@ pub trait TIPFeeStateProviderExt: StateProvider {
         &self,
         fee_payer: Address,
         tx_fee_token: Option<Address>,
+        to: Option<&Address>,
     ) -> ProviderResult<U256> {
         use crate::{storage::slots::mapping_slot, tip20};
 
@@ -26,7 +27,6 @@ pub trait TIPFeeStateProviderExt: StateProvider {
             fee_token
         } else {
             // Look up user's configured fee token in TIPFeeManager storage
-
             use crate::tip_fee_manager;
             let user_token_slot = mapping_slot(fee_payer, tip_fee_manager::slots::USER_TOKENS);
             let fee_token = self
@@ -35,7 +35,13 @@ pub trait TIPFeeStateProviderExt: StateProvider {
                 .into_address();
 
             if fee_token.is_zero() {
-                DEFAULT_FEE_TOKEN
+                if let Some(to) = to
+                    && tip20::is_tip20(*to)
+                {
+                    *to
+                } else {
+                    DEFAULT_FEE_TOKEN
+                }
             } else {
                 fee_token
             }

@@ -8,7 +8,7 @@ pub use tempo_contracts::precompiles::{
 
 use crate::{
     LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
-    error::TempoPrecompileError,
+    error::{Result, TempoPrecompileError},
     storage::{
         PrecompileStorageProvider,
         slots::{double_mapping_slot, mapping_slot},
@@ -16,11 +16,10 @@ use crate::{
     tip20::roles::{DEFAULT_ADMIN_ROLE, RolesAuthContract},
     tip20_factory::TIP20Factory,
     tip403_registry::{ITIP403Registry, TIP403Registry},
-    tip4217_registry::{ITIP4217Registry, TIP4217Registry},
 };
 use alloy::{
     hex,
-    primitives::{Address, B256, Bytes, IntoLogData, U256, keccak256},
+    primitives::{Address, B256, Bytes, IntoLogData, U256, keccak256, uint},
 };
 use revm::{
     interpreter::instructions::utility::{IntoAddress, IntoU256},
@@ -28,6 +27,15 @@ use revm::{
 };
 use std::sync::LazyLock;
 use tracing::trace;
+
+/// u128::MAX as U256
+const U128_MAX: U256 = uint!(0xffffffffffffffffffffffffffffffff_U256);
+
+/// Decimal precision for TIP-20 tokens
+const TIP20_DECIMALS: u8 = 6;
+
+/// USD currency string constant
+pub const USD_CURRENCY: &str = "USD";
 
 /// TIP20 token address prefix (12 bytes for token ID encoding)
 const TIP20_TOKEN_PREFIX: [u8; 12] = hex!("20C000000000000000000000");
@@ -88,67 +96,107 @@ pub static UNPAUSE_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"UNPAUSE_R
 pub static ISSUER_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"ISSUER_ROLE"));
 pub static BURN_BLOCKED_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"BURN_BLOCKED_ROLE"));
 
+/// Validates that a token has USD currency
+pub fn validate_usd_currency<S: PrecompileStorageProvider>(
+    token: Address,
+    storage: &mut S,
+) -> Result<()> {
+    let mut tip20_token = TIP20Token::from_address(token, storage);
+    let currency = tip20_token.currency()?;
+    if currency != USD_CURRENCY {
+        return Err(TIP20Error::invalid_currency().into());
+    }
+    Ok(())
+}
+
 impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
-    pub fn name(&mut self) -> Result<String, TempoPrecompileError> {
+    pub fn name(&mut self) -> Result<String> {
         self.read_string(slots::NAME)
     }
 
-    pub fn symbol(&mut self) -> Result<String, TempoPrecompileError> {
+    pub fn symbol(&mut self) -> Result<String> {
         self.read_string(slots::SYMBOL)
     }
 
-    pub fn decimals(&mut self) -> Result<u8, TempoPrecompileError> {
-        let currency = self.currency()?;
-        Ok(TIP4217Registry::default()
-            .get_currency_decimals(ITIP4217Registry::getCurrencyDecimalsCall { currency }))
+    pub fn decimals(&mut self) -> Result<u8> {
+        Ok(TIP20_DECIMALS)
     }
 
-    pub fn currency(&mut self) -> Result<String, TempoPrecompileError> {
+    pub fn currency(&mut self) -> Result<String> {
         self.read_string(slots::CURRENCY)
     }
 
-    pub fn total_supply(&mut self) -> Result<U256, TempoPrecompileError> {
+    pub fn total_supply(&mut self) -> Result<U256> {
         self.storage.sload(self.token_address, slots::TOTAL_SUPPLY)
     }
 
-    pub fn quote_token(&mut self) -> Result<Address, TempoPrecompileError> {
+    pub fn quote_token(&mut self) -> Result<Address> {
         Ok(self
             .storage
             .sload(self.token_address, slots::QUOTE_TOKEN)?
             .into_address())
     }
 
-    pub fn next_quote_token(&mut self) -> Result<Address, TempoPrecompileError> {
+    pub fn next_quote_token(&mut self) -> Result<Address> {
         Ok(self
             .storage
             .sload(self.token_address, slots::NEXT_QUOTE_TOKEN)?
             .into_address())
     }
 
-    pub fn supply_cap(&mut self) -> Result<U256, TempoPrecompileError> {
+    pub fn supply_cap(&mut self) -> Result<U256> {
         self.storage.sload(self.token_address, slots::SUPPLY_CAP)
     }
 
-    pub fn paused(&mut self) -> Result<bool, TempoPrecompileError> {
+    pub fn paused(&mut self) -> Result<bool> {
         Ok(self.storage.sload(self.token_address, slots::PAUSED)? != U256::ZERO)
     }
 
-    pub fn transfer_policy_id(&mut self) -> Result<u64, TempoPrecompileError> {
+    pub fn transfer_policy_id(&mut self) -> Result<u64> {
         Ok(self
             .storage
             .sload(self.token_address, slots::TRANSFER_POLICY_ID)?
             .to::<u64>())
     }
 
+    /// Returns the PAUSE_ROLE constant
+    ///
+    /// This role identifier grants permission to pause the token contract.
+    /// The role is computed as `keccak256("PAUSE_ROLE")`.
+    pub fn pause_role() -> B256 {
+        *PAUSE_ROLE
+    }
+
+    /// Returns the UNPAUSE_ROLE constant
+    ///
+    /// This role identifier grants permission to unpause the token contract.
+    /// The role is computed as `keccak256("UNPAUSE_ROLE")`.
+    pub fn unpause_role() -> B256 {
+        *UNPAUSE_ROLE
+    }
+
+    /// Returns the ISSUER_ROLE constant
+    ///
+    /// This role identifier grants permission to mint and burn tokens.
+    /// The role is computed as `keccak256("ISSUER_ROLE")`.
+    pub fn issuer_role() -> B256 {
+        *ISSUER_ROLE
+    }
+
+    /// Returns the BURN_BLOCKED_ROLE constant
+    ///
+    /// This role identifier grants permission to burn tokens from blocked accounts.
+    /// The role is computed as `keccak256("BURN_BLOCKED_ROLE")`.
+    pub fn burn_blocked_role() -> B256 {
+        *BURN_BLOCKED_ROLE
+    }
+
     // View functions
-    pub fn balance_of(
-        &mut self,
-        call: ITIP20::balanceOfCall,
-    ) -> Result<U256, TempoPrecompileError> {
+    pub fn balance_of(&mut self, call: ITIP20::balanceOfCall) -> Result<U256> {
         self.get_balance(call.account)
     }
 
-    pub fn allowance(&mut self, call: ITIP20::allowanceCall) -> Result<U256, TempoPrecompileError> {
+    pub fn allowance(&mut self, call: ITIP20::allowanceCall) -> Result<U256> {
         self.get_allowance(call.owner, call.spender)
     }
 
@@ -157,7 +205,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::changeTransferPolicyIdCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         self.check_role(msg_sender, DEFAULT_ADMIN_ROLE)?;
         self.storage.sstore(
             self.token_address,
@@ -179,11 +227,16 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::setSupplyCapCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         self.check_role(msg_sender, DEFAULT_ADMIN_ROLE)?;
         if call.newSupplyCap < self.total_supply()? {
+            return Err(TIP20Error::invalid_supply_cap().into());
+        }
+
+        if call.newSupplyCap > U128_MAX {
             return Err(TIP20Error::supply_cap_exceeded().into());
         }
+
         self.storage
             .sstore(self.token_address, slots::SUPPLY_CAP, call.newSupplyCap)?;
 
@@ -197,11 +250,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         )
     }
 
-    pub fn pause(
-        &mut self,
-        msg_sender: Address,
-        _call: ITIP20::pauseCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn pause(&mut self, msg_sender: Address, _call: ITIP20::pauseCall) -> Result<()> {
         self.check_role(msg_sender, *PAUSE_ROLE)?;
         self.storage
             .sstore(self.token_address, slots::PAUSED, U256::ONE)?;
@@ -216,11 +265,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         )
     }
 
-    pub fn unpause(
-        &mut self,
-        msg_sender: Address,
-        _call: ITIP20::unpauseCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn unpause(&mut self, msg_sender: Address, _call: ITIP20::unpauseCall) -> Result<()> {
         self.check_role(msg_sender, *UNPAUSE_ROLE)?;
         self.storage
             .sstore(self.token_address, slots::PAUSED, U256::ZERO)?;
@@ -235,16 +280,26 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         )
     }
 
-    pub fn update_quote_token(
+    pub fn set_next_quote_token(
         &mut self,
         msg_sender: Address,
-        call: ITIP20::updateQuoteTokenCall,
-    ) -> Result<(), TempoPrecompileError> {
+        call: ITIP20::setNextQuoteTokenCall,
+    ) -> Result<()> {
         self.check_role(msg_sender, DEFAULT_ADMIN_ROLE)?;
 
         // Verify the new quote token is a valid TIP20 token that has been deployed
         if !is_tip20(call.newQuoteToken) {
             return Err(TIP20Error::invalid_quote_token().into());
+        }
+
+        // Check if the currency is USD, if so then the quote token's currency MUST also be USD
+        let currency = self.currency()?;
+        if currency == USD_CURRENCY {
+            let quote_token_currency =
+                TIP20Token::from_address(call.newQuoteToken, self.storage).currency()?;
+            if quote_token_currency != USD_CURRENCY {
+                return Err(TIP20Error::invalid_quote_token().into());
+            }
         }
 
         let new_token_id = address_to_token_id_unchecked(call.newQuoteToken);
@@ -265,19 +320,19 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
 
         self.storage.emit_event(
             self.token_address,
-            TIP20Event::UpdateQuoteToken(ITIP20::UpdateQuoteToken {
+            TIP20Event::NextQuoteTokenSet(ITIP20::NextQuoteTokenSet {
                 updater: msg_sender,
-                newQuoteToken: call.newQuoteToken,
+                nextQuoteToken: call.newQuoteToken,
             })
             .into_log_data(),
         )
     }
 
-    pub fn finalize_quote_token_update(
+    pub fn complete_quote_token_update(
         &mut self,
         msg_sender: Address,
-        _call: ITIP20::finalizeQuoteTokenUpdateCall,
-    ) -> Result<(), TempoPrecompileError> {
+        _call: ITIP20::completeQuoteTokenUpdateCall,
+    ) -> Result<()> {
         self.check_role(msg_sender, DEFAULT_ADMIN_ROLE)?;
 
         let next_quote_token = self.next_quote_token()?;
@@ -302,7 +357,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
 
         self.storage.emit_event(
             self.token_address,
-            TIP20Event::QuoteTokenUpdateFinalized(ITIP20::QuoteTokenUpdateFinalized {
+            TIP20Event::QuoteTokenUpdate(ITIP20::QuoteTokenUpdate {
                 updater: msg_sender,
                 newQuoteToken: next_quote_token,
             })
@@ -312,11 +367,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
 
     // Token operations
     /// Mints new tokens to specified address
-    pub fn mint(
-        &mut self,
-        msg_sender: Address,
-        call: ITIP20::mintCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn mint(&mut self, msg_sender: Address, call: ITIP20::mintCall) -> Result<()> {
         self._mint(msg_sender, call.to, call.amount)
     }
 
@@ -325,7 +376,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::mintWithMemoCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         self._mint(msg_sender, call.to, call.amount)?;
 
         self.storage.emit_event(
@@ -341,12 +392,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     }
 
     /// Internal helper to mint new tokens and update balances
-    fn _mint(
-        &mut self,
-        msg_sender: Address,
-        to: Address,
-        amount: U256,
-    ) -> Result<(), TempoPrecompileError> {
+    fn _mint(&mut self, msg_sender: Address, to: Address, amount: U256) -> Result<()> {
         self.check_role(msg_sender, *ISSUER_ROLE)?;
         let total_supply = self.total_supply()?;
 
@@ -388,11 +434,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     }
 
     /// Burns tokens from sender's balance and reduces total supply
-    pub fn burn(
-        &mut self,
-        msg_sender: Address,
-        call: ITIP20::burnCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn burn(&mut self, msg_sender: Address, call: ITIP20::burnCall) -> Result<()> {
         self._burn(msg_sender, call.amount)
     }
 
@@ -401,7 +443,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::burnWithMemoCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         self._burn(msg_sender, call.amount)?;
 
         self.storage.emit_event(
@@ -421,7 +463,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::burnBlockedCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         self.check_role(msg_sender, *BURN_BLOCKED_ROLE)?;
 
         // Check if the address is blocked from transferring
@@ -458,7 +500,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         )
     }
 
-    fn _burn(&mut self, msg_sender: Address, amount: U256) -> Result<(), TempoPrecompileError> {
+    fn _burn(&mut self, msg_sender: Address, amount: U256) -> Result<()> {
         self.check_role(msg_sender, *ISSUER_ROLE)?;
 
         self._transfer(msg_sender, Address::ZERO, amount)?;
@@ -485,11 +527,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     }
 
     // Standard token functions
-    pub fn approve(
-        &mut self,
-        msg_sender: Address,
-        call: ITIP20::approveCall,
-    ) -> Result<bool, TempoPrecompileError> {
+    pub fn approve(&mut self, msg_sender: Address, call: ITIP20::approveCall) -> Result<bool> {
         self.set_allowance(msg_sender, call.spender, call.amount)?;
 
         self.storage.emit_event(
@@ -505,11 +543,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         Ok(true)
     }
 
-    pub fn transfer(
-        &mut self,
-        msg_sender: Address,
-        call: ITIP20::transferCall,
-    ) -> Result<bool, TempoPrecompileError> {
+    pub fn transfer(&mut self, msg_sender: Address, call: ITIP20::transferCall) -> Result<bool> {
         trace!(%msg_sender, ?call, "transferring TIP20");
         self.check_not_paused()?;
         self.check_not_token_address(call.to)?;
@@ -522,7 +556,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::transferFromCall,
-    ) -> Result<bool, TempoPrecompileError> {
+    ) -> Result<bool> {
         self._transfer_from(msg_sender, call.from, call.to, call.amount)
     }
 
@@ -531,7 +565,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::transferFromWithMemoCall,
-    ) -> Result<bool, TempoPrecompileError> {
+    ) -> Result<bool> {
         self._transfer_from(msg_sender, call.from, call.to, call.amount)?;
 
         self.storage.emit_event(
@@ -555,7 +589,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         from: Address,
         to: Address,
         amount: U256,
-    ) -> Result<bool, TempoPrecompileError> {
+    ) -> Result<bool> {
         self.check_not_paused()?;
         self.check_not_token_address(to)?;
         self.ensure_transfer_authorized(from, to)?;
@@ -571,7 +605,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         from: Address,
         to: Address,
         amount: U256,
-    ) -> Result<bool, TempoPrecompileError> {
+    ) -> Result<bool> {
         self.check_not_paused()?;
         self.check_not_token_address(to)?;
         self.ensure_transfer_authorized(from, to)?;
@@ -598,7 +632,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::transferWithMemoCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         self.check_not_paused()?;
         self.check_not_token_address(call.to)?;
         self.ensure_transfer_authorized(msg_sender, call.to)?;
@@ -643,7 +677,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         currency: &str,
         quote_token: Address,
         admin: Address,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         trace!(%name, address=%self.token_address, "Initializing token");
 
         // must ensure the account is not empty, by setting some code
@@ -655,6 +689,16 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         self.write_string(slots::NAME, name.to_string())?;
         self.write_string(slots::SYMBOL, symbol.to_string())?;
         self.write_string(slots::CURRENCY, currency.to_string())?;
+
+        // If the currency is USD, the quote token must also be USD
+        if currency == USD_CURRENCY {
+            let quote_token_currency =
+                TIP20Token::from_address(quote_token, self.storage).currency()?;
+            if quote_token_currency != USD_CURRENCY {
+                return Err(TIP20Error::invalid_quote_token().into());
+            }
+        }
+
         self.storage.sstore(
             self.token_address,
             slots::QUOTE_TOKEN,
@@ -666,11 +710,6 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
             slots::NEXT_QUOTE_TOKEN,
             quote_token.into_u256(),
         )?;
-
-        // Validate currency via TIP4217 registry
-        if self.decimals()? == 0 {
-            return Err(TIP20Error::invalid_currency().into());
-        }
 
         // Set default values
         self.storage
@@ -694,71 +733,58 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         )
     }
 
-    fn get_balance(&mut self, account: Address) -> Result<U256, TempoPrecompileError> {
+    fn get_balance(&mut self, account: Address) -> Result<U256> {
         let slot = mapping_slot(account, slots::BALANCES);
         self.storage.sload(self.token_address, slot)
     }
 
-    fn set_balance(&mut self, account: Address, amount: U256) -> Result<(), TempoPrecompileError> {
+    fn set_balance(&mut self, account: Address, amount: U256) -> Result<()> {
         let slot = mapping_slot(account, slots::BALANCES);
         self.storage.sstore(self.token_address, slot, amount)
     }
 
-    fn get_allowance(
-        &mut self,
-        owner: Address,
-        spender: Address,
-    ) -> Result<U256, TempoPrecompileError> {
+    fn get_allowance(&mut self, owner: Address, spender: Address) -> Result<U256> {
         let slot = double_mapping_slot(owner, spender, slots::ALLOWANCES);
         self.storage.sload(self.token_address, slot)
     }
 
-    fn set_allowance(
-        &mut self,
-        owner: Address,
-        spender: Address,
-        amount: U256,
-    ) -> Result<(), TempoPrecompileError> {
+    fn set_allowance(&mut self, owner: Address, spender: Address, amount: U256) -> Result<()> {
         let slot = double_mapping_slot(owner, spender, slots::ALLOWANCES);
         self.storage.sstore(self.token_address, slot, amount)
     }
 
-    fn set_total_supply(&mut self, amount: U256) -> Result<(), TempoPrecompileError> {
+    fn set_total_supply(&mut self, amount: U256) -> Result<()> {
         self.storage
             .sstore(self.token_address, slots::TOTAL_SUPPLY, amount)
     }
 
-    pub fn check_role(&mut self, account: Address, role: B256) -> Result<(), TempoPrecompileError> {
+    pub fn check_role(&mut self, account: Address, role: B256) -> Result<()> {
         let mut roles = self.get_roles_contract();
         roles.check_role(account, role)
     }
 
-    pub fn has_role(&mut self, account: Address, role: B256) -> Result<bool, TempoPrecompileError> {
+    pub fn has_role(&mut self, account: Address, role: B256) -> Result<bool> {
         let mut roles = self.get_roles_contract();
         roles.has_role_internal(account, role)
     }
 
-    fn check_not_paused(&mut self) -> Result<(), TempoPrecompileError> {
+    fn check_not_paused(&mut self) -> Result<()> {
         if self.paused()? {
             return Err(TIP20Error::contract_paused().into());
         }
         Ok(())
     }
 
-    fn check_not_token_address(&self, to: Address) -> Result<(), TIP20Error> {
+    fn check_not_token_address(&self, to: Address) -> Result<()> {
         // Don't allow sending to other precompiled tokens
         if is_tip20(to) {
-            return Err(TIP20Error::invalid_recipient());
+            return Err(TIP20Error::invalid_recipient().into());
         }
         Ok(())
     }
 
     /// Checks if the transfer is authorized.
-    pub fn is_transfer_authorized(
-        &mut self,
-        from: Address,
-        to: Address,
-    ) -> Result<bool, TempoPrecompileError> {
+    pub fn is_transfer_authorized(&mut self, from: Address, to: Address) -> Result<bool> {
         let transfer_policy_id = self.transfer_policy_id()?;
         let mut registry = TIP403Registry::new(self.storage);
 
@@ -778,11 +804,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     }
 
     /// Ensures the transfer is authorized.
-    pub fn ensure_transfer_authorized(
-        &mut self,
-        from: Address,
-        to: Address,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn ensure_transfer_authorized(&mut self, from: Address, to: Address) -> Result<()> {
         if !self.is_transfer_authorized(from, to)? {
             return Err(TIP20Error::policy_forbids().into());
         }
@@ -790,12 +812,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         Ok(())
     }
 
-    fn _transfer(
-        &mut self,
-        from: Address,
-        to: Address,
-        amount: U256,
-    ) -> Result<(), TempoPrecompileError> {
+    fn _transfer(&mut self, from: Address, to: Address, amount: U256) -> Result<()> {
         let from_balance = self.get_balance(from)?;
         if amount > from_balance {
             return Err(
@@ -833,11 +850,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     }
 
     /// Transfers fee tokens from user to fee manager before transaction execution
-    pub fn transfer_fee_pre_tx(
-        &mut self,
-        from: Address,
-        amount: U256,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn transfer_fee_pre_tx(&mut self, from: Address, amount: U256) -> Result<()> {
         let from_balance = self.get_balance(from)?;
         if amount > from_balance {
             return Err(
@@ -870,8 +883,23 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         &mut self,
         to: Address,
         refund: U256,
-        actual_used: U256,
-    ) -> Result<(), TempoPrecompileError> {
+        actual_spending: U256,
+    ) -> Result<()> {
+        self.storage.emit_event(
+            self.token_address,
+            TIP20Event::Transfer(ITIP20::Transfer {
+                from: to,
+                to: TIP_FEE_MANAGER_ADDRESS,
+                amount: actual_spending,
+            })
+            .into_log_data(),
+        )?;
+
+        // Exit early if there is no refund
+        if refund.is_zero() {
+            return Ok(());
+        }
+
         let from_balance = self.get_balance(TIP_FEE_MANAGER_ADDRESS)?;
         if refund > from_balance {
             return Err(
@@ -894,32 +922,24 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         let new_to_balance = to_balance
             .checked_add(refund)
             .ok_or(TIP20Error::supply_cap_exceeded())?;
-        self.set_balance(to, new_to_balance)?;
-
-        self.storage.emit_event(
-            self.token_address,
-            TIP20Event::Transfer(ITIP20::Transfer {
-                from: to,
-                to: TIP_FEE_MANAGER_ADDRESS,
-                amount: actual_used,
-            })
-            .into_log_data(),
-        )
+        self.set_balance(to, new_to_balance)
     }
 
-    fn read_string(&mut self, slot: U256) -> Result<String, TempoPrecompileError> {
+    fn read_string(&mut self, slot: U256) -> Result<String> {
         let value = self.storage.sload(self.token_address, slot)?;
         let bytes = value.to_be_bytes::<32>();
         let len = bytes[31] as usize / 2; // Last byte stores length * 2 for short strings
         if len > 31 {
-            panic!("String too long, we shouldn't have stored this in the first place.");
+            // NOTE: This should never happen given that we safeguard this in `write_string`.
+            // Regardless, we return an error in this case rather than panicking.
+            Err(TIP20Error::string_too_long().into())
         } else {
             Ok(String::from_utf8_lossy(&bytes[..len]).to_string())
         }
     }
 
     /// Write string to storage (simplified - assumes string fits in one slot)
-    fn write_string(&mut self, slot: U256, value: String) -> Result<(), TempoPrecompileError> {
+    fn write_string(&mut self, slot: U256, value: String) -> Result<()> {
         let bytes = value.as_bytes();
         if bytes.len() > 31 {
             return Err(TIP20Error::string_too_long().into());
@@ -934,14 +954,24 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use alloy::primitives::{Address, FixedBytes, U256};
 
     use super::*;
     use crate::{
-        DEFAULT_FEE_TOKEN, LINKING_USD_ADDRESS, storage::hashmap::HashMapStorageProvider,
-        tip20_factory::ITIP20Factory,
+        DEFAULT_FEE_TOKEN, LINKING_USD_ADDRESS, error::TempoPrecompileError,
+        storage::hashmap::HashMapStorageProvider, tip20_factory::ITIP20Factory,
     };
+    use rand::{Rng, distributions::Alphanumeric, thread_rng};
+
+    /// Initialize LinkingUSD token (required before creating other USD tokens)
+    pub(crate) fn initialize_linking_usd(
+        storage: &mut HashMapStorageProvider,
+        admin: Address,
+    ) -> Result<()> {
+        let mut linking_usd = TIP20Token::from_address(LINKING_USD_ADDRESS, storage);
+        linking_usd.initialize("LinkingUSD", "LUSD", "USD", Address::ZERO, admin)
+    }
 
     /// Initialize a factory and create a single token
     fn setup_factory_with_token(
@@ -950,10 +980,11 @@ mod tests {
         name: &str,
         symbol: &str,
     ) -> u64 {
+        initialize_linking_usd(storage, admin).unwrap();
         let mut factory = TIP20Factory::new(storage);
         factory.initialize().unwrap();
 
-        factory
+        let token_address = factory
             .create_token(
                 admin,
                 ITIP20Factory::createTokenCall {
@@ -964,8 +995,9 @@ mod tests {
                     admin,
                 },
             )
-            .unwrap()
-            .to::<u64>()
+            .unwrap();
+
+        address_to_token_id_unchecked(token_address)
     }
 
     /// Create a token via an already-initialized factory
@@ -976,7 +1008,7 @@ mod tests {
         symbol: &str,
         quote_token: Address,
     ) -> u64 {
-        factory
+        let token_address = factory
             .create_token(
                 admin,
                 ITIP20Factory::createTokenCall {
@@ -987,8 +1019,9 @@ mod tests {
                     admin,
                 },
             )
-            .unwrap()
-            .to::<u64>()
+            .unwrap();
+
+        address_to_token_id_unchecked(token_address)
     }
 
     /// Setup factory and create a token with a separate quote token (both linking to LINKING_USD)
@@ -996,6 +1029,7 @@ mod tests {
         storage: &mut HashMapStorageProvider,
         admin: Address,
     ) -> (u64, u64) {
+        initialize_linking_usd(storage, admin).unwrap();
         let mut factory = TIP20Factory::new(storage);
         factory.initialize().unwrap();
 
@@ -1015,6 +1049,7 @@ mod tests {
         let amount = U256::from(100);
         let token_id = 1;
         {
+            initialize_linking_usd(&mut storage, admin).unwrap();
             let mut token = TIP20Token::new(token_id, &mut storage);
             // Initialize with admin
             token
@@ -1059,6 +1094,7 @@ mod tests {
         let amount = U256::from(100);
         let token_id = 1;
         {
+            initialize_linking_usd(&mut storage, admin).unwrap();
             let mut token = TIP20Token::new(token_id, &mut storage);
             token
                 .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1103,6 +1139,7 @@ mod tests {
     fn test_transfer_insufficient_balance_fails() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::from([0u8; 20]);
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(1, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1127,6 +1164,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1179,6 +1217,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1238,6 +1277,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1306,6 +1346,7 @@ mod tests {
         let admin = Address::random();
         let user = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1336,6 +1377,7 @@ mod tests {
         let admin = Address::random();
         let user = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1357,6 +1399,7 @@ mod tests {
         let admin = Address::random();
         let user = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1397,6 +1440,7 @@ mod tests {
         let to = Address::random();
         let amount = U256::from(100);
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1428,6 +1472,7 @@ mod tests {
         let to = Address::random();
         let amount = U256::from(100);
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1478,9 +1523,9 @@ mod tests {
 
         // Set next quote token
         token
-            .update_quote_token(
+            .set_next_quote_token(
                 admin,
-                ITIP20::updateQuoteTokenCall {
+                ITIP20::setNextQuoteTokenCall {
                     newQuoteToken: quote_token_address,
                 },
             )
@@ -1493,9 +1538,9 @@ mod tests {
         let events = &storage.events[&token_id_to_address(token_id)];
         assert_eq!(
             events.last().unwrap(),
-            &TIP20Event::UpdateQuoteToken(ITIP20::UpdateQuoteToken {
+            &TIP20Event::NextQuoteTokenSet(ITIP20::NextQuoteTokenSet {
                 updater: admin,
-                newQuoteToken: quote_token_address,
+                nextQuoteToken: quote_token_address,
             })
             .into_log_data()
         );
@@ -1509,6 +1554,7 @@ mod tests {
         let admin = Address::random();
         let non_admin = Address::random();
         let token_id = 1;
+        initialize_linking_usd(&mut storage, admin).unwrap();
         let mut token = TIP20Token::new(token_id, &mut storage);
         token
             .initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)
@@ -1517,9 +1563,9 @@ mod tests {
         let quote_token_address = token_id_to_address(2);
 
         // Try to set next quote token as non-admin
-        let result = token.update_quote_token(
+        let result = token.set_next_quote_token(
             non_admin,
-            ITIP20::updateQuoteTokenCall {
+            ITIP20::setNextQuoteTokenCall {
                 newQuoteToken: quote_token_address,
             },
         );
@@ -1544,9 +1590,9 @@ mod tests {
 
         // Try to set a non-TIP20 address (random address that doesn't match TIP20 pattern)
         let non_tip20_address = Address::random();
-        let result = token.update_quote_token(
+        let result = token.set_next_quote_token(
             admin,
-            ITIP20::updateQuoteTokenCall {
+            ITIP20::setNextQuoteTokenCall {
                 newQuoteToken: non_tip20_address,
             },
         );
@@ -1572,9 +1618,9 @@ mod tests {
         // Try to set a TIP20 address that hasn't been deployed yet (token_id = 999)
         // This has the correct TIP20 address pattern but hasn't been created
         let undeployed_token_address = token_id_to_address(999);
-        let result = token.update_quote_token(
+        let result = token.set_next_quote_token(
             admin,
-            ITIP20::updateQuoteTokenCall {
+            ITIP20::setNextQuoteTokenCall {
                 newQuoteToken: undeployed_token_address,
             },
         );
@@ -1601,9 +1647,9 @@ mod tests {
 
         // Set next quote token
         token
-            .update_quote_token(
+            .set_next_quote_token(
                 admin,
-                ITIP20::updateQuoteTokenCall {
+                ITIP20::setNextQuoteTokenCall {
                     newQuoteToken: quote_token_address,
                 },
             )
@@ -1611,7 +1657,7 @@ mod tests {
 
         // Complete the update
         token
-            .finalize_quote_token_update(admin, ITIP20::finalizeQuoteTokenUpdateCall {})
+            .complete_quote_token_update(admin, ITIP20::completeQuoteTokenUpdateCall {})
             .unwrap();
 
         // Verify quote token was updated
@@ -1621,7 +1667,7 @@ mod tests {
         let events = &storage.events[&token_id_to_address(token_id)];
         assert_eq!(
             events.last().unwrap(),
-            &TIP20Event::QuoteTokenUpdateFinalized(ITIP20::QuoteTokenUpdateFinalized {
+            &TIP20Event::QuoteTokenUpdate(ITIP20::QuoteTokenUpdate {
                 updater: admin,
                 newQuoteToken: quote_token_address,
             })
@@ -1636,6 +1682,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
+        initialize_linking_usd(&mut storage, admin)?;
         let mut factory = TIP20Factory::new(&mut storage);
         factory.initialize().unwrap();
 
@@ -1652,9 +1699,9 @@ mod tests {
         // Now try to set token_a as the next quote token for token_b (would create A -> B -> A loop)
         let mut token_b = TIP20Token::new(token_b_id, &mut storage);
         token_b
-            .update_quote_token(
+            .set_next_quote_token(
                 admin,
-                ITIP20::updateQuoteTokenCall {
+                ITIP20::setNextQuoteTokenCall {
                     newQuoteToken: token_a_address,
                 },
             )
@@ -1662,7 +1709,7 @@ mod tests {
 
         // Try to complete the update - should fail due to loop detection
         let result =
-            token_b.finalize_quote_token_update(admin, ITIP20::finalizeQuoteTokenUpdateCall {});
+            token_b.complete_quote_token_update(admin, ITIP20::completeQuoteTokenUpdateCall {});
 
         assert!(matches!(
             result,
@@ -1686,16 +1733,16 @@ mod tests {
         let mut token = TIP20Token::new(token_id, &mut storage);
 
         // Set next quote token as admin
-        token.update_quote_token(
+        token.set_next_quote_token(
             admin,
-            ITIP20::updateQuoteTokenCall {
+            ITIP20::setNextQuoteTokenCall {
                 newQuoteToken: quote_token_address,
             },
         )?;
 
         // Try to complete update as non-admin
         let result =
-            token.finalize_quote_token_update(non_admin, ITIP20::finalizeQuoteTokenUpdateCall {});
+            token.complete_quote_token_update(non_admin, ITIP20::completeQuoteTokenUpdateCall {});
 
         assert!(matches!(
             result,
@@ -1716,6 +1763,55 @@ mod tests {
             ]
         );
         assert_eq!(&DEFAULT_FEE_TOKEN.as_slice()[..12], &TIP20_TOKEN_PREFIX);
+    }
+
+    #[test]
+    fn test_arbitrary_currency() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+
+        for _ in 0..50 {
+            let mut token = TIP20Token::new(1, &mut storage);
+
+            let currency: String = thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(31)
+                .map(char::from)
+                .collect();
+
+            // Initialize token with the random currency
+            token.initialize("Test", "TST", &currency, LINKING_USD_ADDRESS, admin)?;
+
+            // Verify the currency was stored and can be retrieved correctly
+            let stored_currency = token.currency()?;
+            assert_eq!(stored_currency, currency,);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_currency() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+
+        for _ in 0..10 {
+            let mut token = TIP20Token::new(1, &mut storage);
+
+            let currency: String = thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(32)
+                .map(char::from)
+                .collect();
+
+            let result = token.initialize("Test", "TST", &currency, LINKING_USD_ADDRESS, admin);
+            assert!(matches!(
+                result,
+                Err(TempoPrecompileError::TIP20(TIP20Error::StringTooLong(_)))
+            ),);
+        }
+
+        Ok(())
     }
 
     #[test]
@@ -1759,5 +1855,164 @@ mod tests {
             addr_via_from_address, token_address,
             "from_address should use the provided address"
         );
+    }
+
+    #[test]
+    fn test_new_invalid_quote_token() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+
+        let currency: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(31)
+            .map(char::from)
+            .collect();
+
+        let mut token = TIP20Token::new(1, &mut storage);
+        token.initialize("Token", "T", &currency, LINKING_USD_ADDRESS, admin)?;
+
+        // Try to create a new USD token with the arbitrary token as the quote token, this should fail
+        let token_address = token.token_address;
+        let mut usd_token = TIP20Token::new(2, &mut storage);
+        let result = usd_token.initialize("USD Token", "USDT", USD_CURRENCY, token_address, admin);
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::InvalidQuoteToken(
+                _
+            )))
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_new_valid_quote_token() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+
+        initialize_linking_usd(&mut storage, admin)?;
+        let mut usd_token1 = TIP20Token::new(1, &mut storage);
+        usd_token1.initialize(
+            "USD Token",
+            "USDT",
+            USD_CURRENCY,
+            LINKING_USD_ADDRESS,
+            admin,
+        )?;
+
+        // USD token with USD token as quote
+        let usd_token1_address = token_id_to_address(1);
+        let mut usd_token2 = TIP20Token::new(2, &mut storage);
+        let result = usd_token2.initialize(
+            "USD Token 2",
+            "USD2",
+            USD_CURRENCY,
+            usd_token1_address,
+            admin,
+        );
+        assert!(result.is_ok());
+
+        // Create non USD token
+        let currency_1: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(31)
+            .map(char::from)
+            .collect();
+
+        let mut token_1 = TIP20Token::new(3, &mut storage);
+        token_1.initialize("Token 1", "TK1", &currency_1, LINKING_USD_ADDRESS, admin)?;
+
+        // Create a non USD token with non USD quote token
+        let currency_2: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(31)
+            .map(char::from)
+            .collect();
+
+        let token_1_address = token_id_to_address(3);
+        let mut token_2 = TIP20Token::new(4, &mut storage);
+        let result = token_2.initialize("Token 2", "TK2", &currency_2, token_1_address, admin);
+        assert!(result.is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_quote_token_invalid_token() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+
+        initialize_linking_usd(&mut storage, admin)?;
+
+        let currency: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(31)
+            .map(char::from)
+            .collect();
+
+        let mut token_1 = TIP20Token::new(1, &mut storage);
+        token_1.initialize("Token 1", "TK1", &currency, LINKING_USD_ADDRESS, admin)?;
+
+        // Create a new USD token
+        let mut usd_token = TIP20Token::new(2, &mut storage);
+        usd_token.initialize(
+            "USD Token",
+            "USDT",
+            USD_CURRENCY,
+            LINKING_USD_ADDRESS,
+            admin,
+        )?;
+
+        // Try to update the USD token's quote token to the arbitrary currency token, this should fail
+        let token_1_address = token_id_to_address(1);
+        let result = usd_token.set_next_quote_token(
+            admin,
+            ITIP20::setNextQuoteTokenCall {
+                newQuoteToken: token_1_address,
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::InvalidQuoteToken(
+                _
+            )))
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_tip20() {
+        let mut storage = HashMapStorageProvider::new(1);
+        let sender = Address::random();
+        initialize_linking_usd(&mut storage, sender).unwrap();
+
+        let mut factory = TIP20Factory::new(&mut storage);
+
+        factory
+            .initialize()
+            .expect("Factory initialization should succeed");
+
+        factory
+            .initialize()
+            .expect("Factory initialization should succeed");
+        let call = ITIP20Factory::createTokenCall {
+            name: "Test Token".to_string(),
+            symbol: "TEST".to_string(),
+            currency: "USD".to_string(),
+            quoteToken: crate::LINKING_USD_ADDRESS,
+            admin: sender,
+        };
+
+        let created_tip20 = factory
+            .create_token(sender, call)
+            .expect("Token creation should succeed");
+        let non_tip20 = Address::random();
+
+        assert!(is_tip20(LINKING_USD_ADDRESS));
+        assert!(is_tip20(created_tip20));
+        assert!(!is_tip20(non_tip20));
     }
 }

@@ -1,7 +1,4 @@
-use crate::{
-    consensus::Digest,
-    epoch::{self, SchemeProvider},
-};
+use crate::{consensus::Digest, epoch::SchemeProvider};
 use alloy_consensus::{BlockHeader, Transaction, transaction::TxHashRef};
 use alloy_primitives::{Address, B256, BlockHash, Bytes, TxHash};
 use alloy_rlp::Decodable;
@@ -18,6 +15,7 @@ use commonware_consensus::{
         types::Activity,
     },
     types::Round,
+    utils,
 };
 use commonware_cryptography::{
     Signer, Verifier,
@@ -30,6 +28,7 @@ use eyre::{Context, OptionExt};
 use futures::{StreamExt, channel::mpsc};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
+use reth_consensus_common::validation::MAX_RLP_BLOCK_SIZE;
 use reth_evm::{Evm, revm::database::State};
 use reth_node_builder::ConfigureEvm;
 use reth_primitives_traits::Recovered;
@@ -242,8 +241,7 @@ impl<TContext: Spawner + Metrics> Actor<TContext> {
             return;
         };
 
-        let epoch_of_next_block = epoch::of_height(header.number() + 1, self.epoch_length)
-            .expect("non-zero heights are guaranteed to have an epoch");
+        let epoch_of_next_block = utils::epoch(self.epoch_length, header.number() + 1);
 
         // Can't proceed without knowing a validator set for the current epoch.
         let Some(scheme) = self.scheme_provider.scheme(epoch_of_next_block) else {
@@ -599,9 +597,7 @@ async fn validate_subblock(
 
     let mut evm = evm_at_block(&node, subblock.parent_hash)?;
 
-    let epoch = epoch::of_height(evm.block().number.to::<u64>() + 1, epoch_length)
-        .ok_or_eyre("failed to compute epoch from block number")?;
-
+    let epoch = utils::epoch(epoch_length, evm.block().number.to::<u64>() + 1);
     let scheme = scheme_provider
         .scheme(epoch)
         .ok_or_eyre("scheme not found")?;
@@ -610,6 +606,20 @@ async fn validate_subblock(
         scheme.participants().iter().any(|p| p == &sender),
         "sender is not a validator"
     );
+
+    // Bound subblock size at a value proportional to `TEMPO_SHARED_GAS_DIVISOR`.
+    //
+    // This ensures we never collect too many subblocks to fit into a new proposal.
+    let max_size = MAX_RLP_BLOCK_SIZE
+        / TEMPO_SHARED_GAS_DIVISOR as usize
+        / scheme.participants().len() as usize;
+    if subblock.total_tx_size() > max_size {
+        warn!(
+            size = subblock.total_tx_size(),
+            max_size, "subblock is too large, skipping"
+        );
+        return Ok(());
+    }
 
     for tx in subblock.transactions_recovered() {
         if let Err(err) = evm.transact_commit(tx) {

@@ -8,13 +8,13 @@ pub use tempo_contracts::precompiles::{
 
 use crate::{
     DEFAULT_FEE_TOKEN,
-    error::TempoPrecompileError,
+    error::{Result, TempoPrecompileError},
     storage::{PrecompileStorageProvider, StorageOps},
     tip_fee_manager::{
         amm::{PoolKey, TIPFeeAMM},
         slots::{collected_fees_slot, user_token_slot, validator_token_slot},
     },
-    tip20::{ITIP20, TIP20Token, is_tip20},
+    tip20::{ITIP20, TIP20Token, is_tip20, validate_usd_currency},
 };
 
 // Re-export PoolKey for backward compatibility with tests
@@ -108,18 +108,15 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     /// Initializes the contract
     ///
     /// This ensures the [`TipFeeManager`] isn't empty and prevents state clear.
-    pub fn initialize(&mut self) -> Result<(), FeeManagerError> {
+    pub fn initialize(&mut self) -> Result<()> {
         // must ensure the account is not empty, by setting some code
-        self.storage
-            .set_code(
-                self.contract_address,
-                Bytecode::new_legacy(Bytes::from_static(&[0xef])),
-            )
-            .map_err(|_| FeeManagerError::internal_error())?;
-        Ok(())
+        self.storage.set_code(
+            self.contract_address,
+            Bytecode::new_legacy(Bytes::from_static(&[0xef])),
+        )
     }
 
-    pub fn get_validator_token(&mut self) -> Result<Address, TempoPrecompileError> {
+    pub fn get_validator_token(&mut self) -> Result<Address> {
         let validator_slot = validator_token_slot(self.beneficiary);
         let token = self.sload(validator_slot)?.into_address();
         if token.is_zero() {
@@ -133,7 +130,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         &mut self,
         sender: Address,
         call: IFeeManager::setValidatorTokenCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         if !is_tip20(call.token) {
             return Err(FeeManagerError::invalid_token().into());
         }
@@ -142,8 +139,8 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
             return Err(FeeManagerError::cannot_change_within_block().into());
         }
 
-        // TODO: validate USD currency requirement
-        // require(keccak256(bytes(ITIP20(token).currency())) == keccak256(bytes("USD")), "INVALID_TOKEN");
+        // Validate that the fee token is USD
+        validate_usd_currency(call.token, self.storage)?;
 
         let slot = validator_token_slot(sender);
         self.sstore(slot, call.token.into_u256())?;
@@ -163,13 +160,13 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         &mut self,
         sender: Address,
         call: IFeeManager::setUserTokenCall,
-    ) -> Result<(), TempoPrecompileError> {
+    ) -> Result<()> {
         if !is_tip20(call.token) {
             return Err(FeeManagerError::invalid_token().into());
         }
 
-        // TODO: validate USD currency requirement
-        // require(keccak256(bytes(ITIP20(token).currency())) == keccak256(bytes("USD")), "INVALID_TOKEN");
+        // Validate that the fee token is USD
+        validate_usd_currency(call.token, self.storage)?;
 
         let slot = user_token_slot(sender);
         self.sstore(slot, call.token.into_u256())?;
@@ -195,14 +192,9 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         user_token: Address,
         _to: Address,
         max_amount: U256,
-    ) -> Result<Address, TempoPrecompileError> {
+    ) -> Result<Address> {
         // Get the validator's token preference
-        let validator_slot = validator_token_slot(self.beneficiary);
-        let mut validator_token = self.sload(validator_slot)?.into_address();
-
-        if validator_token.is_zero() {
-            validator_token = DEFAULT_FEE_TOKEN;
-        }
+        let validator_token = self.get_validator_token()?;
 
         // Verify pool liquidity if user token differs from validator token
         if user_token != validator_token {
@@ -229,30 +221,28 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     pub fn collect_fee_post_tx(
         &mut self,
         fee_payer: Address,
-        actual_used: U256,
+        actual_spending: U256,
         refund_amount: U256,
-        user_token: Address,
-    ) -> Result<(), TempoPrecompileError> {
+        fee_token: Address,
+    ) -> Result<()> {
         // Refund unused tokens to user
-        if !refund_amount.is_zero() {
-            let mut tip20_token = TIP20Token::from_address(user_token, self.storage);
-            tip20_token.transfer_fee_post_tx(fee_payer, refund_amount, actual_used)?;
-        }
+        let mut tip20_token = TIP20Token::from_address(fee_token, self.storage);
+        tip20_token.transfer_fee_post_tx(fee_payer, refund_amount, actual_spending)?;
 
         // Execute fee swap and track collected fees
-        if !actual_used.is_zero() {
+        if !actual_spending.is_zero() {
             let validator_token = self.get_validator_token()?;
 
-            if user_token == validator_token {
-                self.increment_collected_fees(actual_used)?;
+            if fee_token == validator_token {
+                self.increment_collected_fees(actual_spending)?;
             } else {
                 let mut fee_amm = TIPFeeAMM::new(self.contract_address, self.storage);
-                fee_amm.fee_swap(user_token, validator_token, actual_used)?;
+                fee_amm.fee_swap(fee_token, validator_token, actual_spending)?;
 
                 // Track the token to be swapped
-                let slot = slots::token_in_fees_array_slot(user_token);
+                let slot = slots::token_in_fees_array_slot(fee_token);
                 if self.sload(slot)?.is_zero() {
-                    self.add_token_to_fees_array(user_token);
+                    self.add_token_to_fees_array(fee_token)?;
                     self.sstore(slot, U256::from(true))?;
                 }
             }
@@ -261,7 +251,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         Ok(())
     }
 
-    pub fn execute_block(&mut self, sender: Address) -> Result<(), TempoPrecompileError> {
+    pub fn execute_block(&mut self, sender: Address) -> Result<()> {
         // Only protocol can call this
         if sender != Address::ZERO {
             return Err(FeeManagerError::only_system_contract().into());
@@ -283,7 +273,9 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
                 let pool = fee_amm.get_pool(pool_id)?;
 
                 if pool.reserve_user_token > 0 || pool.reserve_validator_token > 0 {
-                    collected_fees += fee_amm.execute_pending_fee_swaps(*token, validator_token)?;
+                    collected_fees = collected_fees
+                        .checked_add(fee_amm.execute_pending_fee_swaps(*token, validator_token)?)
+                        .ok_or(TempoPrecompileError::under_overflow())?;
                 }
             }
         }
@@ -315,20 +307,18 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     }
 
     /// Add a token to the tokens with fees array
-    fn add_token_to_fees_array(&mut self, token: Address) {
+    fn add_token_to_fees_array(&mut self, token: Address) -> Result<()> {
         let length_slot = slots::tokens_with_fees_length_slot();
-        let length = self.sload(length_slot).expect("TODO: handle error");
+        let length = self.sload(length_slot)?;
         let token_slot = slots::tokens_with_fees_slot(length);
-        self.sstore(token_slot, token.into_u256())
-            .expect("TODO: handle error");
+        self.sstore(token_slot, token.into_u256())?;
         self.sstore(length_slot, length + U256::ONE)
-            .expect("TODO: handle error");
     }
 
     /// Drain all tokens with fees by popping from the back until empty
     /// Returns a `Vec<Address>` with all the tokens that were in storage
     /// Also sets token_in_fees_array to false for each token
-    fn drain_tokens_with_fees(&mut self) -> Result<Vec<Address>, TempoPrecompileError> {
+    fn drain_tokens_with_fees(&mut self) -> Result<Vec<Address>> {
         let mut tokens = Vec::new();
         let length_slot = slots::tokens_with_fees_length_slot();
         let mut length = self.sload(length_slot)?;
@@ -353,37 +343,36 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     }
 
     /// Increment collected fees for the validator token
-    fn increment_collected_fees(&mut self, amount: U256) -> Result<(), TempoPrecompileError> {
+    fn increment_collected_fees(&mut self, amount: U256) -> Result<()> {
         let slot = collected_fees_slot();
         let current_fees = self.sload(slot)?;
-        self.sstore(slot, current_fees + amount)
+        self.sstore(
+            slot,
+            current_fees
+                .checked_add(amount)
+                .ok_or(TempoPrecompileError::under_overflow())?,
+        )
     }
 
     /// Get collected fees
-    fn get_collected_fees(&mut self) -> Result<U256, TempoPrecompileError> {
+    fn get_collected_fees(&mut self) -> Result<U256> {
         let slot = collected_fees_slot();
         let fees = self.sload(slot)?;
         Ok(fees)
     }
 
     /// Clear collected fees
-    fn clear_collected_fees(&mut self) -> Result<(), TempoPrecompileError> {
+    fn clear_collected_fees(&mut self) -> Result<()> {
         let slot = collected_fees_slot();
         self.sstore(slot, U256::ZERO)
     }
 
-    pub fn user_tokens(
-        &mut self,
-        call: IFeeManager::userTokensCall,
-    ) -> Result<Address, TempoPrecompileError> {
+    pub fn user_tokens(&mut self, call: IFeeManager::userTokensCall) -> Result<Address> {
         let slot = user_token_slot(call.user);
         Ok(self.sload(slot)?.into_address())
     }
 
-    pub fn validator_tokens(
-        &mut self,
-        call: IFeeManager::validatorTokensCall,
-    ) -> Result<Address, TempoPrecompileError> {
+    pub fn validator_tokens(&mut self, call: IFeeManager::validatorTokensCall) -> Result<Address> {
         let slot = validator_token_slot(call.validator);
         let token = self.sload(slot)?.into_address();
 
@@ -397,12 +386,9 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     pub fn get_fee_token_balance(
         &mut self,
         call: IFeeManager::getFeeTokenBalanceCall,
-    ) -> Result<IFeeManager::getFeeTokenBalanceReturn, TempoPrecompileError> {
+    ) -> Result<IFeeManager::getFeeTokenBalanceReturn> {
         let user_slot = user_token_slot(call.sender);
-        let mut token = self
-            .sload(user_slot)
-            .expect("TODO: handle error")
-            .into_address();
+        let mut token = self.sload(user_slot)?.into_address();
 
         if token.is_zero() {
             let validator_slot = validator_token_slot(call.validator);
@@ -429,10 +415,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     }
 
     /// Retrieves pool data by ID
-    pub fn pools(
-        &mut self,
-        call: ITIPFeeAMM::poolsCall,
-    ) -> Result<ITIPFeeAMM::Pool, TempoPrecompileError> {
+    pub fn pools(&mut self, call: ITIPFeeAMM::poolsCall) -> Result<ITIPFeeAMM::Pool> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
         let pool = amm.get_pool(call.poolId)?;
 
@@ -440,11 +423,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     }
 
     /// Mint liquidity tokens
-    pub fn mint(
-        &mut self,
-        msg_sender: Address,
-        call: ITIPFeeAMM::mintCall,
-    ) -> Result<U256, TempoPrecompileError> {
+    pub fn mint(&mut self, msg_sender: Address, call: ITIPFeeAMM::mintCall) -> Result<U256> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
         let amount = amm.mint(
             msg_sender,
@@ -458,12 +437,30 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         Ok(amount)
     }
 
+    /// Mint liquidity tokens using only validator tokens
+    pub fn mint_with_validator_token(
+        &mut self,
+        msg_sender: Address,
+        call: ITIPFeeAMM::mintWithValidatorTokenCall,
+    ) -> Result<U256> {
+        let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
+        let amount = amm.mint_with_validator_token(
+            msg_sender,
+            call.userToken,
+            call.validatorToken,
+            call.amountValidatorToken,
+            call.to,
+        )?;
+
+        Ok(amount)
+    }
+
     /// Burn liquidity tokens
     pub fn burn(
         &mut self,
         msg_sender: Address,
         call: ITIPFeeAMM::burnCall,
-    ) -> Result<ITIPFeeAMM::burnReturn, TempoPrecompileError> {
+    ) -> Result<ITIPFeeAMM::burnReturn> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
         amm.burn(
             msg_sender,
@@ -479,21 +476,15 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     }
 
     /// Get total supply of LP tokens for a pool (inherited from TIPFeeAMM)
-    pub fn total_supply(
-        &mut self,
-        call: ITIPFeeAMM::totalSupplyCall,
-    ) -> Result<U256, TempoPrecompileError> {
+    pub fn total_supply(&mut self, call: ITIPFeeAMM::totalSupplyCall) -> Result<U256> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
         amm.get_total_supply(call.poolId)
     }
 
     /// Get liquidity balance of a user for a pool (inherited from TIPFeeAMM)
-    pub fn liquidity_balances(
-        &mut self,
-        call: ITIPFeeAMM::liquidityBalancesCall,
-    ) -> Result<U256, TempoPrecompileError> {
+    pub fn liquidity_balances(&mut self, call: ITIPFeeAMM::liquidityBalancesCall) -> Result<U256> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
-        amm.get_balance_of(call.poolId, call.user)
+        amm.get_liquidity_balances(call.poolId, call.user)
     }
 
     pub fn get_pool_id(&mut self, call: ITIPFeeAMM::getPoolIdCall) -> B256 {
@@ -501,10 +492,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         amm.get_pool_id(call.userToken, call.validatorToken)
     }
 
-    pub fn get_pool(
-        &mut self,
-        call: ITIPFeeAMM::getPoolCall,
-    ) -> Result<ITIPFeeAMM::Pool, TempoPrecompileError> {
+    pub fn get_pool(&mut self, call: ITIPFeeAMM::getPoolCall) -> Result<ITIPFeeAMM::Pool> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
         let pool_key = PoolKey::new(call.userToken, call.validatorToken);
         let pool = amm.get_pool(pool_key.get_id())?;
@@ -517,7 +505,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIPFeeAMM::rebalanceSwapCall,
-    ) -> Result<U256, TempoPrecompileError> {
+    ) -> Result<U256> {
         let mut amm = TIPFeeAMM::new(self.contract_address, self.storage);
         amm.rebalance_swap(
             msg_sender,
@@ -530,23 +518,28 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
 }
 
 impl<'a, S: PrecompileStorageProvider> StorageOps for TipFeeManager<'a, S> {
-    fn sstore(&mut self, slot: U256, value: U256) -> Result<(), TempoPrecompileError> {
+    fn sstore(&mut self, slot: U256, value: U256) -> Result<()> {
         self.storage.sstore(self.contract_address, slot, value)
     }
 
-    fn sload(&mut self, slot: U256) -> Result<U256, TempoPrecompileError> {
+    fn sload(&mut self, slot: U256) -> Result<U256> {
         self.storage.sload(self.contract_address, slot)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tempo_contracts::precompiles::TIP20Error;
+
     use super::*;
     use crate::{
         LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
+        error::TempoPrecompileError,
         storage::hashmap::HashMapStorageProvider,
         tip_fee_manager::slots::collected_fees_slot,
-        tip20::{ISSUER_ROLE, ITIP20, TIP20Token, token_id_to_address},
+        tip20::{
+            ISSUER_ROLE, ITIP20, TIP20Token, tests::initialize_linking_usd, token_id_to_address,
+        },
     };
 
     fn setup_token_with_balance(
@@ -555,6 +548,7 @@ mod tests {
         user: Address,
         amount: U256,
     ) {
+        initialize_linking_usd(storage, user).unwrap();
         let mut tip20_token = TIP20Token::from_address(token, storage);
 
         // Initialize token
@@ -586,10 +580,19 @@ mod tests {
     fn test_set_user_token() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let validator = Address::random();
-        let mut fee_manager = TipFeeManager::new(TIP_FEE_MANAGER_ADDRESS, validator, &mut storage);
-
         let user = Address::random();
-        let token = token_id_to_address(rand::random::<u64>());
+
+        // Initialize LinkingUSD first
+        initialize_linking_usd(&mut storage, user).unwrap();
+
+        // Create a USD token to use as fee token
+        let token = token_id_to_address(1);
+        let mut tip20_token = TIP20Token::from_address(token, &mut storage);
+        tip20_token
+            .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, user)
+            .unwrap();
+
+        let mut fee_manager = TipFeeManager::new(TIP_FEE_MANAGER_ADDRESS, validator, &mut storage);
 
         let call = IFeeManager::setUserTokenCall { token };
         let result = fee_manager.set_user_token(user, call);
@@ -604,8 +607,19 @@ mod tests {
     fn test_set_validator_token() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let validator = Address::random();
+        let admin = Address::random();
+
+        // Initialize LinkingUSD first
+        initialize_linking_usd(&mut storage, admin).unwrap();
+
+        // Create a USD token to use as fee token
+        let token = token_id_to_address(1);
+        let mut tip20_token = TIP20Token::from_address(token, &mut storage);
+        tip20_token
+            .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, admin)
+            .unwrap();
+
         let mut fee_manager = TipFeeManager::new(TIP_FEE_MANAGER_ADDRESS, validator, &mut storage);
-        let token = token_id_to_address(rand::random::<u64>());
 
         let call = IFeeManager::setValidatorTokenCall { token };
         let result = fee_manager.set_validator_token(validator, call.clone());
@@ -683,6 +697,7 @@ mod tests {
 
         // Initialize token and give fee manager tokens (simulating that collect_fee_pre_tx already happened)
         {
+            initialize_linking_usd(&mut storage, admin).unwrap();
             let mut tip20_token = TIP20Token::from_address(token, &mut storage);
             tip20_token
                 .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, admin)
@@ -733,6 +748,44 @@ mod tests {
         let fees_slot = collected_fees_slot();
         let tracked_amount = storage.sload(TIP_FEE_MANAGER_ADDRESS, fees_slot).unwrap();
         assert_eq!(tracked_amount, actual_used);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rejects_non_usd() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let admin = Address::random();
+        let token = token_id_to_address(rand::random::<u64>());
+        let mut tip20_token = TIP20Token::from_address(token, &mut storage);
+        tip20_token
+            .initialize("NonUSD", "NonUSD", "NonUSD", LINKING_USD_ADDRESS, admin)
+            .unwrap();
+
+        let validator = Address::random();
+        let mut fee_manager = TipFeeManager::new(TIP_FEE_MANAGER_ADDRESS, validator, &mut storage);
+
+        let user = Address::random();
+
+        let call = IFeeManager::setUserTokenCall { token };
+        let result = fee_manager.set_user_token(user, call);
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::InvalidCurrency(_)))
+        ));
+
+        // Set beneficiary to a random address to avoid `CannotChangeWithinBlock` error
+        fee_manager.beneficiary = Address::random();
+
+        let call = IFeeManager::setValidatorTokenCall { token };
+        let result = fee_manager.set_validator_token(validator, call);
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::InvalidCurrency(_)))
+        ));
 
         Ok(())
     }

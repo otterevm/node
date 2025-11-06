@@ -1,4 +1,4 @@
-use crate::{Precompile, mutate, view};
+use crate::{Precompile, input_cost, mutate, tip20::is_tip20, view};
 use alloy::{primitives::Address, sol_types::SolCall};
 use revm::precompile::{PrecompileError, PrecompileResult};
 
@@ -9,6 +9,10 @@ use crate::{
 
 impl<'a, S: PrecompileStorageProvider> Precompile for TIP20Factory<'a, S> {
     fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult {
+        self.storage
+            .deduct_gas(input_cost(calldata.len()))
+            .map_err(|_| PrecompileError::OutOfGas)?;
+
         let selector: [u8; 4] = calldata
             .get(..4)
             .ok_or_else(|| {
@@ -17,7 +21,7 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TIP20Factory<'a, S> {
             .try_into()
             .map_err(|_| PrecompileError::Other("Invalid function selector length".to_string()))?;
 
-        match selector {
+        let result = match selector {
             ITIP20Factory::tokenIdCounterCall::SELECTOR => {
                 view::<ITIP20Factory::tokenIdCounterCall>(calldata, |_call| self.token_id_counter())
             }
@@ -26,9 +30,17 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TIP20Factory<'a, S> {
                     self.create_token(s, call)
                 })
             }
+            ITIP20Factory::isTIP20Call::SELECTOR => {
+                view::<ITIP20Factory::isTIP20Call>(calldata, |call| Ok(is_tip20(call.token)))
+            }
             _ => Err(PrecompileError::Other(
                 "Unknown function selector".to_string(),
             )),
-        }
+        };
+
+        result.map(|mut res| {
+            res.gas_used = self.storage.gas_used();
+            res
+        })
     }
 }

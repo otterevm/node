@@ -37,8 +37,10 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
         .connect_http(http_url.clone());
 
     // Ensure the native account balance is 0
-    assert_eq!(provider.get_balance(caller).await?, U256::ZERO);
-    assert_eq!(provider2.get_balance(caller2).await?, U256::ZERO);
+    let balance1 = provider.get_account_info(caller).await?.balance;
+    let balance2 = provider.get_account_info(caller).await?.balance;
+    assert_eq!(balance1, U256::ZERO);
+    assert_eq!(balance2, U256::ZERO);
 
     // Get fee tokens for both accounts
     let fee_manager = IFeeManager::new(TIP_FEE_MANAGER_ADDRESS, provider.clone());
@@ -54,7 +56,7 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
     let token2 = crate::utils::setup_test_token(provider2.clone(), caller2).await?;
 
     // Mint tokens for testing
-    let mint_amount = U256::from(1_000_000);
+    let mint_amount = U256::from(15_000_000);
     token
         .mint(caller, mint_amount)
         .send()
@@ -111,7 +113,7 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
                     .from(accounts[i])
                     .to(accounts[i]) // Send to self
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(100000)
+                    .gas_limit(300_000)
                     .value(U256::ZERO);
 
                 batch_futures.push(provider.send_transaction(tx));
@@ -225,7 +227,7 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
                     .from(accounts[j])
                     .to(accounts[j]) // Send to self
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(100000)
+                    .gas_limit(300_000)
                     .value(U256::ZERO);
 
                 all_futures.push((provider.send_transaction(tx), "non-payment"));
@@ -239,7 +241,7 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
                     .into_transaction_request()
                     .from(caller2)
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(80000);
+                    .gas_limit(100_000);
 
                 all_futures.push((provider2.send_transaction(tx), "payment"));
             }

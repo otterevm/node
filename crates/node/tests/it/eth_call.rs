@@ -44,7 +44,7 @@ async fn test_eth_call() -> eyre::Result<()> {
     token
         .mint(caller, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(30000)
+        .gas(300_000)
         .send()
         .await?
         .get_receipt()
@@ -87,7 +87,7 @@ async fn test_eth_trace_call() -> eyre::Result<()> {
     token
         .mint(caller, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(30000)
+        .gas(300_000)
         .send()
         .await?
         .get_receipt()
@@ -177,7 +177,7 @@ async fn test_eth_get_logs() -> eyre::Result<()> {
     let mint_receipt = token
         .mint(caller, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(30000)
+        .gas(300_000)
         .send()
         .await?
         .get_receipt()
@@ -187,7 +187,7 @@ async fn test_eth_get_logs() -> eyre::Result<()> {
     token
         .transfer(recipient, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(30000)
+        .gas(300_000)
         .send()
         .await?
         .get_receipt()
@@ -241,7 +241,7 @@ async fn test_eth_estimate_gas() -> eyre::Result<()> {
 
     let gas = provider.estimate_gas(tx.clone()).await?;
     // gas estimation is calldata dependent, but should be consistent with same calldata
-    assert_eq!(gas, 22919);
+    assert_eq!(gas, 106741);
 
     // ensure we can successfully send the tx with that gas
     let receipt = provider
@@ -346,7 +346,11 @@ async fn test_eth_estimate_gas_different_fee_tokens() -> eyre::Result<()> {
 
     // Estimate gas when user fee token differs from validator fee token
     let gas = provider.estimate_gas(tx.clone()).await?;
-    assert!(gas > 0 && gas < 30000);
+
+    // NOTE: this test is flaky, with gas sometimes returning as 75513 and other times as 75515.
+    // Updating to assert gas > 0 as this test is only checking if gas estimation succeeds when
+    // the user fee token differs from the validator fee token
+    assert!(gas > 0);
 
     // Verify we can execute the transaction with the estimated gas
     let receipt = provider

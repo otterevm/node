@@ -2,16 +2,18 @@ pub mod dispatch;
 
 use crate::{
     STABLECOIN_EXCHANGE_ADDRESS,
-    error::TempoPrecompileError,
+    error::Result,
     storage::PrecompileStorageProvider,
     tip20::{ITIP20, TIP20Token, roles::RolesAuthContract},
 };
 use alloy::primitives::{Address, B256, U256, keccak256};
 use std::sync::LazyLock;
+pub use tempo_contracts::precompiles::ILinkingUSD;
 use tempo_contracts::precompiles::TIP20Error;
 
 pub static TRANSFER_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"TRANSFER_ROLE"));
-pub static RECEIVE_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"RECEIVE_ROLE"));
+pub static RECEIVE_WITH_MEMO_ROLE: LazyLock<B256> =
+    LazyLock::new(|| keccak256(b"RECEIVE_WITH_MEMO_ROLE"));
 
 const NAME: &str = "linkingUSD";
 const SYMBOL: &str = "linkingUSD";
@@ -28,42 +30,51 @@ impl<'a, S: PrecompileStorageProvider> LinkingUSD<'a, S> {
         }
     }
 
-    pub fn initialize(&mut self, admin: Address) -> Result<(), TempoPrecompileError> {
+    pub fn initialize(&mut self, admin: Address) -> Result<()> {
         self.token
             .initialize(NAME, SYMBOL, CURRENCY, Address::ZERO, admin)
     }
 
-    fn is_transfer_authorized(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-    ) -> Result<bool, TempoPrecompileError> {
-        let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
-            || self.token.has_role(sender, *TRANSFER_ROLE)?
-            || self.token.has_role(recipient, *RECEIVE_ROLE)?;
+    fn is_transfer_authorized(&mut self, sender: Address) -> Result<bool> {
+        let authorized =
+            sender == STABLECOIN_EXCHANGE_ADDRESS || self.token.has_role(sender, *TRANSFER_ROLE)?;
 
         Ok(authorized)
     }
 
-    fn is_transfer_from_authorized(
+    fn is_transfer_from_authorized(&mut self, sender: Address, from: Address) -> Result<bool> {
+        let authorized =
+            sender == STABLECOIN_EXCHANGE_ADDRESS || self.token.has_role(from, *TRANSFER_ROLE)?;
+        Ok(authorized)
+    }
+
+    fn is_transfer_with_memo_authorized(
+        &mut self,
+        sender: Address,
+        recipient: Address,
+    ) -> Result<bool> {
+        let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
+            || self.token.has_role(sender, *TRANSFER_ROLE)?
+            || self.token.has_role(recipient, *RECEIVE_WITH_MEMO_ROLE)?;
+
+        Ok(authorized)
+    }
+
+    fn is_transfer_from_with_memo_authorized(
         &mut self,
         sender: Address,
         from: Address,
         recipient: Address,
-    ) -> Result<bool, TempoPrecompileError> {
+    ) -> Result<bool> {
         let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
             || self.token.has_role(from, *TRANSFER_ROLE)?
-            || self.token.has_role(recipient, *RECEIVE_ROLE)?;
+            || self.token.has_role(recipient, *RECEIVE_WITH_MEMO_ROLE)?;
 
         Ok(authorized)
     }
 
-    pub fn transfer(
-        &mut self,
-        msg_sender: Address,
-        call: ITIP20::transferCall,
-    ) -> Result<bool, TempoPrecompileError> {
-        if self.is_transfer_authorized(msg_sender, call.to)? {
+    pub fn transfer(&mut self, msg_sender: Address, call: ITIP20::transferCall) -> Result<bool> {
+        if self.is_transfer_authorized(msg_sender)? {
             self.token.transfer(msg_sender, call)
         } else {
             Err(TIP20Error::transfers_disabled().into())
@@ -74,8 +85,8 @@ impl<'a, S: PrecompileStorageProvider> LinkingUSD<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::transferFromCall,
-    ) -> Result<bool, TempoPrecompileError> {
-        if self.is_transfer_from_authorized(msg_sender, call.from, call.to)?
+    ) -> Result<bool> {
+        if self.is_transfer_from_authorized(msg_sender, call.from)?
             || msg_sender == STABLECOIN_EXCHANGE_ADDRESS
         {
             self.token.transfer_from(msg_sender, call)
@@ -88,8 +99,8 @@ impl<'a, S: PrecompileStorageProvider> LinkingUSD<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::transferWithMemoCall,
-    ) -> Result<(), TempoPrecompileError> {
-        if self.is_transfer_authorized(msg_sender, call.to)? {
+    ) -> Result<()> {
+        if self.is_transfer_with_memo_authorized(msg_sender, call.to)? {
             self.token.transfer_with_memo(msg_sender, call)
         } else {
             Err(TIP20Error::transfers_disabled().into())
@@ -100,8 +111,8 @@ impl<'a, S: PrecompileStorageProvider> LinkingUSD<'a, S> {
         &mut self,
         msg_sender: Address,
         call: ITIP20::transferFromWithMemoCall,
-    ) -> Result<bool, TempoPrecompileError> {
-        if self.is_transfer_from_authorized(msg_sender, call.from, call.to)?
+    ) -> Result<bool> {
+        if self.is_transfer_from_with_memo_authorized(msg_sender, call.from, call.to)?
             || msg_sender == STABLECOIN_EXCHANGE_ADDRESS
         {
             self.token.transfer_from_with_memo(msg_sender, call)
@@ -110,58 +121,43 @@ impl<'a, S: PrecompileStorageProvider> LinkingUSD<'a, S> {
         }
     }
 
-    pub fn name(&mut self) -> Result<String, TempoPrecompileError> {
+    pub fn name(&mut self) -> Result<String> {
         self.token.name()
     }
 
-    pub fn symbol(&mut self) -> Result<String, TempoPrecompileError> {
+    pub fn symbol(&mut self) -> Result<String> {
         self.token.symbol()
     }
 
-    pub fn currency(&mut self) -> Result<String, TempoPrecompileError> {
+    pub fn currency(&mut self) -> Result<String> {
         self.token.currency()
     }
 
-    pub fn decimals(&mut self) -> Result<u8, TempoPrecompileError> {
+    pub fn decimals(&mut self) -> Result<u8> {
         self.token.decimals()
     }
 
-    pub fn total_supply(&mut self) -> Result<U256, TempoPrecompileError> {
+    pub fn total_supply(&mut self) -> Result<U256> {
         self.token.total_supply()
     }
 
-    pub fn balance_of(
-        &mut self,
-        call: ITIP20::balanceOfCall,
-    ) -> Result<U256, TempoPrecompileError> {
+    pub fn balance_of(&mut self, call: ITIP20::balanceOfCall) -> Result<U256> {
         self.token.balance_of(call)
     }
 
-    pub fn allowance(&mut self, call: ITIP20::allowanceCall) -> Result<U256, TempoPrecompileError> {
+    pub fn allowance(&mut self, call: ITIP20::allowanceCall) -> Result<U256> {
         self.token.allowance(call)
     }
 
-    pub fn approve(
-        &mut self,
-        sender: Address,
-        call: ITIP20::approveCall,
-    ) -> Result<bool, TempoPrecompileError> {
+    pub fn approve(&mut self, sender: Address, call: ITIP20::approveCall) -> Result<bool> {
         self.token.approve(sender, call)
     }
 
-    pub fn mint(
-        &mut self,
-        sender: Address,
-        call: ITIP20::mintCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn mint(&mut self, sender: Address, call: ITIP20::mintCall) -> Result<()> {
         self.token.mint(sender, call)
     }
 
-    pub fn burn(
-        &mut self,
-        sender: Address,
-        call: ITIP20::burnCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn burn(&mut self, sender: Address, call: ITIP20::burnCall) -> Result<()> {
         self.token.burn(sender, call)
     }
 
@@ -169,34 +165,76 @@ impl<'a, S: PrecompileStorageProvider> LinkingUSD<'a, S> {
         self.token.get_roles_contract()
     }
 
-    pub fn pause(
-        &mut self,
-        sender: Address,
-        call: ITIP20::pauseCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn pause(&mut self, sender: Address, call: ITIP20::pauseCall) -> Result<()> {
         self.token.pause(sender, call)
     }
 
-    pub fn unpause(
-        &mut self,
-        sender: Address,
-        call: ITIP20::unpauseCall,
-    ) -> Result<(), TempoPrecompileError> {
+    pub fn unpause(&mut self, sender: Address, call: ITIP20::unpauseCall) -> Result<()> {
         self.token.unpause(sender, call)
     }
 
-    pub fn paused(&mut self) -> Result<bool, TempoPrecompileError> {
+    pub fn paused(&mut self) -> Result<bool> {
         self.token.paused()
+    }
+
+    /// Returns the PAUSE_ROLE constant
+    ///
+    /// This role identifier grants permission to pause the token contract.
+    /// The role is computed as `keccak256("PAUSE_ROLE")`.
+    pub fn pause_role() -> B256 {
+        TIP20Token::<S>::pause_role()
+    }
+
+    /// Returns the UNPAUSE_ROLE constant
+    ///
+    /// This role identifier grants permission to unpause the token contract.
+    /// The role is computed as `keccak256("UNPAUSE_ROLE")`.
+    pub fn unpause_role() -> B256 {
+        TIP20Token::<S>::unpause_role()
+    }
+
+    /// Returns the ISSUER_ROLE constant
+    ///
+    /// This role identifier grants permission to mint and burn tokens.
+    /// The role is computed as `keccak256("ISSUER_ROLE")`.
+    pub fn issuer_role() -> B256 {
+        TIP20Token::<S>::issuer_role()
+    }
+
+    /// Returns the BURN_BLOCKED_ROLE constant
+    ///
+    /// This role identifier grants permission to burn tokens from blocked accounts.
+    /// The role is computed as `keccak256("BURN_BLOCKED_ROLE")`.
+    pub fn burn_blocked_role() -> B256 {
+        TIP20Token::<S>::burn_blocked_role()
+    }
+
+    /// Returns the TRANSFER_ROLE constant
+    ///
+    /// This role identifier grants permission to transfer linkingUSD tokens.
+    /// The role is computed as `keccak256("TRANSFER_ROLE")`.
+    pub fn transfer_role() -> B256 {
+        *TRANSFER_ROLE
+    }
+
+    /// Returns the RECEIVE_WITH_MEMO_ROLE constant
+    ///
+    /// This role identifier grants permission to receive linkingUSD tokens.
+    /// The role is computed as `keccak256("RECEIVE_WITH_MEMO_ROLE")`.
+    pub fn receive_with_memo_role() -> B256 {
+        *RECEIVE_WITH_MEMO_ROLE
     }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use alloy_primitives::uint;
     use tempo_contracts::precompiles::RolesAuthError;
 
     use super::*;
     use crate::{
+        error::TempoPrecompileError,
         storage::hashmap::HashMapStorageProvider,
         tip20::{IRolesAuth, ISSUER_ROLE, PAUSE_ROLE, UNPAUSE_ROLE},
     };
@@ -516,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transfer_with_receive_role() -> eyre::Result<()> {
+    fn test_transfer_with_receive_role_reverts() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let mut linking_usd = LinkingUSD::new(&mut storage);
         let admin = Address::random();
@@ -527,15 +565,9 @@ mod tests {
         linking_usd.initialize(admin)?;
         let mut roles = linking_usd.token.get_roles_contract();
         roles.grant_role_internal(admin, *ISSUER_ROLE)?;
-        roles.grant_role_internal(recipient, *RECEIVE_ROLE)?;
+        roles.grant_role_internal(recipient, *RECEIVE_WITH_MEMO_ROLE)?;
 
         linking_usd.mint(admin, ITIP20::mintCall { to: sender, amount })?;
-
-        let sender_balance_before =
-            linking_usd.balance_of(ITIP20::balanceOfCall { account: sender })?;
-
-        let recipient_balance_before =
-            linking_usd.balance_of(ITIP20::balanceOfCall { account: recipient })?;
 
         let result = linking_usd.transfer(
             sender,
@@ -543,16 +575,12 @@ mod tests {
                 to: recipient,
                 amount,
             },
-        )?;
-        assert!(result);
+        );
 
-        let sender_balance_after =
-            linking_usd.balance_of(ITIP20::balanceOfCall { account: sender })?;
-        let recipient_balance_after =
-            linking_usd.balance_of(ITIP20::balanceOfCall { account: recipient })?;
-
-        assert_eq!(sender_balance_after, sender_balance_before - amount);
-        assert_eq!(recipient_balance_after, recipient_balance_before + amount);
+        assert_eq!(
+            result.unwrap_err(),
+            TempoPrecompileError::TIP20(TIP20Error::transfers_disabled())
+        );
 
         Ok(())
     }
@@ -605,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transfer_from_with_receive_role() -> eyre::Result<()> {
+    fn test_transfer_from_with_receive_role_reverts() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let mut linking_usd = LinkingUSD::new(&mut storage);
         let admin = Address::random();
@@ -617,37 +645,20 @@ mod tests {
         linking_usd.initialize(admin)?;
         let mut roles = linking_usd.token.get_roles_contract();
         roles.grant_role_internal(admin, *ISSUER_ROLE)?;
-        roles.grant_role_internal(to, *RECEIVE_ROLE)?;
+        roles.grant_role_internal(to, *RECEIVE_WITH_MEMO_ROLE)?;
 
         linking_usd.mint(admin, ITIP20::mintCall { to: from, amount })?;
 
         linking_usd.approve(from, ITIP20::approveCall { spender, amount })?;
 
-        let from_balance_before =
-            linking_usd.balance_of(ITIP20::balanceOfCall { account: from })?;
-
-        let to_balance_before = linking_usd.balance_of(ITIP20::balanceOfCall { account: to })?;
-
-        let allowance_before = linking_usd.allowance(ITIP20::allowanceCall {
-            owner: from,
-            spender,
-        })?;
-
         let result =
-            linking_usd.transfer_from(spender, ITIP20::transferFromCall { from, to, amount })?;
+            linking_usd.transfer_from(spender, ITIP20::transferFromCall { from, to, amount });
 
-        assert!(result);
+        assert_eq!(
+            result.unwrap_err(),
+            TempoPrecompileError::TIP20(TIP20Error::transfers_disabled())
+        );
 
-        let from_balance_after = linking_usd.balance_of(ITIP20::balanceOfCall { account: from })?;
-        let to_balance_after = linking_usd.balance_of(ITIP20::balanceOfCall { account: to })?;
-        let allowance_after = linking_usd.allowance(ITIP20::allowanceCall {
-            owner: from,
-            spender,
-        })?;
-
-        assert_eq!(from_balance_after, from_balance_before - amount);
-        assert_eq!(to_balance_after, to_balance_before + amount);
-        assert_eq!(allowance_after, allowance_before - amount);
         Ok(())
     }
 
@@ -706,7 +717,7 @@ mod tests {
         linking_usd.initialize(admin)?;
         let mut roles = linking_usd.token.get_roles_contract();
         roles.grant_role_internal(admin, *ISSUER_ROLE)?;
-        roles.grant_role_internal(recipient, *RECEIVE_ROLE)?;
+        roles.grant_role_internal(recipient, *RECEIVE_WITH_MEMO_ROLE)?;
 
         linking_usd.mint(admin, ITIP20::mintCall { to: sender, amount })?;
 
@@ -858,7 +869,7 @@ mod tests {
         linking_usd.initialize(admin)?;
         let mut roles = linking_usd.token.get_roles_contract();
         roles.grant_role_internal(admin, *ISSUER_ROLE)?;
-        roles.grant_role_internal(to, *RECEIVE_ROLE)?;
+        roles.grant_role_internal(to, *RECEIVE_WITH_MEMO_ROLE)?;
 
         linking_usd.mint(admin, ITIP20::mintCall { to: from, amount })?;
 
@@ -1019,6 +1030,71 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             TempoPrecompileError::TIP20(TIP20Error::supply_cap_exceeded())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_supply_caps() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut linking_usd = LinkingUSD::new(&mut storage);
+        let admin = Address::random();
+        let recipient = Address::random();
+        let supply_cap = U256::from(1000);
+        let bad_supply_cap = uint!(0x100000000000000000000000000000000_U256);
+
+        linking_usd.initialize(admin).unwrap();
+
+        let mut roles = linking_usd.get_roles_contract();
+        roles.grant_role_internal(admin, *ISSUER_ROLE)?;
+
+        // Set supply cap to u128 max plus one
+        let result = linking_usd.token.set_supply_cap(
+            admin,
+            ITIP20::setSupplyCapCall {
+                newSupplyCap: bad_supply_cap,
+            },
+        );
+
+        assert_eq!(
+            result.unwrap_err(),
+            TempoPrecompileError::TIP20(TIP20Error::supply_cap_exceeded())
+        );
+
+        // Set supply cap
+        linking_usd
+            .token
+            .set_supply_cap(
+                admin,
+                ITIP20::setSupplyCapCall {
+                    newSupplyCap: supply_cap,
+                },
+            )
+            .unwrap();
+
+        // Try to mint the exact supply cap
+        linking_usd
+            .mint(
+                admin,
+                ITIP20::mintCall {
+                    to: recipient,
+                    amount: U256::from(1000),
+                },
+            )
+            .unwrap();
+
+        // Try to set the supply cap to something lower than the total supply
+        let smaller_supply_cap = U256::from(999);
+        let result = linking_usd.token.set_supply_cap(
+            admin,
+            ITIP20::setSupplyCapCall {
+                newSupplyCap: smaller_supply_cap,
+            },
+        );
+
+        assert_eq!(
+            result.unwrap_err(),
+            TempoPrecompileError::TIP20(TIP20Error::invalid_supply_cap())
         );
         Ok(())
     }

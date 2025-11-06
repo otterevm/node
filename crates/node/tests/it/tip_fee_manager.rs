@@ -10,11 +10,14 @@ use alloy::{
 use alloy_eips::{BlockId, Encodable2718};
 use alloy_network::{AnyReceiptEnvelope, EthereumWallet, TxSignerSync};
 use alloy_primitives::{Address, Signature, U256};
-use alloy_rpc_types_eth::{TransactionRequest, TransactionTrait};
+use alloy_rpc_types_eth::TransactionTrait;
 use std::env;
-use tempo_contracts::precompiles::{IFeeManager, ITIP20, ITIPFeeAMM};
+use tempo_contracts::precompiles::{
+    IFeeManager, ITIP20,
+    ITIPFeeAMM::{self},
+};
 use tempo_precompiles::{DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS};
-use tempo_primitives::TxFeeToken;
+use tempo_primitives::{TxFeeToken, transaction::calc_gas_balance_spending};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_set_user_token() -> eyre::Result<()> {
@@ -34,6 +37,13 @@ async fn test_set_user_token() -> eyre::Result<()> {
     let user_token = setup_test_token(provider.clone(), user_address).await?;
     let fee_manager = IFeeManager::new(TIP_FEE_MANAGER_ADDRESS, provider.clone());
 
+    user_token
+        .mint(user_address, U256::from(1e10))
+        .send()
+        .await?
+        .watch()
+        .await?;
+
     let initial_token = fee_manager.userTokens(user_address).call().await?;
     // Initial token should be predeployed token
     assert_eq!(initial_token, DEFAULT_FEE_TOKEN);
@@ -50,17 +60,23 @@ async fn test_set_user_token() -> eyre::Result<()> {
         .call()
         .await?;
 
-    let receipt = provider
-        .send_transaction(
-            TransactionRequest::default()
-                .to(Address::ZERO)
-                .input(Default::default()),
+    let fee_amm = ITIPFeeAMM::new(TIP_FEE_MANAGER_ADDRESS, provider.clone());
+
+    let receipt = fee_amm
+        .mint(
+            *user_token.address(),
+            DEFAULT_FEE_TOKEN,
+            U256::from(1e8),
+            U256::from(1e8),
+            user_address,
         )
+        .send()
         .await?
         .get_receipt()
         .await?;
+    assert!(receipt.status());
 
-    let expected_usage = U256::from(receipt.effective_gas_price * receipt.gas_used as u128);
+    let expected_cost = calc_gas_balance_spending(receipt.gas_used, receipt.effective_gas_price);
 
     let validator_balance_after = ITIP20::new(initial_token, &provider)
         .balanceOf(validator)
@@ -68,7 +84,7 @@ async fn test_set_user_token() -> eyre::Result<()> {
         .await?;
     assert_eq!(
         validator_balance_after,
-        validator_balance_before + expected_usage
+        validator_balance_before + expected_cost
     );
 
     let set_receipt = fee_manager
@@ -299,7 +315,7 @@ async fn test_fee_payer_tx() -> eyre::Result<()> {
 
     assert_eq!(
         balance_after,
-        balance_before - U256::from(fees.max_fee_per_gas * tx.gas_limit() as u128)
+        balance_before - calc_gas_balance_spending(tx.gas_limit(), fees.max_fee_per_gas)
     );
 
     Ok(())

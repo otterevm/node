@@ -28,6 +28,7 @@ impl HashMapStorageProvider {
             ),
         }
     }
+
     pub fn set_nonce(&mut self, address: Address, nonce: u64) {
         let account = self.accounts.entry(address).or_default();
         account.nonce = nonce;
@@ -53,8 +54,12 @@ impl PrecompileStorageProvider for HashMapStorageProvider {
         Ok(())
     }
 
-    fn get_account_info(&mut self, address: Address) -> Result<AccountInfo, TempoPrecompileError> {
-        Ok(self.accounts.get(&address).cloned().unwrap_or_default())
+    fn get_account_info(
+        &mut self,
+        address: Address,
+    ) -> Result<&'_ AccountInfo, TempoPrecompileError> {
+        let account = self.accounts.entry(address).or_default();
+        Ok(&*account)
     }
 
     fn sstore(
@@ -78,5 +83,13 @@ impl PrecompileStorageProvider for HashMapStorageProvider {
             .get(&(address, key))
             .copied()
             .unwrap_or(U256::ZERO))
+    }
+
+    fn deduct_gas(&mut self, _gas: u64) -> Result<(), TempoPrecompileError> {
+        Ok(())
+    }
+
+    fn gas_used(&self) -> u64 {
+        0
     }
 }

@@ -1,14 +1,18 @@
 use alloy::{
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     network::EthereumWallet,
     providers::{Provider, ProviderBuilder},
     signers::local::MnemonicBuilder,
 };
-use alloy_eips::BlockNumberOrTag;
+use alloy_eips::{BlockNumberOrTag, Encodable2718};
+use alloy_network::TxSignerSync;
+use alloy_primitives::Address;
 use alloy_rpc_types_engine::ForkchoiceState;
-use reth_e2e_test_utils::{transaction::TransactionTestContext, wallet::Wallet};
+use reth_e2e_test_utils::wallet::Wallet;
 use reth_node_api::EngineApiMessageVersion;
 use reth_node_metrics::recorder::install_prometheus_recorder;
-use reth_primitives_traits::AlloyBlockHeader as _;
+use reth_primitives_traits::{AlloyBlockHeader as _, transaction::TxHashRef};
+use tempo_chainspec::spec::TEMPO_BASE_FEE;
 
 /// Test that verifies backfill sync works correctly.
 ///
@@ -65,7 +69,20 @@ async fn test_backfill_sync() -> eyre::Result<()> {
         let wallet_signer = wallets[i as usize].clone();
 
         // Create a new transaction for this block
-        let raw_tx = TransactionTestContext::transfer_tx_bytes(chain_id, wallet_signer).await;
+        let raw_tx = {
+            let mut tx = TxEip1559 {
+                chain_id,
+                gas_limit: 21000,
+                to: Address::ZERO.into(),
+                max_fee_per_gas: TEMPO_BASE_FEE as u128,
+                max_priority_fee_per_gas: TEMPO_BASE_FEE as u128,
+                ..Default::default()
+            };
+            let signature = wallet_signer.sign_transaction_sync(&mut tx).unwrap();
+            TxEnvelope::Eip1559(tx.into_signed(signature))
+                .encoded_2718()
+                .into()
+        };
 
         // Send the transaction
         let tx_hash = node1.rpc.inject_tx(raw_tx).await?;
@@ -74,11 +91,14 @@ async fn test_backfill_sync() -> eyre::Result<()> {
         let payload = node1.advance_block().await?;
 
         // Verify the transaction was included
-        let block_hash = payload.block().hash();
         let block_number = payload.block().number();
-        node1
-            .assert_new_block(tx_hash, block_hash, block_number)
-            .await?;
+
+        let block = provider1
+            .get_block(block_number.into())
+            .full()
+            .await?
+            .unwrap();
+        assert!(block.into_transactions_vec()[1].inner.tx_hash() == &tx_hash);
 
         if block_number % 10 == 0 {
             println!("Advanced to block {block_number}");

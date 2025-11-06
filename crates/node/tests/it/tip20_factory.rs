@@ -29,8 +29,9 @@ async fn test_create_token() -> eyre::Result<()> {
     let symbol = "TEST".to_string();
     let currency = "USD".to_string();
 
-    // Ensure the native account balance is 0
-    assert_eq!(provider.get_balance(caller).await?, U256::ZERO);
+    // Ensure the native account balance is zero
+    let balance = provider.get_account_info(caller).await?.balance;
+    assert_eq!(balance, U256::ZERO);
     let receipt = factory
         .createToken(
             "Test".to_string(),
@@ -40,7 +41,7 @@ async fn test_create_token() -> eyre::Result<()> {
             caller,
         )
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(30000)
+        .gas(300_000)
         .send()
         .await?
         .get_receipt()

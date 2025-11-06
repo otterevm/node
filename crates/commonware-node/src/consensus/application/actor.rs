@@ -20,6 +20,7 @@ use commonware_consensus::{
     Block as _,
     marshal::SchemeProvider as _,
     types::{Epoch, Round, View},
+    utils,
 };
 use commonware_macros::select;
 use commonware_runtime::{
@@ -40,7 +41,7 @@ use tempo_node::{TempoExecutionData, TempoFullNode, TempoPayloadTypes};
 
 use reth_provider::BlockReader as _;
 use tokio::sync::RwLock;
-use tracing::{Level, debug, error, error_span, field, info, instrument, warn};
+use tracing::{Level, debug, error, error_span, info, instrument, warn};
 
 use tempo_payload_types::TempoPayloadBuilderAttributes;
 
@@ -52,8 +53,7 @@ use super::{
 use crate::{
     consensus::{Digest, block::Block},
     dkg::PublicOutcome,
-    epoch::{self, SchemeProvider},
-    marshal_utils::UpdateExt as _,
+    epoch::SchemeProvider,
     subblocks,
 };
 
@@ -236,14 +236,7 @@ impl Inner<Init> {
         Ok(())
     }
 
-    #[instrument(
-        skip_all,
-        fields(
-            block.digest = finalized.update.as_block().map(|b| field::display(b.digest())),
-            block.height = finalized.update.as_block().map(|b| b.height()),
-            derived_epoch = finalized.update.as_block().and_then(|b| epoch::of_height(b.height(), self.epoch_length)),
-        ),
-    )]
+    #[instrument(skip_all)]
     /// Pushes a `finalized` request to the back of the finalization queue.
     fn handle_finalized(&self, finalized: Finalized) -> eyre::Result<()> {
         self.state.executor_mailbox.forward_finalized(finalized)
@@ -261,7 +254,11 @@ impl Inner<Init> {
         let source = if genesis.epoch == 0 {
             self.genesis_block.digest()
         } else {
-            let height = epoch::parent_height(genesis.epoch, self.epoch_length);
+            // The last block of the *previous* epoch provides the "genesis"
+            // of the *current* epoch. Only epoch 0 is special cased above.
+            let height =
+                utils::last_block_in_epoch(self.epoch_length, genesis.epoch.saturating_sub(1));
+
             let Some((_, digest)) = self.marshal.get_info(height).await else {
                 // XXX: the None case here should not be hit:
                 // 1. an epoch transition is triggered by the application
@@ -471,8 +468,10 @@ impl Inner<Init> {
         // XXX: Re-propose the parent if the parent is the last height of the
         // epoch. parent.height+1 should be proposed as the first block of the
         // next epoch.
-        if epoch::is_last_height_of_epoch(parent.height(), round.epoch(), self.epoch_length) {
-            info!("last height of epoch reached; re-proposing parent");
+        if utils::is_last_block_in_epoch(self.epoch_length, parent.height())
+            .is_some_and(|e| e == round.epoch())
+        {
+            info!("parent is last height of epoch; re-proposing parent");
             return Ok(parent);
         }
 
@@ -491,11 +490,9 @@ impl Inner<Init> {
 
         // Query DKG manager for ceremony data before building payload
         // This data will be passed to the payload builder via attributes
-        let extra_data = if epoch::is_last_height_of_epoch(
-            parent.height() + 1,
-            round.epoch(),
-            self.epoch_length,
-        ) {
+        let extra_data = if utils::is_last_block_in_epoch(self.epoch_length, parent.height() + 1)
+            .is_some_and(|e| e == round.epoch())
+        {
             // At epoch boundary: include public ceremony outcome
             let outcome = self
                 .state
@@ -623,14 +620,18 @@ impl Inner<Init> {
         // immediately, and happen very rarely. It's better to optimize for the
         // general case.
         if payload == parent_digest {
-            if epoch::is_last_height_of_epoch(block.height(), round.epoch(), self.epoch_length) {
+            if utils::is_last_block_in_epoch(self.epoch_length, block.height())
+                .is_some_and(|e| e == round.epoch())
+            {
                 return Ok((block, true));
             } else {
                 return Ok((block, false));
             }
         }
 
-        if epoch::is_last_height_of_epoch(block.height(), round.epoch(), self.epoch_length) {
+        if utils::is_last_block_in_epoch(self.epoch_length, block.height())
+            .is_some_and(|e| e == round.epoch())
+        {
             let our_outcome = self
                 .state
                 .dkg_manager
@@ -782,7 +783,8 @@ async fn verify_block<TContext: Pacer>(
     scheme_provider: &SchemeProvider,
 ) -> eyre::Result<bool> {
     use alloy_rpc_types_engine::PayloadStatusEnum;
-    if !epoch::contains_height(block.height(), epoch, epoch_length) {
+
+    if utils::epoch(epoch_length, block.height()) != epoch {
         info!("block does not belong to this epoch");
         return Ok(false);
     }

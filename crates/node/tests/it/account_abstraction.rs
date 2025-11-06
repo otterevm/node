@@ -502,8 +502,8 @@ async fn test_aa_basic_transfer_secp256k1() -> eyre::Result<()> {
 
     let (mut setup, provider, alice_signer, alice_addr) = setup_test_with_funded_account().await?;
 
-    // Verify alice has ZERO native ETH (this is expected - gas paid via fee tokens)
-    let alice_eth_balance = provider.get_balance(alice_addr).await?;
+    // Verify alice has zero native balance
+    let alice_eth_balance = provider.get_account_info(alice_addr).await?.balance;
     assert_eq!(
         alice_eth_balance,
         U256::ZERO,
@@ -1239,7 +1239,7 @@ async fn test_aa_p256_call_batching() -> eyre::Result<()> {
 
     reth_tracing::init_test_tracing();
 
-    let initial_funding_amount = U256::from(100u64) * U256::from(10).pow(U256::from(18)); // 100 tokens with 18 decimals
+    let initial_funding_amount = U256::from(20u64) * U256::from(10).pow(U256::from(18)); // 20 tokens with 18 decimals
     let (
         mut setup,
         provider,
@@ -1397,7 +1397,8 @@ async fn test_aa_p256_call_batching() -> eyre::Result<()> {
     );
 
     // Check that the transaction in the block is our AA transaction
-    let block_tx = &batch_payload.block().body().transactions[0];
+    // Skip the rewards registry system tx at index 0
+    let block_tx = &batch_payload.block().body().transactions[1];
     if let TempoTxEnvelope::AA(aa_tx) = block_tx {
         assert_eq!(
             aa_tx.tx().calls.len(),
@@ -2020,8 +2021,8 @@ async fn test_aa_bump_nonce_on_failure() -> eyre::Result<()> {
 
     let (mut setup, provider, alice_signer, alice_addr) = setup_test_with_funded_account().await?;
 
-    // Verify alice has ZERO native ETH (this is expected - gas paid via fee tokens)
-    let alice_eth_balance = provider.get_balance(alice_addr).await?;
+    // Verify alice has zero native balance
+    let alice_eth_balance = provider.get_account_info(alice_addr).await?.balance;
     assert_eq!(
         alice_eth_balance,
         U256::ZERO,

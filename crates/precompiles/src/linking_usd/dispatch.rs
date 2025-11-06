@@ -1,5 +1,5 @@
 use crate::{
-    Precompile,
+    Precompile, input_cost,
     linking_usd::LinkingUSD,
     metadata, mutate, mutate_void,
     storage::PrecompileStorageProvider,
@@ -8,9 +8,15 @@ use crate::{
 };
 use alloy::{primitives::Address, sol_types::SolCall};
 use revm::precompile::{PrecompileError, PrecompileResult};
+use tempo_contracts::precompiles::{ILinkingUSD, TIP20Error};
 
 impl<S: PrecompileStorageProvider> Precompile for LinkingUSD<'_, S> {
     fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult {
+        self.token
+            .storage
+            .deduct_gas(input_cost(calldata.len()))
+            .map_err(|_| PrecompileError::OutOfGas)?;
+
         let selector: [u8; 4] = calldata
             .get(..4)
             .ok_or_else(|| {
@@ -19,7 +25,7 @@ impl<S: PrecompileStorageProvider> Precompile for LinkingUSD<'_, S> {
             .try_into()
             .unwrap();
 
-        match selector {
+        let result = match selector {
             // Metadata
             ITIP20::nameCall::SELECTOR => metadata::<ITIP20::nameCall>(|| self.name()),
             ITIP20::symbolCall::SELECTOR => metadata::<ITIP20::symbolCall>(|| self.symbol()),
@@ -45,6 +51,26 @@ impl<S: PrecompileStorageProvider> Precompile for LinkingUSD<'_, S> {
             }
             ITIP20::allowanceCall::SELECTOR => {
                 view::<ITIP20::allowanceCall>(calldata, |call| self.allowance(call))
+            }
+            ITIP20::PAUSE_ROLECall::SELECTOR => {
+                view::<ITIP20::PAUSE_ROLECall>(calldata, |_| Ok(Self::pause_role()))
+            }
+            ITIP20::UNPAUSE_ROLECall::SELECTOR => {
+                view::<ITIP20::UNPAUSE_ROLECall>(calldata, |_| Ok(Self::unpause_role()))
+            }
+            ITIP20::ISSUER_ROLECall::SELECTOR => {
+                view::<ITIP20::ISSUER_ROLECall>(calldata, |_| Ok(Self::issuer_role()))
+            }
+            ITIP20::BURN_BLOCKED_ROLECall::SELECTOR => {
+                view::<ITIP20::BURN_BLOCKED_ROLECall>(calldata, |_| Ok(Self::burn_blocked_role()))
+            }
+            ILinkingUSD::TRANSFER_ROLECall::SELECTOR => {
+                view::<ILinkingUSD::TRANSFER_ROLECall>(calldata, |_| Ok(Self::transfer_role()))
+            }
+            ILinkingUSD::RECEIVE_WITH_MEMO_ROLECall::SELECTOR => {
+                view::<ILinkingUSD::RECEIVE_WITH_MEMO_ROLECall>(calldata, |_| {
+                    Ok(Self::receive_with_memo_role())
+                })
             }
 
             // Mutating functions that work normally
@@ -123,6 +149,27 @@ impl<S: PrecompileStorageProvider> Precompile for LinkingUSD<'_, S> {
                 })
             }
 
+            ITIP20::startRewardCall::SELECTOR => {
+                mutate::<ITIP20::startRewardCall>(calldata, msg_sender, |_s, _call| {
+                    Err(TIP20Error::rewards_disabled().into())
+                })
+            }
+            ITIP20::setRewardRecipientCall::SELECTOR => {
+                mutate_void::<ITIP20::setRewardRecipientCall>(calldata, msg_sender, |_s, _call| {
+                    Err(TIP20Error::rewards_disabled().into())
+                })
+            }
+            ITIP20::cancelRewardCall::SELECTOR => {
+                mutate::<ITIP20::cancelRewardCall>(calldata, msg_sender, |_s, _call| {
+                    Err(TIP20Error::rewards_disabled().into())
+                })
+            }
+            ITIP20::claimRewardsCall::SELECTOR => {
+                mutate::<ITIP20::claimRewardsCall>(calldata, msg_sender, |_, _| {
+                    Err(TIP20Error::rewards_disabled().into())
+                })
+            }
+
             // RolesAuth functions
             IRolesAuth::hasRoleCall::SELECTOR => {
                 view::<IRolesAuth::hasRoleCall>(calldata, |call| {
@@ -156,6 +203,107 @@ impl<S: PrecompileStorageProvider> Precompile for LinkingUSD<'_, S> {
             }
 
             _ => Err(PrecompileError::Other("Unknown selector".to_string())),
+        };
+
+        result.map(|mut res| {
+            res.gas_used = self.token.storage.gas_used();
+            res
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::hashmap::HashMapStorageProvider;
+    use alloy::{
+        primitives::{Bytes, U256},
+        sol_types::SolInterface,
+    };
+    use tempo_contracts::precompiles::TIP20Error;
+
+    #[test]
+    fn test_start_reward_disabled() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut token = LinkingUSD::new(&mut storage);
+        let sender = Address::from([1u8; 20]);
+
+        token
+            .initialize(sender)
+            .expect("Failed to initialize token");
+
+        let calldata = ITIP20::startRewardCall {
+            amount: U256::from(1000),
+            secs: 100,
         }
+        .abi_encode();
+
+        let output = token.call(&Bytes::from(calldata), sender)?;
+        assert!(output.reverted);
+        let expected: Bytes = TIP20Error::rewards_disabled().selector().into();
+        assert_eq!(output.bytes, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_reward_recipient_disabled() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut token = LinkingUSD::new(&mut storage);
+        let sender = Address::from([1u8; 20]);
+        let recipient = Address::from([2u8; 20]);
+
+        token
+            .initialize(sender)
+            .expect("Failed to initialize token");
+
+        let calldata = ITIP20::setRewardRecipientCall { recipient }.abi_encode();
+
+        let output = token.call(&Bytes::from(calldata), sender)?;
+        assert!(output.reverted);
+        let expected: Bytes = TIP20Error::rewards_disabled().selector().into();
+        assert_eq!(output.bytes, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cancel_reward_disabled() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut token = LinkingUSD::new(&mut storage);
+        let sender = Address::from([1u8; 20]);
+
+        token
+            .initialize(sender)
+            .expect("Failed to initialize token");
+
+        let calldata = ITIP20::cancelRewardCall { id: 1 }.abi_encode();
+
+        let output = token.call(&Bytes::from(calldata), sender)?;
+        assert!(output.reverted);
+        let expected: Bytes = TIP20Error::rewards_disabled().selector().into();
+        assert_eq!(output.bytes, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_claim_rewards_disabled() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut token = LinkingUSD::new(&mut storage);
+        let sender = Address::from([1u8; 20]);
+
+        token
+            .initialize(sender)
+            .expect("Failed to initialize token");
+
+        let calldata = ITIP20::claimRewardsCall {}.abi_encode();
+
+        let output = token.call(&Bytes::from(calldata), sender)?;
+        assert!(output.reverted);
+        let expected: Bytes = TIP20Error::rewards_disabled().selector().into();
+        assert_eq!(output.bytes, expected);
+
+        Ok(())
     }
 }

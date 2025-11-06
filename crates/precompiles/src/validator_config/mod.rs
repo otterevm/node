@@ -56,6 +56,7 @@ pub mod slots {
     pub fn unpack_active_index(value: U256) -> (bool, u64) {
         let bytes = value.to_be_bytes::<32>();
         let active = bytes[31] != 0;
+        // SAFETY: This is safe to unwrap because bytes is always 32 bytes and 23..31 is always 8 bytes
         let index = u64::from_be_bytes(bytes[23..31].try_into().unwrap());
         (active, index)
     }
@@ -262,7 +263,11 @@ impl<'a, S: PrecompileStorageProvider> ValidatorConfig<'a, S> {
         self.storage.sstore(
             self.precompile_address,
             slots::VALIDATOR_COUNT,
-            U256::from(count + 1),
+            U256::from(
+                count
+                    .checked_add(1)
+                    .ok_or(TempoPrecompileError::under_overflow())?,
+            ),
         )?;
 
         Ok(())
@@ -420,8 +425,10 @@ impl<'a, S: PrecompileStorageProvider> ValidatorConfig<'a, S> {
         let first_chunk_len = len.min(30);
         all_bytes.extend_from_slice(&first_bytes[2..2 + first_chunk_len]);
 
-        let mut remaining = len - first_chunk_len;
-        let mut slot_offset = 1;
+        let mut remaining = len
+            .checked_sub(first_chunk_len)
+            .ok_or(TempoPrecompileError::under_overflow())?;
+        let mut slot_offset: usize = 1;
         while remaining > 0 {
             let slot_value = self
                 .storage
@@ -429,8 +436,12 @@ impl<'a, S: PrecompileStorageProvider> ValidatorConfig<'a, S> {
             let slot_bytes = slot_value.to_be_bytes::<32>();
             let to_read = remaining.min(32);
             all_bytes.extend_from_slice(&slot_bytes[..to_read]);
-            remaining -= to_read;
-            slot_offset += 1;
+            remaining = remaining
+                .checked_sub(to_read)
+                .ok_or(TempoPrecompileError::under_overflow())?;
+            slot_offset = slot_offset
+                .checked_add(1)
+                .ok_or(TempoPrecompileError::under_overflow())?;
         }
 
         Ok(String::from_utf8_lossy(&all_bytes).to_string())

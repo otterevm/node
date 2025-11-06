@@ -4,6 +4,7 @@ use std::{cmp::Ordering, fmt::Debug};
 
 use alloy_evm::EvmInternals;
 use alloy_primitives::{Address, B256, U256, b256};
+use alloy_sol_types::SolCall;
 use revm::{
     Database,
     context::{
@@ -12,7 +13,7 @@ use revm::{
         transaction::{AccessListItem, AccessListItemTr},
     },
     handler::{
-        EvmTr, FrameResult, FrameTr, Handler,
+        EvmTr, FrameResult, FrameTr, Handler, MainnetHandler,
         pre_execution::{self, calculate_caller_fee},
         validation,
     },
@@ -29,16 +30,19 @@ use revm::{
     primitives::{eip7702, hardfork::SpecId as RevmSpecId},
     state::Bytecode,
 };
-use tempo_contracts::{DEFAULT_7702_DELEGATE_ADDRESS, precompiles::FeeManagerError};
+use tempo_contracts::{
+    DEFAULT_7702_DELEGATE_ADDRESS,
+    precompiles::{FeeManagerError, IFeeManager},
+};
 use tempo_precompiles::{
-    TIP_FEE_MANAGER_ADDRESS,
+    DEFAULT_FEE_TOKEN, LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     error::TempoPrecompileError,
     nonce::{INonce::getNonceCall, NonceManager},
     storage::{evm::EvmPrecompileStorageProvider, slots::mapping_slot},
     tip_fee_manager::{self, TipFeeManager},
-    tip20,
+    tip20::{self, TIP20Token, USD_CURRENCY, address_to_token_id_unchecked, is_tip20},
 };
-use tempo_primitives::transaction::AASignature;
+use tempo_primitives::transaction::{AASignature, calc_gas_balance_spending};
 
 use crate::{TempoEvm, TempoInvalidTransaction, evm::TempoContext};
 
@@ -98,6 +102,11 @@ impl<DB: alloy_evm::Database, I> TempoEvmHandler<DB, I> {
         evm: &mut TempoEvm<DB, I>,
     ) -> Result<(), EVMError<DB::Error, TempoInvalidTransaction>> {
         self.fee_token = get_fee_token(evm.ctx_mut())?;
+
+        // Skip fee token validity check for cases when the transaction is free and is not a part of subblock.
+        if !evm.ctx.tx.max_balance_spending()?.is_zero() || evm.ctx.tx.is_subblock_transaction() {
+            validate_fee_token(evm.ctx_mut(), self.fee_token)?;
+        }
         self.fee_payer = evm.ctx().tx().fee_payer()?;
 
         Ok(())
@@ -369,6 +378,22 @@ where
         }
     }
 
+    /// Take logs from the Journal if outcome is Halt Or Revert.
+    #[inline]
+    fn execution_result(
+        &mut self,
+        evm: &mut Self::Evm,
+        result: <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
+    ) -> Result<ExecutionResult<Self::HaltReason>, Self::Error> {
+        evm.logs.clear();
+        if !result.instruction_result().is_ok() {
+            evm.logs = evm.journal_mut().take_logs();
+        }
+
+        let mut mainnet = MainnetHandler::default();
+        mainnet.execution_result(evm, result)
+    }
+
     /// Override apply_eip7702_auth_list to support AA transactions with authorization lists.
     ///
     /// The default implementation only processes authorization lists for TransactionType::Eip7702 (0x04).
@@ -496,7 +521,8 @@ where
 
         if !nonce_key.is_zero() {
             let internals = EvmInternals::new(journal, block);
-            let mut storage_provider = EvmPrecompileStorageProvider::new(internals, cfg.chain_id);
+            let mut storage_provider =
+                EvmPrecompileStorageProvider::new_max_gas(internals, cfg.chain_id);
             let mut nonce_manager = NonceManager::new(&mut storage_provider);
 
             if !cfg.is_nonce_check_disabled() {
@@ -561,7 +587,8 @@ where
 
         // Create storage provider wrapper around journal
         let internals = EvmInternals::new(journal, &block);
-        let mut storage_provider = EvmPrecompileStorageProvider::new(internals, cfg.chain_id());
+        let mut storage_provider =
+            EvmPrecompileStorageProvider::new_max_gas(internals, cfg.chain_id());
         let mut fee_manager = TipFeeManager::new(
             TIP_FEE_MANAGER_ADDRESS,
             block.beneficiary(),
@@ -628,26 +655,32 @@ where
         let chain_id = context.cfg().chain_id;
 
         // Calculate actual used and refund amounts
-        let gas_used = gas.used();
-        let actual_used = U256::from(gas_used).saturating_mul(U256::from(effective_gas_price));
-        let refund_amount = U256::from(
-            effective_gas_price.saturating_mul((gas.remaining() + gas.refunded() as u64) as u128),
-        );
+        let actual_spending = calc_gas_balance_spending(gas.used(), effective_gas_price);
+        let refund_amount = tx.effective_balance_spending(
+            context.block.basefee.into(),
+            context.block.blob_gasprice().unwrap_or_default(),
+        )? - tx.value
+            - actual_spending;
 
         // Create storage provider and fee manager
         let (journal, block) = (&mut context.journaled_state, &context.block);
         let internals = EvmInternals::new(journal, block);
-        let mut storage_provider = EvmPrecompileStorageProvider::new(internals, chain_id);
+        let mut storage_provider = EvmPrecompileStorageProvider::new_max_gas(internals, chain_id);
         let mut fee_manager = TipFeeManager::new(
             TIP_FEE_MANAGER_ADDRESS,
             block.beneficiary,
             &mut storage_provider,
         );
 
-        if !actual_used.is_zero() || !refund_amount.is_zero() {
+        if !actual_spending.is_zero() || !refund_amount.is_zero() {
             // Call collectFeePostTx (handles both refund and fee queuing)
             fee_manager
-                .collect_fee_post_tx(self.fee_payer, actual_used, refund_amount, self.fee_token)
+                .collect_fee_post_tx(
+                    self.fee_payer,
+                    actual_spending,
+                    refund_amount,
+                    self.fee_token,
+                )
                 .map_err(|e| EVMError::Custom(format!("{e:?}")))?;
         }
         Ok(())
@@ -888,6 +921,45 @@ where
     Ok(batch_gas)
 }
 
+/// Validates that token can be used for fee payments.
+pub fn validate_fee_token<DB>(
+    ctx: &mut TempoContext<DB>,
+    fee_token: Address,
+) -> Result<(), EVMError<DB::Error, TempoInvalidTransaction>>
+where
+    DB: alloy_evm::Database,
+{
+    if !is_tip20(fee_token) || fee_token == LINKING_USD_ADDRESS {
+        return Err(TempoInvalidTransaction::InvalidFeeToken(fee_token).into());
+    }
+
+    // Ensure that token is initialized
+    if ctx
+        .journaled_state
+        .load_account(fee_token)?
+        .data
+        .info
+        .is_empty_code_hash()
+    {
+        return Err(TempoInvalidTransaction::InvalidFeeToken(fee_token).into());
+    }
+
+    let token_id = address_to_token_id_unchecked(fee_token);
+
+    let mut storage = EvmPrecompileStorageProvider::new_max_gas(
+        EvmInternals::new(&mut ctx.journaled_state, &ctx.block),
+        ctx.cfg.chain_id,
+    );
+
+    let currency = TIP20Token::new(token_id, &mut storage)
+        .currency()
+        .map_err(|e| EVMError::Custom(e.to_string()))?;
+    if currency != USD_CURRENCY {
+        return Err(TempoInvalidTransaction::InvalidFeeToken(fee_token).into());
+    }
+    Ok(())
+}
+
 /// Looks up the user's fee token in the `TIPFeemanager` contract.
 ///
 /// If no fee token is set for the user, or the fee token is the zero address, the returned fee token will be the validator's fee token.
@@ -897,32 +969,56 @@ pub fn get_fee_token<DB>(
 where
     DB: Database,
 {
+    // If there is a fee token explicitly set on the tx type, use that.
     if let Some(fee_token) = ctx.tx().fee_token {
         return Ok(fee_token);
+    }
+
+    // If the fee payer is also the msg.sender and the transaction is calling FeeManager to set a
+    // new preference, the newly set preference should be used immediately instead of the
+    // previously stored one
+    if ctx.tx().aa_tx_env.is_none()
+        && ctx.tx().fee_payer()? == ctx.tx().caller()
+        && ctx.tx().kind().to() == Some(&TIP_FEE_MANAGER_ADDRESS)
+        && let Ok(call) = IFeeManager::setUserTokenCall::abi_decode(ctx.tx().input())
+    {
+        return Ok(call.token);
     }
 
     let user_slot = mapping_slot(ctx.tx().fee_payer()?, tip_fee_manager::slots::USER_TOKENS);
     // ensure TIP_FEE_MANAGER_ADDRESS is loaded
     ctx.journal_mut().load_account(TIP_FEE_MANAGER_ADDRESS)?;
-    let user_fee_token = ctx
+    let stored_user_token = ctx
         .journal_mut()
         .sload(TIP_FEE_MANAGER_ADDRESS, user_slot)?
         .data
         .into_address();
 
-    if user_fee_token.is_zero() {
-        let validator_slot =
-            mapping_slot(ctx.beneficiary(), tip_fee_manager::slots::VALIDATOR_TOKENS);
-        let validator_fee_token = ctx
-            .journal_mut()
-            .sload(TIP_FEE_MANAGER_ADDRESS, validator_slot)?
-            .data
-            .into_address();
-
-        Ok(validator_fee_token)
-    } else {
-        Ok(user_fee_token)
+    if !stored_user_token.is_zero() {
+        return Ok(stored_user_token);
     }
+
+    // If tx.to() is a TIP-20 token, use that token as the fee token
+    if ctx.tx().aa_tx_env.is_none()
+        && let Some(&to_addr) = ctx.tx().kind().to()
+        && is_tip20(to_addr)
+    {
+        return Ok(to_addr);
+    }
+
+    // Otherwise fall back to the validator fee token preference
+    let validator_slot = mapping_slot(ctx.beneficiary(), tip_fee_manager::slots::VALIDATOR_TOKENS);
+    let validator_fee_token = ctx
+        .journal_mut()
+        .sload(TIP_FEE_MANAGER_ADDRESS, validator_slot)?
+        .data
+        .into_address();
+
+    if !validator_fee_token.is_zero() {
+        return Ok(validator_fee_token);
+    }
+
+    Ok(DEFAULT_FEE_TOKEN)
 }
 
 pub fn get_token_balance<JOURNAL>(
