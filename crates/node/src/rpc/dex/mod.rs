@@ -85,7 +85,7 @@ impl<
 
             // TODO: Fix borrowing conflict between exchange and BookIterator both using storage mutably
             // Need to restructure so that storage isn't borrowed twice
-            
+
             // Iterate through books collecting orders until we reach the limit
             for book_key in book_keys {
                 // let orderbook = exchange.books(book_key)?;
@@ -486,9 +486,10 @@ impl<'a, 'b> BookIterator<'a, 'b> {
 
     /// Get a TickLevel from a tick
     pub fn get_price_level(&mut self, tick: i16) -> Result<TickLevel, DexApiError> {
-        // TODO: Implement TickLevel loading - use StablecoinExchange.get_price_level(base, tick, is_bid)
-        // but need to pass the base token from self.orderbook.base
-        todo!("Need to implement price level loading from storage")
+        let mut exchange = StablecoinExchange::new(self.storage);
+        exchange
+            .get_price_level(self.orderbook.base, tick, self.bids)
+            .map_err(DexApiError::Precompile)
     }
 
     /// Get the next initialized tick after the given tick
