@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_parse_tempo_hardforks_from_genesis_extra_fields() {
-        // Create a genesis with Tempo genesis info extra fields in config
+        // Create a genesis with Tempo hardfork timestamps as extra fields in config
         // (non-standard fields automatically go into extra_fields)
         let genesis_json = json!({
             "config": {
