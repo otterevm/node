@@ -48,7 +48,7 @@ pub(crate) fn allocate_slots(fields: &[FieldInfo]) -> syn::Result<Vec<AllocatedF
     let mut last_auto_slot = U256::ZERO;
     let classified_fields: Vec<FieldKind<'_>> = fields
         .iter()
-        .map(|field| classify_field(field))
+        .map(classify_field)
         .collect::<syn::Result<_>>()?;
 
     for (idx, (field, kind)) in fields.iter().zip(classified_fields.into_iter()).enumerate() {

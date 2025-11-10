@@ -197,9 +197,7 @@ impl Orderbook {
             orderbook_base_slot,
             __packing_orderbook::FIELD_2_SLOT,
             tick,
-        )
-        .map_err(Into::into)
-    }
+        )}
 
     /// Write a TickLevel to the bids mapping at a specific tick
     pub fn write_bid_tick_level<S: StorageOps>(
@@ -215,9 +213,7 @@ impl Orderbook {
             __packing_orderbook::FIELD_2_SLOT,
             tick,
             tick_level,
-        )
-        .map_err(Into::into)
-    }
+        )}
 
     /// Delete a TickLevel from the bids mapping at a specific tick
     pub fn delete_bid_tick_level<S: StorageOps>(
@@ -231,9 +227,7 @@ impl Orderbook {
             orderbook_base_slot,
             __packing_orderbook::FIELD_2_SLOT,
             tick,
-        )
-        .map_err(Into::into)
-    }
+        )}
 
     /// Read a TickLevel from the asks mapping at a specific tick
     pub fn read_ask_tick_level<S: StorageOps>(
@@ -247,9 +241,7 @@ impl Orderbook {
             orderbook_base_slot,
             __packing_orderbook::FIELD_3_SLOT,
             tick,
-        )
-        .map_err(Into::into)
-    }
+        )}
 
     /// Write a TickLevel to the asks mapping at a specific tick
     pub fn write_ask_tick_level<S: StorageOps>(
@@ -265,9 +257,7 @@ impl Orderbook {
             __packing_orderbook::FIELD_3_SLOT,
             tick,
             tick_level,
-        )
-        .map_err(Into::into)
-    }
+        )}
 
     /// Delete a TickLevel from the asks mapping at a specific tick
     pub fn delete_ask_tick_level<S: StorageOps>(
@@ -281,9 +271,7 @@ impl Orderbook {
             orderbook_base_slot,
             __packing_orderbook::FIELD_3_SLOT,
             tick,
-        )
-        .map_err(Into::into)
-    }
+        )}
 }
 
 impl From<Orderbook> for IStablecoinExchange::Orderbook {
