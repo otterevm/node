@@ -18,7 +18,6 @@ pub mod tip_fee_manager;
 pub mod validator_config;
 
 use crate::{
-    error::IntoPrecompileResult,
     linking_usd::LinkingUSD,
     nonce::NonceManager,
     stablecoin_exchange::StablecoinExchange,
@@ -31,6 +30,7 @@ use crate::{
     tip403_registry::TIP403Registry,
     validator_config::ValidatorConfig,
 };
+pub use error::IntoPrecompileResult;
 
 #[cfg(test)]
 use alloy::sol_types::SolInterface;
@@ -40,10 +40,7 @@ use alloy::{
     sol_types::{SolCall, SolError},
 };
 use alloy_evm::precompiles::{DynPrecompile, PrecompilesMap};
-use revm::{
-    context::Block,
-    precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
-};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 pub use tempo_contracts::precompiles::{
     DEFAULT_FEE_TOKEN, LINKING_USD_ADDRESS, NONCE_PRECOMPILE_ADDRESS, STABLECOIN_EXCHANGE_ADDRESS,
@@ -118,8 +115,6 @@ pub struct TipFeeManagerPrecompile;
 impl TipFeeManagerPrecompile {
     pub fn create(chain_id: u64) -> DynPrecompile {
         tempo_precompile!("TipFeeManager", |input| TipFeeManager::new(
-            TIP_FEE_MANAGER_ADDRESS,
-            input.internals.block_env().beneficiary(),
             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id)
         ))
     }
@@ -211,7 +206,6 @@ pub struct ValidatorConfigPrecompile;
 impl ValidatorConfigPrecompile {
     pub fn create(chain_id: u64) -> DynPrecompile {
         tempo_precompile!("ValidatorConfig", |input| ValidatorConfig::new(
-            VALIDATOR_CONFIG_ADDRESS,
             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id),
         ))
     }

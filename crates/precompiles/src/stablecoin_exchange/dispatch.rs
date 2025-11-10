@@ -56,10 +56,10 @@ impl<'a, S: PrecompileStorageProvider> Precompile for StablecoinExchange<'a, S> 
                 })
             }
 
-            IStablecoinExchange::getPriceLevelCall::SELECTOR => {
-                view::<IStablecoinExchange::getPriceLevelCall>(calldata, |call| {
-                    self.get_price_level(call.base, call.tick, call.isBid)
-                        .map(Into::into)
+            IStablecoinExchange::getTickLevelCall::SELECTOR => {
+                view::<IStablecoinExchange::getTickLevelCall>(calldata, |call| {
+                    let level = self.get_price_level(call.base, call.tick, call.isBid)?;
+                    Ok((level.head, level.tail, level.total_liquidity).into())
                 })
             }
 
@@ -148,6 +148,41 @@ impl<'a, S: PrecompileStorageProvider> Precompile for StablecoinExchange<'a, S> 
                     |_s, _call| self.execute_block(msg_sender),
                 )
             }
+            IStablecoinExchange::MIN_TICKCall::SELECTOR => {
+                view::<IStablecoinExchange::MIN_TICKCall>(calldata, |_call| {
+                    Ok(crate::stablecoin_exchange::MIN_TICK)
+                })
+            }
+            IStablecoinExchange::MAX_TICKCall::SELECTOR => {
+                view::<IStablecoinExchange::MAX_TICKCall>(calldata, |_call| {
+                    Ok(crate::stablecoin_exchange::MAX_TICK)
+                })
+            }
+            IStablecoinExchange::PRICE_SCALECall::SELECTOR => {
+                view::<IStablecoinExchange::PRICE_SCALECall>(calldata, |_call| {
+                    Ok(crate::stablecoin_exchange::PRICE_SCALE)
+                })
+            }
+            IStablecoinExchange::MIN_PRICECall::SELECTOR => {
+                view::<IStablecoinExchange::MIN_PRICECall>(calldata, |_call| {
+                    Ok(crate::stablecoin_exchange::MIN_PRICE)
+                })
+            }
+            IStablecoinExchange::MAX_PRICECall::SELECTOR => {
+                view::<IStablecoinExchange::MAX_PRICECall>(calldata, |_call| {
+                    Ok(crate::stablecoin_exchange::MAX_PRICE)
+                })
+            }
+            IStablecoinExchange::tickToPriceCall::SELECTOR => {
+                view::<IStablecoinExchange::tickToPriceCall>(calldata, |call| {
+                    Ok(crate::stablecoin_exchange::tick_to_price(call.tick))
+                })
+            }
+            IStablecoinExchange::priceToTickCall::SELECTOR => {
+                view::<IStablecoinExchange::priceToTickCall>(calldata, |call| {
+                    Ok(crate::stablecoin_exchange::price_to_tick(call.price))
+                })
+            }
 
             _ => Err(PrecompileError::Other(
                 "Unknown function selector".to_string(),
@@ -163,12 +198,13 @@ impl<'a, S: PrecompileStorageProvider> Precompile for StablecoinExchange<'a, S> 
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::{
         Precompile,
         linking_usd::{LinkingUSD, TRANSFER_ROLE},
         stablecoin_exchange::{IStablecoinExchange, MIN_ORDER_AMOUNT, StablecoinExchange},
-        storage::{PrecompileStorageProvider, hashmap::HashMapStorageProvider},
+        storage::{ContractStorage, PrecompileStorageProvider, hashmap::HashMapStorageProvider},
         tip20::{ISSUER_ROLE, ITIP20, TIP20Token},
     };
     use alloy::{
@@ -191,11 +227,12 @@ mod tests {
         let mut quote = LinkingUSD::new(exchange.storage);
         quote.initialize(admin).unwrap();
 
-        let mut quote_roles = quote.get_roles_contract();
-        quote_roles
+        quote
+            .token
             .grant_role_internal(admin, *ISSUER_ROLE)
             .unwrap();
-        quote_roles
+        quote
+            .token
             .grant_role_internal(user, *TRANSFER_ROLE)
             .unwrap();
 
@@ -220,12 +257,12 @@ mod tests {
             .unwrap();
 
         // Initialize base token
-        let mut base = TIP20Token::new(1, quote.token.storage);
-        base.initialize("BASE", "BASE", "USD", quote.token.token_address, admin)
+        let quote_address = quote.token.address();
+        let mut base = TIP20Token::new(1, quote.token.storage());
+        base.initialize("BASE", "BASE", "USD", quote_address, admin)
             .unwrap();
 
-        let mut base_roles = base.get_roles_contract();
-        base_roles.grant_role_internal(admin, *ISSUER_ROLE).unwrap();
+        base.grant_role_internal(admin, *ISSUER_ROLE).unwrap();
 
         base.approve(
             user,
@@ -245,8 +282,8 @@ mod tests {
         )
         .unwrap();
 
-        let base_token = base.token_address;
-        let quote_token = quote.token.token_address;
+        let base_token = base.address();
+        let quote_token = quote.token.address();
 
         // Create pair and add liquidity
         exchange.create_pair(base_token).unwrap();
