@@ -101,13 +101,14 @@ impl ExecutionRuntime {
                 let task_manager = TaskManager::current();
                 while let Some(msg) = from_handle.recv().await {
                     match msg {
-                        Message::AddValidator {
-                            http_url,
-                            address,
-                            public_key,
-                            addr,
-                            response,
-                        } => {
+                        Message::AddValidator(add_validator) => {
+                            let AddValidator {
+                                http_url,
+                                address,
+                                public_key,
+                                addr,
+                                response,
+                            } = *add_validator;
                             let provider = ProviderBuilder::new()
                                 .wallet(wallet.clone())
                                 .connect_http(http_url);
@@ -129,11 +130,12 @@ impl ExecutionRuntime {
                                 .unwrap();
                             let _ = response.send(receipt);
                         }
-                        Message::SpawnNode {
-                            name,
-                            genesis_setup,
-                            response,
-                        } => {
+                        Message::SpawnNode(spawn_node) => {
+                            let SpawnNode {
+                                name,
+                                genesis_setup,
+                                response,
+                            } = *spawn_node;
                             let node = launch_execution_node(
                                 task_manager.executor(),
                                 datadir.join(name),
@@ -178,13 +180,16 @@ impl ExecutionRuntime {
     ) -> eyre::Result<TransactionReceipt> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.to_runtime
-            .send(Message::AddValidator {
-                http_url,
-                address,
-                public_key,
-                addr,
-                response: tx,
-            })
+            .send(
+                AddValidator {
+                    http_url,
+                    address,
+                    public_key,
+                    addr,
+                    response: tx,
+                }
+                .into(),
+            )
             .wrap_err("the execution runtime went away")?;
         rx.await
             .wrap_err("the execution runtime dropped the response channel before sending a receipt")
@@ -198,11 +203,14 @@ impl ExecutionRuntime {
     ) -> eyre::Result<ExecutionNode> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.to_runtime
-            .send(Message::SpawnNode {
-                name: name.to_string(),
-                genesis_setup,
-                response: tx,
-            })
+            .send(
+                SpawnNode {
+                    name: name.to_string(),
+                    genesis_setup,
+                    response: tx,
+                }
+                .into(),
+            )
             .wrap_err("the execution runtime went away")?;
         rx.await.wrap_err(
             "the execution runtime dropped the response channel before sending an execution node",
@@ -217,11 +225,14 @@ impl ExecutionRuntime {
     ) -> eyre::Result<ExecutionNode> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.to_runtime
-            .send(Message::SpawnNode {
-                name: name.to_string(),
-                genesis_setup,
-                response: tx,
-            })
+            .send(
+                SpawnNode {
+                    name: name.to_string(),
+                    genesis_setup,
+                    response: tx,
+                }
+                .into(),
+            )
             .wrap_err("the execution runtime went away")?;
         rx.blocking_recv().wrap_err(
             "the execution runtime dropped the response channel before sending an execution node",
@@ -262,11 +273,14 @@ impl ExecutionRuntimeHandle {
     ) -> eyre::Result<ExecutionNode> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.to_runtime
-            .send(Message::SpawnNode {
-                name: name.to_string(),
-                genesis_setup,
-                response: tx,
-            })
+            .send(
+                SpawnNode {
+                    name: name.to_string(),
+                    genesis_setup,
+                    response: tx,
+                }
+                .into(),
+            )
             .wrap_err("the execution runtime went away")?;
         rx.await.wrap_err(
             "the execution runtime dropped the response channel before sending an execution node",
@@ -281,11 +295,14 @@ impl ExecutionRuntimeHandle {
     ) -> eyre::Result<ExecutionNode> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.to_runtime
-            .send(Message::SpawnNode {
-                name: name.to_string(),
-                genesis_setup,
-                response: tx,
-            })
+            .send(
+                SpawnNode {
+                    name: name.to_string(),
+                    genesis_setup,
+                    response: tx,
+                }
+                .into(),
+            )
             .wrap_err("the execution runtime went away")?;
         rx.blocking_recv().wrap_err(
             "the execution runtime dropped the response channel before sending an execution node",
@@ -396,20 +413,38 @@ pub async fn launch_execution_node<P: AsRef<Path>>(
 
 #[derive(Debug)]
 enum Message {
-    SpawnNode {
-        name: String,
-        genesis_setup: GenesisSetup,
-        response: tokio::sync::oneshot::Sender<ExecutionNode>,
-    },
-    AddValidator {
-        /// URL of the node to send this to.
-        http_url: Url,
-        address: Address,
-        public_key: PublicKey,
-        addr: SocketAddr,
-        response: tokio::sync::oneshot::Sender<TransactionReceipt>,
-    },
+    AddValidator(Box<AddValidator>),
+    SpawnNode(Box<SpawnNode>),
     Stop,
+}
+
+impl From<AddValidator> for Message {
+    fn from(value: AddValidator) -> Self {
+        Self::AddValidator(value.into())
+    }
+}
+
+impl From<SpawnNode> for Message {
+    fn from(value: SpawnNode) -> Self {
+        Self::SpawnNode(value.into())
+    }
+}
+
+#[derive(Debug)]
+struct SpawnNode {
+    name: String,
+    genesis_setup: GenesisSetup,
+    response: tokio::sync::oneshot::Sender<ExecutionNode>,
+}
+
+#[derive(Debug)]
+struct AddValidator {
+    /// URL of the node to send this to.
+    http_url: Url,
+    address: Address,
+    public_key: PublicKey,
+    addr: SocketAddr,
+    response: tokio::sync::oneshot::Sender<TransactionReceipt>,
 }
 
 #[derive(Debug, Clone)]

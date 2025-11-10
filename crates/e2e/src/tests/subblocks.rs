@@ -36,7 +36,7 @@ fn subblocks_are_included() {
             success_rate: 1.0,
         };
         let setup = Setup {
-            how_many_signers: how_many_signers,
+            how_many_signers,
             how_many_verifiers: 0,
             seed: 0,
             linkage: linkage.clone(),
