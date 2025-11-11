@@ -383,16 +383,10 @@ mod dex {
         let mint_amount = U256::from(1000000000000000u128);
         let first_order_amount = 1000000000000u128;
 
-        await_receipts(
-            &mut vec![
-                exchange.createPair(*base1.address()).send().await?,
-                exchange.createPair(*base2.address()).send().await?,
-            ],
-            &tx_count,
-        )
-        .await?;
-
-        let mut receipts = Vec::new();
+        let mut receipts = vec![
+            exchange.createPair(*base1.address()).send().await?,
+            exchange.createPair(*base2.address()).send().await?,
+        ];
 
         for signer in signers.iter() {
             receipts.extend([
