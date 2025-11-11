@@ -1,7 +1,7 @@
 use alloy::{
     eips::{BlockNumberOrTag::Latest, Decodable2718},
     network::{Ethereum, EthereumWallet, Network, TransactionBuilder, TxSignerSync},
-    primitives::{Address, BlockNumber, ChainId, TxKind, U256},
+    primitives::{Address, BlockNumber, ChainId, TxHash, TxKind, U256},
     providers::{
         PendingTransactionBuilder, Provider, ProviderBuilder, RootProvider,
         fillers::{
@@ -27,6 +27,7 @@ use rlimit::Resource;
 use serde::Serialize;
 use simple_tqdm::ParTqdm;
 use std::{
+    collections::HashMap,
     fs::File,
     io::BufWriter,
     num::NonZeroU32,
@@ -131,18 +132,18 @@ impl MaxTpsArgs {
 
         // Generate all transactions
         let total_txs = self.tps * self.duration;
-        let transactions = Arc::new(
-            generate_transactions(
-                total_txs,
-                self.accounts,
-                &self.mnemonic,
-                self.chain_id,
-                self.token_address,
-                &target_urls[0],
-            )
-            .await
-            .context("Failed to generate transactions")?,
-        );
+        let (signers, transactions) = generate_transactions(
+            total_txs,
+            self.accounts,
+            &self.mnemonic,
+            self.chain_id,
+            self.token_address,
+            &target_urls[0],
+        )
+        .await
+        .context("Failed to generate transactions")?;
+        let signers = Arc::new(signers);
+        let transactions = Arc::new(transactions);
 
         // Get first block height before sending transactions
         let provider = ProviderBuilder::new().connect_http(target_urls[0].clone());
@@ -161,6 +162,7 @@ impl MaxTpsArgs {
         // Spawn workers and send transactions
         send_transactions(
             transactions,
+            signers,
             self.workers,
             self.total_connections,
             target_urls.clone(),
@@ -194,6 +196,7 @@ impl MaxTpsArgs {
 
 fn send_transactions(
     transactions: Arc<Vec<Vec<u8>>>,
+    signers: Arc<HashMap<TxHash, PrivateKeySigner>>,
     num_workers: usize,
     _num_connections: u64,
     target_urls: Vec<Url>,
@@ -223,6 +226,7 @@ fn send_transactions(
         // Segment transactions
         let rate_limiter = rate_limiter.clone();
         let transactions = transactions.clone();
+        let signers = signers.clone();
         let target_urls = target_urls.to_vec();
         let tx_counter = tx_counter.clone();
         let start = thread_id * chunk_size;
@@ -265,8 +269,24 @@ fn send_transactions(
                                         EthereumTxEnvelope::decode_2718_exact(tx_bytes.as_slice())
                                             .unwrap();
 
+                                    let failed_tx = provider
+                                        .get_transaction_by_hash(receipt.transaction_hash)
+                                        .await
+                                        .unwrap()
+                                        .unwrap();
+                                    let signer =
+                                        signers.get(&receipt.transaction_hash).unwrap().clone();
+                                    let account_provider = ProviderBuilder::new()
+                                        .wallet(signer)
+                                        .connect_http(target_urls[0].clone());
+                                    let output = account_provider
+                                        .call(failed_tx.into_request())
+                                        .await
+                                        .unwrap();
+                                    let error_code = &output;
+
                                     eprintln!(
-                                        "Failed transaction {:?} {tx:#?}",
+                                        "Failed transaction {error_code:x?} {:?} {tx:#?}",
                                         receipt.transaction_hash
                                     );
                                 }
@@ -292,7 +312,7 @@ async fn generate_transactions(
     chain_id: u64,
     token_address: Address,
     rpc_url: &Url,
-) -> eyre::Result<Vec<Vec<u8>>> {
+) -> eyre::Result<(HashMap<TxHash, PrivateKeySigner>, Vec<Vec<u8>>)> {
     println!("Generating {num_accounts} accounts...");
     let signers: Vec<PrivateKeySigner> = (0..num_accounts as u32)
         .into_par_iter()
@@ -332,20 +352,31 @@ async fn generate_transactions(
         }
     }
 
-    let transactions: Vec<Vec<u8>> = params
+    let res: Vec<(PrivateKeySigner, (TxHash, Vec<u8>))> = params
         .into_par_iter()
         .tqdm()
-        .map(|(signer, nonce)| match random::<u32>() % 4u32 {
-            0 => dex::place(&exchange, signer, nonce, chain_id, base1),
-            1 => dex::place(&exchange, signer, nonce, chain_id, base2),
-            2 => dex::swap_in(&exchange, signer, nonce, chain_id, base1, quote),
-            3 => dex::swap_in(&exchange, signer, nonce, chain_id, base2, quote),
-            v => unreachable!("Number {v} is outside the random range"),
+        .map(|(signer, nonce)| {
+            match random::<u32>() % 4u32 {
+                0 => dex::place(&exchange, signer.clone(), nonce, chain_id, base1),
+                1 => dex::place(&exchange, signer.clone(), nonce, chain_id, base2),
+                2 => dex::swap_in(&exchange, signer.clone(), nonce, chain_id, base1, quote),
+                3 => dex::swap_in(&exchange, signer.clone(), nonce, chain_id, base2, quote),
+                v => unreachable!("Number {v} is outside the random range"),
+            }
+            .map(|res| (signer.clone(), res))
         })
         .collect::<eyre::Result<Vec<_>>>()?;
+    let mut transactions = Vec::new();
+    let mut signers = HashMap::new();
+
+    for (signer, (tx_hash, tx)) in res {
+        signers.insert(tx_hash, signer);
+        transactions.push(tx);
+    }
 
     println!("Generated {} transactions", transactions.len());
-    Ok(transactions)
+
+    Ok((signers, transactions))
 }
 
 mod dex {
@@ -393,6 +424,7 @@ mod dex {
         let exchange = IStablecoinExchange::new(STABLECOIN_EXCHANGE_ADDRESS, provider.clone());
 
         let mint_amount = U256::from(1000000000000000u128);
+        let first_order_amount = 1000000000000u128;
 
         await_receipts(
             &mut vec![
@@ -454,7 +486,8 @@ mod dex {
                 .connect_http(url.clone());
             let base1 = ITIP20::new(*base1.address(), account_provider.clone());
             let base2 = ITIP20::new(*base2.address(), account_provider.clone());
-            let quote = ITIP20::new(*quote.address(), account_provider);
+            let quote = ITIP20::new(*quote.address(), account_provider.clone());
+            let exchange = IStablecoinExchange::new(STABLECOIN_EXCHANGE_ADDRESS, account_provider);
 
             receipts.extend([
                 base1
@@ -473,6 +506,14 @@ mod dex {
                     .approve(STABLECOIN_EXCHANGE_ADDRESS, U256::MAX)
                     .gas_price(TEMPO_BASE_FEE as u128)
                     .gas(300_000)
+                    .send()
+                    .await?,
+                exchange
+                    .place(*base1.address(), first_order_amount, true, 0)
+                    .send()
+                    .await?,
+                exchange
+                    .place(*base2.address(), first_order_amount, true, 0)
                     .send()
                     .await?,
             ]);
@@ -494,7 +535,7 @@ mod dex {
         nonce: u64,
         chain_id: ChainId,
         token_address: Address,
-    ) -> eyre::Result<Vec<u8>>
+    ) -> eyre::Result<(TxHash, Vec<u8>)>
     where
         N: Network<
             UnsignedTx: SignableTransaction<alloy::signers::Signature> + RlpEcdsaEncodableTx,
@@ -507,7 +548,7 @@ mod dex {
         let mut tx = exchange
             .place(token_address, min_order_amount, true, 0)
             .into_transaction_request()
-            .with_gas_limit(30000)
+            .with_gas_limit(1_000_000)
             .with_gas_price(TEMPO_BASE_FEE as u128)
             .with_chain_id(chain_id)
             .with_nonce(nonce)
@@ -517,8 +558,10 @@ mod dex {
             .sign_transaction_sync(&mut tx)
             .map_err(|e| eyre::eyre!("Failed to sign transaction: {e}"))?;
         let mut payload = Vec::new();
-        tx.into_signed(signature).eip2718_encode(&mut payload);
-        Ok(payload)
+        let tx = tx.into_signed(signature);
+        let tx_hash = *tx.hash();
+        tx.eip2718_encode(&mut payload);
+        Ok((tx_hash, payload))
     }
 
     pub(super) fn swap_in<P, N>(
@@ -528,20 +571,21 @@ mod dex {
         chain_id: ChainId,
         token_in: Address,
         token_out: Address,
-    ) -> eyre::Result<Vec<u8>>
+    ) -> eyre::Result<(TxHash, Vec<u8>)>
     where
         N: Network<
             UnsignedTx: SignableTransaction<alloy::signers::Signature> + RlpEcdsaEncodableTx,
         >,
         P: Provider<N>,
     {
+        let min_amount_out = 0;
         let min_order_amount = MIN_ORDER_AMOUNT;
 
         // Place an order at exactly the dust limit (should succeed)
         let mut tx = exchange
-            .swapExactAmountIn(token_in, token_out, min_order_amount, min_order_amount)
+            .swapExactAmountIn(token_in, token_out, min_order_amount, min_amount_out)
             .into_transaction_request()
-            .with_gas_limit(30000)
+            .with_gas_limit(1_000_000)
             .with_gas_price(TEMPO_BASE_FEE as u128)
             .with_chain_id(chain_id)
             .with_nonce(nonce)
@@ -551,8 +595,10 @@ mod dex {
             .sign_transaction_sync(&mut tx)
             .map_err(|e| eyre::eyre!("Failed to sign transaction: {e}"))?;
         let mut payload = Vec::new();
-        tx.into_signed(signature).eip2718_encode(&mut payload);
-        Ok(payload)
+        let tx = tx.into_signed(signature);
+        let tx_hash = *tx.hash();
+        tx.eip2718_encode(&mut payload);
+        Ok((tx_hash, payload))
     }
 
     /// Creates a test TIP20 token with issuer role granted to the caller
