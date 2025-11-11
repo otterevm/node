@@ -32,7 +32,11 @@ use revm::{
 };
 use tempo_contracts::{
     DEFAULT_7702_DELEGATE_ADDRESS,
+<<<<<<< HEAD
     precompiles::{FeeManagerError, IFeeManager},
+=======
+    precompiles::{FeeManagerError, TIPFeeAMMError},
+>>>>>>> 8903f03 (fix: block withdrawals that would drain liquidity for current transaction (#789))
 };
 use tempo_precompiles::{
     DEFAULT_FEE_TOKEN, LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
@@ -592,7 +596,7 @@ where
         let mut storage_provider = EvmPrecompileStorageProvider::new_max_gas(internals, cfg);
         let mut fee_manager = TipFeeManager::new(&mut storage_provider);
 
-        if tx.max_balance_spending().ok() == Some(U256::ZERO) {
+        if gas_balance_spending.is_zero() {
             return Ok(());
         }
 
@@ -614,8 +618,8 @@ where
                 // indicate the transaction cannot be included (e.g., insufficient liquidity
                 // in FeeAMM pool for fee swaps)
                 match e {
-                    TempoPrecompileError::FeeManagerError(
-                        FeeManagerError::InsufficientLiquidity(_),
+                    TempoPrecompileError::TIPFeeAMMError(
+                        TIPFeeAMMError::InsufficientLiquidity(_),
                     ) => EVMError::Transaction(TempoInvalidTransaction::InsufficientAmmLiquidity {
                         fee: Box::new(gas_balance_spending),
                     }),
