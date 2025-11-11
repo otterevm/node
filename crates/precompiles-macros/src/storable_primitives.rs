@@ -42,7 +42,7 @@ struct TypeConfig {
 fn gen_storable_type_impl(type_path: &TokenStream, byte_count: usize) -> TokenStream {
     quote! {
         impl StorableType for #type_path {
-            const BYTE_COUNT: usize = #byte_count;
+            const LAYOUT: Layout = Layout::Bytes(#byte_count);
         }
     }
 }
@@ -428,7 +428,7 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
         // Helper module with compile-time constants
         mod #mod_ident {
             use super::*;
-            pub const ELEM_BYTES: usize = <#elem_type as StorableType>::BYTE_COUNT;
+            pub const ELEM_BYTES: usize = <#elem_type as StorableType>::LAYOUT.byte_count();
             pub const ELEM_SLOTS: usize = 1; // For single-slot primitives
             pub const ARRAY_LEN: usize = #array_size;
             pub const SLOT_COUNT: usize = #slot_count;
@@ -436,7 +436,7 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
 
         // Implement StorableType
         impl StorableType for [#elem_type; #array_size] {
-            const BYTE_COUNT: usize = #mod_ident::SLOT_COUNT * 32;
+            const LAYOUT: Layout = Layout::Slots(#mod_ident::SLOT_COUNT);
         }
 
         // Implement Storable
@@ -805,7 +805,7 @@ fn gen_struct_array_impl(struct_type: &TokenStream, array_size: usize) -> TokenS
 
         // Implement StorableType
         impl crate::storage::StorableType for [#struct_type; #array_size] {
-            const BYTE_COUNT: usize = #mod_ident::SLOT_COUNT * 32;
+            const LAYOUT: crate::storage::Layout = crate::storage::Layout::Slots(#mod_ident::SLOT_COUNT);
         }
 
         // Implement Storable

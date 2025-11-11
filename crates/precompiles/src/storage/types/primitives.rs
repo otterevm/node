@@ -23,7 +23,7 @@ tempo_precompiles_macros::storable_nested_arrays!();
 // -- MANUAL STORAGE TRAIT IMPLEMENTATIONS -------------------------------------
 
 impl StorableType for bool {
-    const BYTE_COUNT: usize = 1;
+    const LAYOUT: Layout = Layout::Bytes(1);
 }
 
 impl Storable<1> for bool {
@@ -52,7 +52,7 @@ impl Storable<1> for bool {
 }
 
 impl StorableType for Address {
-    const BYTE_COUNT: usize = 20;
+    const LAYOUT: Layout = Layout::Bytes(20);
 }
 
 impl Storable<1> for Address {
@@ -517,8 +517,8 @@ mod tests {
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
 
-        // Verify BYTE_COUNT and SLOT_COUNT
-        assert_eq!(<[u8; 32] as StorableType>::BYTE_COUNT, 32);
+        // Verify LAYOUT and SLOT_COUNT
+        assert_eq!(<[u8; 32] as StorableType>::LAYOUT.byte_count(), 32);
         assert_eq!(<[u8; 32] as Storable<1>>::SLOT_COUNT, 1);
 
         // Store and load
@@ -666,7 +666,7 @@ mod tests {
         ];
 
         // Verify SLOT_COUNT: 8 slots (one per inner array)
-        assert_eq!(<[[u8; 4]; 8] as StorableType>::BYTE_COUNT, 256); // 8 slots × 32 bytes
+        assert_eq!(<[[u8; 4]; 8] as StorableType>::LAYOUT.byte_count(), 256); // 8 slots × 32 bytes
         assert_eq!(<[[u8; 4]; 8] as Storable<8>>::SLOT_COUNT, 8);
 
         // Store and load
@@ -709,7 +709,7 @@ mod tests {
         ];
 
         // Verify SLOT_COUNT: 8 slots (one per inner array)
-        assert_eq!(<[[u16; 2]; 8] as StorableType>::BYTE_COUNT, 256); // 8 slots × 32 bytes
+        assert_eq!(<[[u16; 2]; 8] as StorableType>::LAYOUT.byte_count(), 256); // 8 slots × 32 bytes
         assert_eq!(<[[u16; 2]; 8] as Storable<8>>::SLOT_COUNT, 8);
 
         // Store and load

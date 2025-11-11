@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use crate::{
     error::Result,
-    storage::{Storable, StorableType, StorageKey, StorageOps, types::slot::SlotId},
+    storage::{Layout, Storable, StorableType, StorageKey, StorageOps, types::slot::SlotId},
 };
 
 /// Type-safe wrapper for EVM storage mappings (hash-based key-value storage).
@@ -602,7 +602,7 @@ impl<K, V, Base: SlotId> Default for Mapping<K, V, Base> {
 //
 // **NOTE:** Necessary to allow it to participate in struct layout calculations.
 impl<K, V, Base: SlotId> StorableType for Mapping<K, V, Base> {
-    const BYTE_COUNT: usize = 32;
+    const LAYOUT: Layout = Layout::Slots(1);
 }
 
 pub struct DummySlot;

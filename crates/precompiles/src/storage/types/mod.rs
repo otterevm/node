@@ -11,18 +11,80 @@ pub mod vec;
 use crate::{error::Result, storage::StorageOps};
 use alloy::primitives::U256;
 
-// Helper trait to access byte count without requiring const generic parameter.
+/// Describes how a type is laid out in EVM storage.
 ///
-/// This trait exists to allow the derive macro to query the byte size of field types
-/// during layout computation, before the slot count is known.
-///
-/// Primitives may have `BYTE_COUNT < 32`.
-/// Non-primitives (arrays, Vec, structs) must satisfy `BYTE_COUNT = SLOT_COUNT * 32` as they are not packable.
-pub trait StorableType {
-    /// Number of bytes that the type occupies (even if partially-empty).
+/// This determines whether a type can be packed with other fields
+/// and how many storage slots it occupies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    /// Single slot, N bytes (1-32). Can be packed with other fields if N < 32.
     ///
-    /// For dynamic types, set to a full 32-byte slot.
-    const BYTE_COUNT: usize;
+    /// Used for primitive types like integers, booleans, and addresses.
+    /// Types with `Bytes(32)` (like U256) cannot be packed because they
+    /// occupy a full slot.
+    Bytes(usize),
+
+    /// Occupies N full slots (each 32 bytes). Cannot be packed.
+    ///
+    /// Used for:
+    /// - Multi-slot types (structs, arrays)
+    /// - Dynamic types (String, Bytes, Vec) that store their base slot
+    Slots(usize),
+}
+
+impl Layout {
+    /// Returns true if this field can be packed with adjacent fields.
+    ///
+    /// Only `Bytes` variants with size < 32 can be packed.
+    /// Full-slot types (`Bytes(32)` and all `Slots` variants) cannot be packed.
+    pub const fn is_packable(&self) -> bool {
+        match self {
+            Layout::Bytes(n) => *n < 32,
+            Layout::Slots(_) => false,
+        }
+    }
+
+    /// Returns the number of storage slots this type occupies.
+    pub const fn slot_count(&self) -> usize {
+        match self {
+            Layout::Bytes(_) => 1,
+            Layout::Slots(n) => *n,
+        }
+    }
+
+    /// Returns the number of bytes this type occupies.
+    ///
+    /// For `Bytes(n)`, returns n.
+    /// For `Slots(n)`, returns n * 32 (each slot is 32 bytes).
+    pub const fn byte_count(&self) -> usize {
+        match self {
+            Layout::Bytes(n) => *n,
+            Layout::Slots(n) => {
+                // Compute n * 32 using repeated addition for const compatibiliy
+                let mut result = 0;
+                let mut i = 0;
+                while i < *n {
+                    result += 32;
+                    i += 1;
+                }
+                result
+            }
+        }
+    }
+}
+
+/// Helper trait to access storage layout information without requiring const generic parameter.
+///
+/// This trait exists to allow the derive macro to query the layout and size of field types
+/// during layout computation, before the slot count is known.
+pub trait StorableType {
+    /// Describes how this type is laid out in storage.
+    ///
+    /// - Primitives use `Layout::Bytes(N)` where N is their size
+    /// - Full-slot primitives (U256, B256) use `Layout::Bytes(32)`
+    /// - Dynamic types (String, Bytes, Vec) use `Layout::Slots(1)`
+    /// - Structs and arrays use `Layout::Slots(N)` where N is the slot count
+    const LAYOUT: Layout;
 }
 
 /// Trait for types that can be stored/loaded from EVM storage.

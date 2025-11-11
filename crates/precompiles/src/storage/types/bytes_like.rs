@@ -19,7 +19,7 @@ use crate::{
 };
 
 impl StorableType for Bytes {
-    const BYTE_COUNT: usize = 32;
+    const LAYOUT: Layout = Layout::Slots(1);
 }
 
 impl Storable<1> for Bytes {
@@ -52,7 +52,7 @@ impl Storable<1> for Bytes {
 }
 
 impl StorableType for String {
-    const BYTE_COUNT: usize = 32;
+    const LAYOUT: Layout = Layout::Slots(1);
 }
 
 impl Storable<1> for String {

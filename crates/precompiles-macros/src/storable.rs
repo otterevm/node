@@ -144,10 +144,10 @@ fn derive_struct_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         quote! {
             #packing_module
 
-            // impl `StorableType` for byte count access
+            // impl `StorableType` for layout information
             impl #impl_generics crate::storage::StorableType for #strukt #ty_generics #where_clause {
-                // Enforce BYTE_COUNT = SLOT_COUNT * 32 for derived structs (required for packing logic)
-                const BYTE_COUNT: usize = #mod_ident::SLOT_COUNT * 32;
+                // Structs always use Slots layout (multi-slot or full-slot types)
+                const LAYOUT: crate::storage::Layout = crate::storage::Layout::Slots(#mod_ident::SLOT_COUNT);
             }
 
             // Add SLOT_COUNT as an inherent const for use in const generic contexts
@@ -228,10 +228,10 @@ fn derive_struct_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         quote! {
             #packing_module
 
-            // impl `StorableType` for byte count access
+            // impl `StorableType` for layout information
             impl #impl_generics crate::storage::StorableType for #strukt #ty_generics #where_clause {
-                // Enforce BYTE_COUNT = SLOT_COUNT * 32 for derived structs (required for packing logic)
-                const BYTE_COUNT: usize = #mod_ident::SLOT_COUNT * 32;
+                // Structs always use Slots layout (multi-slot or full-slot types)
+                const LAYOUT: crate::storage::Layout = crate::storage::Layout::Slots(#mod_ident::SLOT_COUNT);
             }
 
             // Add SLOT_COUNT as an inherent const for use in const generic contexts
@@ -346,7 +346,7 @@ fn gen_packing_module(fields: &[(&Ident, &Type)], mod_ident: &Ident) -> TokenStr
     let field_byte_sizes = fields.iter().map(|(name, ty)| {
         let bytes_const = PackingField::new(name).bytes_const;
         quote! {
-            pub const #bytes_const: usize = <#ty as crate::storage::StorableType>::BYTE_COUNT;
+            pub const #bytes_const: usize = <#ty as crate::storage::StorableType>::LAYOUT.byte_count();
         }
     });
 
