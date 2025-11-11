@@ -1,5 +1,5 @@
 use alloy::{
-    eips::BlockNumberOrTag::Latest,
+    eips::{BlockNumberOrTag::Latest, Decodable2718},
     network::{Ethereum, EthereumWallet, Network, TransactionBuilder, TxSignerSync},
     primitives::{Address, BlockNumber, ChainId, TxKind, U256},
     providers::{
@@ -12,7 +12,9 @@ use alloy::{
     sol_types::{SolCall, SolEvent},
     transports::http::reqwest::Url,
 };
-use alloy_consensus::{SignableTransaction, TxLegacy, transaction::RlpEcdsaEncodableTx};
+use alloy_consensus::{
+    EthereumTxEnvelope, SignableTransaction, TxEip4844, TxLegacy, transaction::RlpEcdsaEncodableTx,
+};
 use alloy_signer_local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English};
 use clap::Parser;
 use core_affinity::CoreId;
@@ -259,7 +261,14 @@ fn send_transactions(
 
                             if let Ok(receipt) = receipt {
                                 if !receipt.status() {
-                                    eprintln!("Failed transaction {:?}", receipt.transaction_hash);
+                                    let tx: EthereumTxEnvelope<TxEip4844> =
+                                        EthereumTxEnvelope::decode_2718_exact(tx_bytes.as_slice())
+                                            .unwrap();
+
+                                    eprintln!(
+                                        "Failed transaction {:?} {tx:#?}",
+                                        receipt.transaction_hash
+                                    );
                                 }
                             }
 
