@@ -8,6 +8,7 @@
 //! - `storable_rust_ints!` macro for generating standard Rust integer storage implementations
 
 mod layout;
+mod packing;
 mod storable;
 mod storable_primitives;
 mod storable_tests;
@@ -86,21 +87,37 @@ struct FieldInfo {
     base_slot: Option<U256>,
 }
 
+impl packing::FieldInfoExt for FieldInfo {
+    fn field_name(&self) -> &Ident {
+        &self.name
+    }
+
+    fn field_type(&self) -> &Type {
+        &self.ty
+    }
+
+    fn manual_slot(&self) -> Option<U256> {
+        self.slot
+    }
+
+    fn base_slot_attr(&self) -> Option<U256> {
+        self.base_slot
+    }
+}
+
 /// Classification of a field based on its type
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum FieldKind<'a> {
-    /// Direct value field (single-slot type).
-    Direct,
-    /// Single-level mapping (Mapping<K, V>)
+    /// Fields with a direct slot allocation, either single or multi (`Slot<V>`).
+    Slot(&'a Type),
+    /// Single-level mapping (`Mapping<K, V>`)
     Mapping { key: &'a Type, value: &'a Type },
-    /// Nested mapping (Mapping<K1, Mapping<K2, V>>)
+    /// Nested mapping (`Mapping<K1, Mapping<K2, V>>`)
     NestedMapping {
         key1: &'a Type,
         key2: &'a Type,
         value: &'a Type,
     },
-    /// Multi-slot storage block (custom struct implementing `trait Storable`)
-    StorageBlock(&'a Type),
 }
 
 impl FieldKind<'_> {
@@ -111,7 +128,7 @@ impl FieldKind<'_> {
         )
     }
     pub(crate) fn is_direct(&self) -> bool {
-        matches!(self, FieldKind::Direct)
+        matches!(self, FieldKind::Slot(..))
     }
 }
 
@@ -170,7 +187,7 @@ fn gen_contract_storage(
     fields: &[FieldInfo],
 ) -> syn::Result<proc_macro2::TokenStream> {
     // Generate the complete output
-    let allocated_fields = layout::allocate_slots(fields)?;
+    let allocated_fields = packing::allocate_slots(fields)?;
     let transformed_struct = layout::gen_struct(ident, vis);
     let storage_trait = layout::gen_contract_storage_impl(ident);
     let constructor = layout::gen_constructor(ident);
