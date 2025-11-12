@@ -6,7 +6,7 @@ pub(super) fn transfer(
     chain_id: ChainId,
     token_address: Address,
 ) -> eyre::Result<Vec<u8>> {
-    let mut tx = TxLegacy {
+    let tx = TxLegacy {
         chain_id: Some(chain_id),
         nonce,
         gas_price: TEMPO_BASE_FEE as u128,
@@ -21,10 +21,5 @@ pub(super) fn transfer(
         .into(),
     };
 
-    let signature = signer
-        .sign_transaction_sync(&mut tx)
-        .map_err(|e| eyre::eyre!("Failed to sign transaction: {e}"))?;
-    let mut payload = Vec::new();
-    tx.into_signed(signature).eip2718_encode(&mut payload);
-    Ok(payload)
+    into_signed_encoded(tx, signer)
 }

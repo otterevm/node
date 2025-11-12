@@ -141,7 +141,7 @@ where
     let tick = (random::<u16>() % (MAX_TICK - MIN_TICK) as u16 + MIN_TICK as u16) as i16;
 
     // Place an order at exactly the dust limit (should succeed)
-    let mut tx = exchange
+    let tx = exchange
         .place(token_address, min_order_amount, true, tick)
         .into_transaction_request()
         .with_gas_limit(GAS_LIMIT)
@@ -150,12 +150,7 @@ where
         .with_nonce(nonce)
         .build_unsigned()?;
 
-    let signature = signer
-        .sign_transaction_sync(&mut tx)
-        .map_err(|e| eyre::eyre!("Failed to sign transaction: {e}"))?;
-    let mut payload = Vec::new();
-    tx.into_signed(signature).eip2718_encode(&mut payload);
-    Ok(payload)
+    into_signed_encoded(tx, signer)
 }
 
 pub(super) fn swap_in<P, N>(
@@ -174,7 +169,7 @@ where
     let min_order_amount = MIN_ORDER_AMOUNT;
 
     // Place an order at exactly the dust limit (should succeed)
-    let mut tx = exchange
+    let tx = exchange
         .swapExactAmountIn(token_in, token_out, min_order_amount, min_amount_out)
         .into_transaction_request()
         .with_gas_limit(GAS_LIMIT)
@@ -183,12 +178,7 @@ where
         .with_nonce(nonce)
         .build_unsigned()?;
 
-    let signature = signer
-        .sign_transaction_sync(&mut tx)
-        .map_err(|e| eyre::eyre!("Failed to sign transaction: {e}"))?;
-    let mut payload = Vec::new();
-    tx.into_signed(signature).eip2718_encode(&mut payload);
-    Ok(payload)
+    into_signed_encoded(tx, signer)
 }
 
 /// Creates a test TIP20 token with issuer role granted to the caller

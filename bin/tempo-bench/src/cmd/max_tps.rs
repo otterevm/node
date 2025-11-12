@@ -4,7 +4,7 @@ mod tip20;
 use alloy::{
     eips::BlockNumberOrTag::Latest,
     network::{Ethereum, EthereumWallet, Network, TransactionBuilder, TxSignerSync},
-    primitives::{Address, BlockNumber, ChainId, TxKind, U256},
+    primitives::{Address, BlockNumber, ChainId, Signature, TxKind, U256},
     providers::{
         PendingTransactionBuilder, Provider, ProviderBuilder, RootProvider,
         fillers::{
@@ -488,4 +488,16 @@ async fn await_receipts(
     }
 
     Ok(())
+}
+
+fn into_signed_encoded(
+    mut tx: impl SignableTransaction<Signature> + RlpEcdsaEncodableTx,
+    signer: PrivateKeySigner,
+) -> eyre::Result<Vec<u8>> {
+    let signature = signer
+        .sign_transaction_sync(&mut tx)
+        .map_err(|e| eyre::eyre!("Failed to sign transaction: {e}"))?;
+    let mut payload = Vec::new();
+    tx.into_signed(signature).eip2718_encode(&mut payload);
+    Ok(payload)
 }
