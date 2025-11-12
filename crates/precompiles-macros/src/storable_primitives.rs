@@ -75,8 +75,6 @@ fn gen_storable_impl(
         StorableConversionStrategy::Unsigned => {
             quote! {
                 impl Storable<1> for #type_path {
-                    const SLOT_COUNT: usize = 1;
-
                     #[inline]
                     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
                         let value = storage.sload(base_slot)?;
@@ -103,8 +101,6 @@ fn gen_storable_impl(
         StorableConversionStrategy::U256 => {
             quote! {
                 impl Storable<1> for #type_path {
-                    const SLOT_COUNT: usize = 1;
-
                     #[inline]
                     fn load<S: StorageOps>(storage: &mut S, base_slot: #type_path) -> Result<Self> {
                         storage.sload(base_slot)
@@ -130,8 +126,6 @@ fn gen_storable_impl(
         StorableConversionStrategy::SignedRust(unsigned_type) => {
             quote! {
                 impl Storable<1> for #type_path {
-                    const SLOT_COUNT: usize = 1;
-
                     #[inline]
                     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
                         let value = storage.sload(base_slot)?;
@@ -160,8 +154,6 @@ fn gen_storable_impl(
         StorableConversionStrategy::SignedAlloy(unsigned_type) => {
             quote! {
                 impl Storable<1> for #type_path {
-                    const SLOT_COUNT: usize = 1;
-
                     #[inline]
                     fn load<S: StorageOps>(storage: &mut S, base_slot: ::alloy::primitives::U256) -> Result<Self> {
                         let value = storage.sload(base_slot)?;
@@ -194,8 +186,6 @@ fn gen_storable_impl(
         StorableConversionStrategy::FixedBytes(size) => {
             quote! {
                 impl Storable<1> for #type_path {
-                    const SLOT_COUNT: usize = 1;
-
                     #[inline]
                     fn load<S: StorageOps>(storage: &mut S, base_slot: ::alloy::primitives::U256) -> Result<Self> {
                         let value = storage.sload(base_slot)?;
@@ -436,13 +426,12 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
 
         // Implement StorableType
         impl StorableType for [#elem_type; #array_size] {
+            // Arrays cannot be packed, so they must take full slots
             const LAYOUT: Layout = Layout::Slots(#mod_ident::SLOT_COUNT);
         }
 
         // Implement Storable
         impl Storable<{ #mod_ident::SLOT_COUNT }> for [#elem_type; #array_size] {
-            const SLOT_COUNT: usize = #mod_ident::SLOT_COUNT;
-
             fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
                 use crate::storage::packing::{calc_element_slot, calc_element_offset, extract_packed_value};
                 #load_impl
@@ -756,8 +745,8 @@ pub(crate) fn gen_nested_arrays() -> TokenStream {
 ///
 /// Unlike primitive arrays, struct arrays:
 /// - Always use unpacked layout (structs span multiple slots)
-/// - Each element occupies `<T>::SLOT_COUNT` consecutive slots
-/// - Slot addressing uses multiplication: `base_slot + (i * <T>::SLOT_COUNT)`
+/// - Each element occupies `<T>::LAYOUT.slots()` consecutive slots
+/// - Slot addressing uses multiplication: `base_slot + (i * <T>::SLOTS)`
 ///
 /// # Parameters
 ///
@@ -798,7 +787,7 @@ fn gen_struct_array_impl(struct_type: &TokenStream, array_size: usize) -> TokenS
         // Helper module with compile-time constants
         mod #mod_ident {
             use super::*;
-            pub const ELEM_SLOTS: usize = <#struct_type>::SLOT_COUNT;
+            pub const ELEM_SLOTS: usize = <#struct_type as crate::storage::StorableType>::LAYOUT.slots();
             pub const ARRAY_LEN: usize = #array_size;
             pub const SLOT_COUNT: usize = ARRAY_LEN * ELEM_SLOTS;
         }
@@ -810,8 +799,6 @@ fn gen_struct_array_impl(struct_type: &TokenStream, array_size: usize) -> TokenS
 
         // Implement Storable
         impl crate::storage::Storable<{ #mod_ident::SLOT_COUNT }> for [#struct_type; #array_size] {
-            const SLOT_COUNT: usize = #mod_ident::SLOT_COUNT;
-
             fn load<S: crate::storage::StorageOps>(
                 storage: &mut S,
                 base_slot: ::alloy::primitives::U256
@@ -863,7 +850,7 @@ fn gen_struct_array_impl(struct_type: &TokenStream, array_size: usize) -> TokenS
 
 /// Generate load implementation for struct arrays.
 ///
-/// Each element occupies `<T>::SLOT_COUNT` consecutive slots.
+/// Each element occupies `<T>::LAYOUT.slots()` consecutive slots.
 fn gen_struct_array_load(struct_type: &TokenStream, array_size: usize) -> TokenStream {
     quote! {
         let mut result = [Default::default(); #array_size];
@@ -871,11 +858,11 @@ fn gen_struct_array_load(struct_type: &TokenStream, array_size: usize) -> TokenS
             // Calculate slot for this element: base_slot + (i * element_slot_count)
             let elem_slot = base_slot.checked_add(
                 ::alloy::primitives::U256::from(i).checked_mul(
-                    ::alloy::primitives::U256::from(<#struct_type>::SLOT_COUNT)
+                    ::alloy::primitives::U256::from(<#struct_type as crate::storage::StorableType>::LAYOUT.slots())
                 ).ok_or(crate::error::TempoError::SlotOverflow)?
             ).ok_or(crate::error::TempoError::SlotOverflow)?;
 
-            result[i] = <#struct_type as crate::storage::Storable<{<#struct_type>::SLOT_COUNT}>>::load(storage, elem_slot)?;
+            result[i] = <#struct_type as crate::storage::Storable<{<#struct_type as crate::storage::StorableType>::LAYOUT.slots()}>>::load(storage, elem_slot)?;
         }
         Ok(result)
     }
@@ -888,11 +875,11 @@ fn gen_struct_array_store(struct_type: &TokenStream) -> TokenStream {
             // Calculate slot for this element: base_slot + (i * element_slot_count)
             let elem_slot = base_slot.checked_add(
                 ::alloy::primitives::U256::from(i).checked_mul(
-                    ::alloy::primitives::U256::from(<#struct_type>::SLOT_COUNT)
+                    ::alloy::primitives::U256::from(<#struct_type as crate::storage::StorableType>::LAYOUT.slots())
                 ).ok_or(crate::error::TempoError::SlotOverflow)?
             ).ok_or(crate::error::TempoError::SlotOverflow)?;
 
-            <#struct_type as crate::storage::Storable<{<#struct_type>::SLOT_COUNT}>>::store(elem, storage, elem_slot)?;
+            <#struct_type as crate::storage::Storable<{<#struct_type as crate::storage::StorableType>::LAYOUT.slots()}>>::store(elem, storage, elem_slot)?;
         }
         Ok(())
     }
@@ -907,11 +894,11 @@ fn gen_struct_array_delete(struct_type: &TokenStream, array_size: usize) -> Toke
             // Calculate slot for this element: base_slot + (i * element_slot_count)
             let elem_slot = base_slot.checked_add(
                 ::alloy::primitives::U256::from(i).checked_mul(
-                    ::alloy::primitives::U256::from(<#struct_type>::SLOT_COUNT)
+                    ::alloy::primitives::U256::from(<#struct_type as crate::storage::StorableType>::LAYOUT.slots())
                 ).ok_or(crate::error::TempoError::SlotOverflow)?
             ).ok_or(crate::error::TempoError::SlotOverflow)?;
 
-            <#struct_type as crate::storage::Storable<{<#struct_type>::SLOT_COUNT}>>::delete(storage, elem_slot)?;
+            <#struct_type as crate::storage::Storable<{<#struct_type as crate::storage::StorableType>::LAYOUT.slots()}>>::delete(storage, elem_slot)?;
         }
         Ok(())
     }
@@ -922,11 +909,11 @@ fn gen_struct_array_delete(struct_type: &TokenStream, array_size: usize) -> Toke
 /// Copies N-word chunks from each element into the result array.
 fn gen_struct_array_to_evm_words(struct_type: &TokenStream, array_size: usize) -> TokenStream {
     quote! {
-        let mut result = [::alloy::primitives::U256::ZERO; #array_size * <#struct_type>::SLOT_COUNT];
+        let mut result = [::alloy::primitives::U256::ZERO; #array_size * <#struct_type as crate::storage::StorableType>::LAYOUT.slots()];
 
         for (i, elem) in self.iter().enumerate() {
-            let elem_words = <#struct_type as crate::storage::Storable<{<#struct_type>::SLOT_COUNT}>>::to_evm_words(elem)?;
-            let start_idx = i * <#struct_type>::SLOT_COUNT;
+            let elem_words = <#struct_type as crate::storage::Storable<{<#struct_type as crate::storage::StorableType>::LAYOUT.slots()}>>::to_evm_words(elem)?;
+            let start_idx = i * <#struct_type as crate::storage::StorableType>::LAYOUT.slots();
 
             // Copy all words from this element
             for (j, word) in elem_words.iter().enumerate() {
@@ -946,14 +933,14 @@ fn gen_struct_array_from_evm_words(struct_type: &TokenStream, array_size: usize)
         let mut result = [Default::default(); #array_size];
 
         for i in 0..#array_size {
-            let start_idx = i * <#struct_type>::SLOT_COUNT;
+            let start_idx = i * <#struct_type as crate::storage::StorableType>::LAYOUT.slots();
 
             // Extract words for this element using std::array::from_fn
-            let elem_words = ::std::array::from_fn::<_, {<#struct_type>::SLOT_COUNT}, _>(|j| {
+            let elem_words = ::std::array::from_fn::<_, {<#struct_type as crate::storage::StorableType>::LAYOUT.slots()}, _>(|j| {
                 words[start_idx + j]
             });
 
-            result[i] = <#struct_type as crate::storage::Storable<{<#struct_type>::SLOT_COUNT}>>::from_evm_words(elem_words)?;
+            result[i] = <#struct_type as crate::storage::Storable<{<#struct_type as crate::storage::StorableType>::LAYOUT.slots()}>>::from_evm_words(elem_words)?;
         }
 
         Ok(result)

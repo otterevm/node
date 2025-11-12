@@ -111,18 +111,13 @@ pub trait StorableType {
 ///
 /// Implementations must ensure that:
 /// - Round-trip conversions preserve data: `load(store(x)) == Ok(x)`
-/// - `N` accurately reflects the number of slots used
-/// - `store` and `load` access exactly `N` consecutive slots
+/// - `SLOTS` accurately reflects the number of slots used
+/// - `store` and `load` access exactly `SLOTS` consecutive slots
 /// - `to_evm_words` and `from_evm_words` produce/consume exactly `N` words
-pub trait Storable<const N: usize>: Sized + StorableType {
-    /// The number of consecutive storage slots this type occupies.
-    ///
-    /// Must be equal to `N`, and is provided as a convenient type-level access constant.
-    const SLOT_COUNT: usize;
-
+pub trait Storable<const SLOTS: usize>: Sized + StorableType {
     /// Load this type from storage starting at the given base slot.
     ///
-    /// Reads `N` consecutive slots starting from `base_slot`.
+    /// Reads `SLOTS` consecutive slots starting from `base_slot`.
     ///
     /// # Errors
     ///
@@ -133,7 +128,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
 
     /// Store this type to storage starting at the given base slot.
     ///
-    /// Writes `N` consecutive slots starting from `base_slot`.
+    /// Writes `SLOTS` consecutive slots starting from `base_slot`.
     ///
     /// # Errors
     ///
@@ -142,7 +137,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
 
     /// Delete this type from storage (set all slots to zero).
     ///
-    /// Sets `N` consecutive slots to zero, starting from `base_slot`.
+    /// Sets `SLOTS` consecutive slots to zero, starting from `base_slot`.
     ///
     /// The default implementation sets each slot to zero individually.
     /// Types may override this for optimized bulk deletion.
@@ -151,7 +146,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
     ///
     /// Returns an error if the storage write fails.
     fn delete<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<()> {
-        for offset in 0..N {
+        for offset in 0..SLOTS {
             storage.sstore(base_slot + U256::from(offset), U256::ZERO)?;
         }
         Ok(())
@@ -159,8 +154,8 @@ pub trait Storable<const N: usize>: Sized + StorableType {
 
     /// Encode this type to an array of U256 words.
     ///
-    /// Returns exactly `N` words, where each word represents one storage slot.
-    /// For single-slot types (`N = 1`), returns a single-element array.
+    /// Returns exactly `SLOTS` words, where each word represents one storage slot.
+    /// For single-slot types (`SLOTS = 1`), returns a single-element array.
     /// For multi-slot types, each array element corresponds to one slot's data.
     ///
     /// # Packed Storage
@@ -168,7 +163,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
     /// When multiple small fields are packed into a single slot, they are
     /// positioned and combined into a single U256 word according to their
     /// byte offsets. The derive macro handles this automatically.
-    fn to_evm_words(&self) -> Result<[U256; N]>;
+    fn to_evm_words(&self) -> Result<[U256; SLOTS]>;
 
     /// Decode this type from an array of U256 words.
     ///
@@ -180,7 +175,12 @@ pub trait Storable<const N: usize>: Sized + StorableType {
     /// When multiple small fields are packed into a single slot, they are
     /// extracted from the appropriate word using bit shifts and masks.
     /// The derive macro handles this automatically.
-    fn from_evm_words(words: [U256; N]) -> Result<Self>;
+    fn from_evm_words(words: [U256; SLOTS]) -> Result<Self>;
+
+    /// Test helper to ensure `LAYOUT` and `SLOTS` are in sync.
+    fn validate_layout() {
+        debug_assert_eq!(<Self as StorableType>::LAYOUT.slots(), SLOTS)
+    }
 }
 
 /// Trait for types that can be used as storage mapping keys.

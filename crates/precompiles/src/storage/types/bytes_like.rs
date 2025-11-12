@@ -23,8 +23,6 @@ impl StorableType for Bytes {
 }
 
 impl Storable<1> for Bytes {
-    const SLOT_COUNT: usize = 1;
-
     #[inline]
     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
         load_bytes_like(storage, base_slot, |data| Ok(Self::from(data)))
@@ -56,8 +54,6 @@ impl StorableType for String {
 }
 
 impl Storable<1> for String {
-    const SLOT_COUNT: usize = 1;
-
     #[inline]
     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
         load_bytes_like(storage, base_slot, |data| {

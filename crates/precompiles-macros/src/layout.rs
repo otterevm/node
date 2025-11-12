@@ -363,7 +363,7 @@ pub(crate) fn gen_getters_and_setters(
                 impl<'a, S: crate::storage::PrecompileStorageProvider> #struct_name<'a, S> {
                     #[inline]
                     fn #getter_name(&mut self) -> crate::error::Result<#ty> {
-                        <#ty as crate::storage::Storable<{ <#ty>::SLOT_COUNT }>>::load(
+                        <#ty as crate::storage::Storable<{ <#ty as crate::storage::StorableType>::LAYOUT.slots() }>>::load(
                             self,
                             <#slot_id as crate::storage::SlotId>::SLOT,
                         )
@@ -371,7 +371,7 @@ pub(crate) fn gen_getters_and_setters(
 
                     #[inline]
                     fn #cleaner_name(&mut self) -> crate::error::Result<()> {
-                        <#ty as crate::storage::Storable<{ <#ty>::SLOT_COUNT }>>::delete(
+                        <#ty as crate::storage::Storable<{ <#ty as crate::storage::StorableType>::LAYOUT.slots() }>>::delete(
                             self,
                             <#slot_id as crate::storage::SlotId>::SLOT,
                         )
@@ -547,7 +547,7 @@ fn gen_packing_constants_for_slots_module(
                             let prev_ty = &prev.info.ty;
                             let slot_expr = quote! {
                                 #prev_slot.saturating_add(
-                                    ::alloy::primitives::U256::from_limbs([<#prev_ty>::SLOT_COUNT as u64, 0u64, 0u64, 0u64])
+                                    ::alloy::primitives::U256::from_limbs([<#prev_ty as crate::storage::StorableType>::LAYOUT.slots() as u64, 0u64, 0u64, 0u64])
                                 )
                             };
                             (slot_expr, quote! { 0 })
@@ -650,7 +650,7 @@ fn gen_slot_id_types(allocated_fields: &[AllocatedField<'_>]) -> proc_macro2::To
 fn generate_slot_count_expr(kind: &FieldKind<'_>, ty: &Type) -> proc_macro2::TokenStream {
     match kind {
         FieldKind::StorageBlock(_) => {
-            quote! { ::alloy::primitives::U256::from_limbs([<#ty>::SLOT_COUNT as u64, 0u64, 0u64, 0u64]) }
+            quote! { ::alloy::primitives::U256::from_limbs([<#ty as crate::storage::StorableType>::LAYOUT.slots() as u64, 0u64, 0u64, 0u64]) }
         }
         _ => {
             quote! { ::alloy::primitives::U256::ONE }

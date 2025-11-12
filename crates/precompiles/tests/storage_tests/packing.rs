@@ -3,7 +3,7 @@
 //! This module tests the Storable derive macro's implementation of storage packing,
 //! verifying that fields are correctly packed into slots according to Solidity's rules.
 
-use tempo_precompiles::storage::packing::gen_slot_from;
+use tempo_precompiles::storage::{Layout, packing::gen_slot_from};
 
 use super::*;
 
@@ -162,38 +162,36 @@ struct ExactFit {
 #[test]
 fn test_slot_and_byte_counts() {
     // Rule verification
-    assert_eq!(Rule1Test::SLOT_COUNT, 2);
-    assert_eq!(Rule1Test::LAYOUT.bytes(), 64);
+    Rule1Test::validate_layout();
+    assert_eq!(Rule1Test::LAYOUT, Layout::Slots(2));
 
-    assert_eq!(Rule2Test::SLOT_COUNT, 1);
-    assert_eq!(Rule2Test::LAYOUT.bytes(), 32);
+    Rule2Test::validate_layout();
+    assert_eq!(Rule2Test::LAYOUT, Layout::Slots(1));
 
-    assert_eq!(Rule3TestFull::SLOT_COUNT, 2);
-    assert_eq!(Rule3TestFull::LAYOUT.bytes(), 64);
+    Rule3TestFull::validate_layout();
+    assert_eq!(Rule3TestFull::LAYOUT, Layout::Slots(2));
 
-    assert_eq!(Rule3TestPartial::SLOT_COUNT, 2);
-    assert_eq!(Rule3TestPartial::LAYOUT.bytes(), 64);
+    Rule3TestPartial::validate_layout();
+    assert_eq!(Rule3TestPartial::LAYOUT, Layout::Slots(2));
 
-    assert_eq!(Rule4Test::SLOT_COUNT, 3);
-    assert_eq!(Rule4Test::LAYOUT.bytes(), 96);
+    Rule4Test::validate_layout();
+    assert_eq!(Rule4Test::LAYOUT, Layout::Slots(3));
 
     // Basic packed types
-    assert_eq!(PackedTwo::SLOT_COUNT, 1);
-    assert_eq!(PackedTwo::LAYOUT.bytes(), 32);
-    assert_eq!(PackedThree::SLOT_COUNT, 1);
-    assert_eq!(PackedThree::LAYOUT.bytes(), 32);
+    PackedTwo::validate_layout();
+    assert_eq!(PackedTwo::LAYOUT, Layout::Slots(1));
 
     // Partially packed types
-    assert_eq!(PartiallyPacked::SLOT_COUNT, 3);
-    assert_eq!(PartiallyPacked::LAYOUT.bytes(), 96);
+    PartiallyPacked::validate_layout();
+    assert_eq!(PartiallyPacked::LAYOUT, Layout::Slots(3));
 
     // Nested structs
-    assert_eq!(WithNestedStruct::SLOT_COUNT, 4);
-    assert_eq!(WithNestedStruct::LAYOUT.bytes(), 128);
+    WithNestedStruct::validate_layout();
+    assert_eq!(WithNestedStruct::LAYOUT, Layout::Slots(4));
 
     // Multi-level nesting
-    assert_eq!(DeepNested::SLOT_COUNT, 6);
-    assert_eq!(DeepNested::LAYOUT.bytes(), 192);
+    DeepNested::validate_layout();
+    assert_eq!(DeepNested::LAYOUT, Layout::Slots(6));
 }
 
 proptest! {

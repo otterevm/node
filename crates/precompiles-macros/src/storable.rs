@@ -146,19 +146,12 @@ fn derive_struct_impl(input: DeriveInput) -> syn::Result<TokenStream> {
 
             // impl `StorableType` for layout information
             impl #impl_generics crate::storage::StorableType for #strukt #ty_generics #where_clause {
-                // Structs always use Slots layout (multi-slot or full-slot types)
+                // Structs cannot be packed, so they must take full slots
                 const LAYOUT: crate::storage::Layout = crate::storage::Layout::Slots(#mod_ident::SLOT_COUNT);
             }
 
-            // Add SLOT_COUNT as an inherent const for use in const generic contexts
-            impl #impl_generics #strukt #ty_generics #where_clause {
-                pub const SLOT_COUNT: usize = #mod_ident::SLOT_COUNT;
-            }
-
-            // Partial Storable implementation: loads/stores only scalar fields, skips mappings
+            // Partial `Storable` implementation: loads/stores only scalar fields, skips mappings
             impl #impl_generics crate::storage::Storable<{ #mod_ident::SLOT_COUNT }> for #strukt #ty_generics #where_clause {
-                const SLOT_COUNT: usize = #mod_ident::SLOT_COUNT;
-
                 fn load<S>(
                     storage: &mut S,
                     base_slot: ::alloy::primitives::U256,
@@ -230,19 +223,12 @@ fn derive_struct_impl(input: DeriveInput) -> syn::Result<TokenStream> {
 
             // impl `StorableType` for layout information
             impl #impl_generics crate::storage::StorableType for #strukt #ty_generics #where_clause {
-                // Structs always use Slots layout (multi-slot or full-slot types)
+                // Structs cannot be packed, so they must take full slots
                 const LAYOUT: crate::storage::Layout = crate::storage::Layout::Slots(#mod_ident::SLOT_COUNT);
             }
 
-            // Add SLOT_COUNT as an inherent const for use in const generic contexts
-            impl #impl_generics #strukt #ty_generics #where_clause {
-                pub const SLOT_COUNT: usize = #mod_ident::SLOT_COUNT;
-            }
-
-            // impl `Storable` with const generic for slot count
+            // Full `Storable` implementation
             impl #impl_generics crate::storage::Storable<{ #mod_ident::SLOT_COUNT }> for #strukt #ty_generics #where_clause {
-                    const SLOT_COUNT: usize = #mod_ident::SLOT_COUNT;
-
                     fn load<S>(
                         storage: &mut S,
                         base_slot: ::alloy::primitives::U256,
@@ -373,7 +359,7 @@ fn gen_packing_module(fields: &[(&Ident, &Type)], mod_ident: &Ident) -> TokenStr
             if prev_is_array || prev_is_dynamic || prev_is_mapping || prev_is_struct ||
                 is_array_type(ty) || is_dynamic_type(ty) || is_mapping_type(ty) || is_custom_struct(ty) {
                 let slot_const_expr = if prev_is_struct {
-                    quote! { #prev_slot + <#prev_ty>::SLOT_COUNT }
+                    quote! { #prev_slot + <#prev_ty as crate::storage::StorableType>::LAYOUT.slots() }
                 } else if prev_is_array {
                     quote! { #prev_slot + #prev_bytes.div_ceil(32) }
                 } else {
@@ -621,7 +607,7 @@ fn gen_from_evm_words_impl(
                 let #name = {
                     // Extract slice and convert to fixed-size array using std::array::from_fn
                     let start = #packing::#slot_const;
-                    let nested_words = ::std::array::from_fn::<_, {<#ty>::SLOT_COUNT}, _>(|i| {
+                    let nested_words = ::std::array::from_fn::<_, {<#ty as crate::storage::StorableType>::LAYOUT.slots()}, _>(|i| {
                         words[start + i]
                     });
                     <#ty>::from_evm_words(nested_words)?

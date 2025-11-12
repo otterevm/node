@@ -34,8 +34,6 @@ impl<T> Storable<1> for Vec<T>
 where
     T: Storable<1> + StorableType,
 {
-    const SLOT_COUNT: usize = 1;
-
     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
         // Read length from base slot
         let length_value = storage.sload(base_slot)?;
@@ -358,7 +356,7 @@ where
 /// Load unpacked elements from storage.
 ///
 /// Used when elements don't pack efficiently (32 bytes or multi-slot types).
-/// Each element occupies `T::SLOT_COUNT` consecutive slots.
+/// Each element occupies `T: Storable<SLOTS>` consecutive slots.
 fn load_unpacked_elements<T, S>(storage: &mut S, data_start: U256, length: usize) -> Result<Vec<T>>
 where
     T: Storable<1>,
@@ -374,7 +372,7 @@ where
 
 /// Store unpacked elements to storage.
 ///
-/// Each element uses its full `T::SLOT_COUNT` consecutive slots.
+/// Each element uses its full `T: Storable<SLOTS>` consecutive slots.
 fn store_unpacked_elements<T, S>(elements: &[T], storage: &mut S, data_start: U256) -> Result<()>
 where
     T: Storable<1>,
