@@ -20,15 +20,11 @@ pub enum Layout {
     /// Single slot, N bytes (1-32). Can be packed with other fields if N < 32.
     ///
     /// Used for primitive types like integers, booleans, and addresses.
-    /// Types with `Bytes(32)` (like U256) cannot be packed because they
-    /// occupy a full slot.
     Bytes(usize),
 
     /// Occupies N full slots (each 32 bytes). Cannot be packed.
     ///
-    /// Used for:
-    /// - Multi-slot types (structs, arrays)
-    /// - Dynamic types (String, Bytes, Vec) that store their base slot
+    /// Used for structs, fixed-size arrays, and dynamic types.
     Slots(usize),
 }
 
@@ -36,7 +32,6 @@ impl Layout {
     /// Returns true if this field can be packed with adjacent fields.
     ///
     /// Only `Bytes` variants with size < 32 can be packed.
-    /// Full-slot types (`Bytes(32)` and all `Slots` variants) cannot be packed.
     pub const fn is_packable(&self) -> bool {
         match self {
             Self::Bytes(n) => *n < 32,
@@ -82,11 +77,6 @@ pub enum LayoutCtx {
     ///
     /// For writes, this directly overwrites the entire slot without needing SLOAD.
     /// All `Storable` types support this context.
-    ///
-    /// Examples:
-    /// - Loading a standalone `U256` value
-    /// - Storing a struct to its base slot
-    /// - Writing a full-slot field in a struct
     Full,
 
     /// Load/store a packed primitive at the given byte offset within a slot.
@@ -96,11 +86,6 @@ pub enum LayoutCtx {
     /// packed fields in the same slot.
     ///
     /// Only primitive types with `Layout::Bytes(n)` where `n < 32` support this context.
-    ///
-    /// Examples:
-    /// - Loading a `bool` (1 byte) at offset 0
-    /// - Storing an `Address` (20 bytes) at offset 0
-    /// - Writing a `u64` (8 bytes) at offset 8 (second field in a packed slot)
     Packed(usize),
 }
 
@@ -112,7 +97,6 @@ pub trait StorableType {
     /// Describes how this type is laid out in storage.
     ///
     /// - Primitives use `Layout::Bytes(N)` where N is their size
-    /// - Full-slot primitives (U256, B256) use `Layout::Bytes(32)`
     /// - Dynamic types (String, Bytes, Vec) use `Layout::Slots(1)`
     /// - Structs and arrays use `Layout::Slots(N)` where N is the slot count
     const LAYOUT: Layout;
@@ -127,14 +111,14 @@ pub trait StorableType {
 ///
 /// # Type Parameter
 ///
-/// - `N`: The number of consecutive storage slots this type occupies.
+/// - `SLOTS`: The number of consecutive storage slots this type occupies.
 ///   For single-word types (Address, U256, bool), this is `1`.
 ///   For fixed-size arrays, this equals the number of elements.
 ///   For user-defined structs, this a number between `1` and the number of fields, which depends on slot packing.
 ///
 /// # Storage Layout
 ///
-/// For a type with `N = 3` starting at `base_slot`:
+/// For a type with `SLOTS = 3` starting at `base_slot`:
 /// - Slot 0: `base_slot + 0`
 /// - Slot 1: `base_slot + 1`
 /// - Slot 2: `base_slot + 2`
@@ -145,7 +129,7 @@ pub trait StorableType {
 /// - Round-trip conversions preserve data: `load(store(x)) == Ok(x)`
 /// - `SLOTS` accurately reflects the number of slots used
 /// - `store` and `load` access exactly `SLOTS` consecutive slots
-/// - `to_evm_words` and `from_evm_words` produce/consume exactly `N` words
+/// - `to_evm_words` and `from_evm_words` produce/consume exactly `SLOTS` words
 pub trait Storable<const SLOTS: usize>: Sized + StorableType {
     /// Load this type from storage starting at the given base slot.
     ///

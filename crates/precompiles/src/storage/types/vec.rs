@@ -49,7 +49,7 @@ where
             return Ok(Self::new());
         }
 
-        // Pack elements if necessary
+        // Pack elements if necessary. Vec elements can't be split across slots.
         let data_start = calc_data_slot(base_slot);
         if T::LAYOUT.bytes() <= 16 {
             load_packed_elements(storage, data_start, length, T::LAYOUT.bytes())
@@ -73,7 +73,7 @@ where
             return Ok(());
         }
 
-        // Pack elements if necessary
+        // Pack elements if necessary. Vec elements can't be split across slots.
         let data_start = calc_data_slot(base_slot);
         if T::LAYOUT.bytes() <= 16 {
             store_packed_elements(self, storage, data_start, T::LAYOUT.bytes())
@@ -98,7 +98,7 @@ where
 
         let data_start = calc_data_slot(base_slot);
         if T::LAYOUT.bytes() <= 16 {
-            // Clear packed element slots
+            // Clear packed element slots. Vec elements can't be split across slots.
             let slot_count = calc_packed_slot_count(length, T::LAYOUT.bytes());
             for slot_idx in 0..slot_count {
                 storage.sstore(data_start + U256::from(slot_idx), U256::ZERO)?;
