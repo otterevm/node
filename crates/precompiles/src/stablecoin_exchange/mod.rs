@@ -20,7 +20,7 @@ use crate::{
     linking_usd::LinkingUSD,
     stablecoin_exchange::orderbook::compute_book_key,
     storage::{PrecompileStorageProvider, Slot, Storable, VecSlotExt},
-    tip20::{ITIP20, TIP20Token, validate_usd_currency},
+    tip20::{ITIP20, TIP20Token, is_tip20, validate_usd_currency},
 };
 use alloy::primitives::{Address, B256, Bytes, IntoLogData, U256};
 use revm::state::Bytecode;
@@ -336,6 +336,11 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
     }
 
     pub fn create_pair(&mut self, base: Address) -> Result<B256> {
+        // Validate that base is a TIP20 token (only after Moderato hardfork)
+        if self.storage.spec() >= TempoHardfork::Moderato && !is_tip20(base) {
+            return Err(StablecoinExchangeError::invalid_base_token().into());
+        }
+
         let quote = TIP20Token::from_address(base, self.storage).quote_token()?;
         validate_usd_currency(base, self.storage)?;
         validate_usd_currency(quote, self.storage)?;
@@ -3403,6 +3408,67 @@ mod tests {
         assert!(matches!(
             result,
             Err(TempoPrecompileError::TIP20(TIP20Error::InvalidCurrency(_)))
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_pair_rejects_non_tip20_base_post_moderato() -> eyre::Result<()> {
+        // Test with Moderato hardfork (validation should be enforced)
+        let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
+
+        let admin = Address::random();
+        // Init Linking USD
+        let mut linking_usd = TIP20Token::from_address(LINKING_USD_ADDRESS, &mut storage);
+        linking_usd
+            .initialize("LinkingUSD", "LUSD", "USD", Address::ZERO, admin)
+            .unwrap();
+
+        let mut exchange = StablecoinExchange::new(linking_usd.storage());
+        exchange.initialize()?;
+
+        // Test: create_pair should reject non-TIP20 address (random address without TIP20 prefix)
+        let non_tip20_address = Address::random();
+        let result = exchange.create_pair(non_tip20_address);
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::StablecoinExchange(
+                StablecoinExchangeError::InvalidBaseToken(_)
+            ))
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_pair_allows_non_tip20_base_pre_moderato() -> eyre::Result<()> {
+        // Test with Adagio (pre-Moderato) - validation should not be enforced
+        let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
+
+        let admin = Address::random();
+        // Init Linking USD
+        let mut linking_usd = TIP20Token::from_address(LINKING_USD_ADDRESS, &mut storage);
+        linking_usd
+            .initialize("LinkingUSD", "LUSD", "USD", Address::ZERO, admin)
+            .unwrap();
+
+        let mut exchange = StablecoinExchange::new(linking_usd.storage());
+        exchange.initialize()?;
+
+        // Test: create_pair should not reject non-TIP20 address pre-Moderato
+        // This will fail with a different error (trying to read quote_token from non-TIP20)
+        // but NOT the InvalidQuoteToken error from the is_tip20 check
+        let non_tip20_address = Address::random();
+        let result = exchange.create_pair(non_tip20_address);
+
+        // Should fail but not with InvalidQuoteToken error (that check is skipped pre-Moderato)
+        assert!(result.is_err());
+        assert!(!matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::InvalidQuoteToken(
+                _
+            )))
         ));
 
         Ok(())
