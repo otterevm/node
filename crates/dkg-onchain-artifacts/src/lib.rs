@@ -289,15 +289,25 @@ impl Read for IntermediateOutcome {
         buf: &mut impl bytes::Buf,
         _cfg: &Self::Cfg,
     ) -> Result<Self, commonware_codec::Error> {
-        let n_players = UInt::read(buf)?.into();
+        let n_players: u16 = UInt::read(buf)?.into();
+        let dealer = PublicKey::read(buf)?;
+        let dealer_signature = Signature::read(buf)?;
+        let epoch = UInt::read(buf)?.into();
+        let commitment = Public::<MinSig>::read_cfg(buf, &(quorum(n_players as u32) as usize))?;
+
+        let acks = Vec::read_cfg(buf, &(RangeCfg::from(0..=n_players as usize), ()))?;
+        let n_reveals = n_players.saturating_sub(acks.len() as u16);
+        let reveals =
+            Vec::<group::Share>::read_cfg(buf, &(RangeCfg::from(0..=n_reveals as usize), ()))?;
+
         Ok(Self {
             n_players,
-            dealer: PublicKey::read(buf)?,
-            dealer_signature: Signature::read(buf)?,
-            epoch: UInt::read(buf)?.into(),
-            commitment: Public::<MinSig>::read_cfg(buf, &(quorum(n_players as u32) as usize))?,
-            acks: Vec::read_cfg(buf, &(RangeCfg::from(0..=usize::MAX), ()))?,
-            reveals: Vec::<group::Share>::read_cfg(buf, &(RangeCfg::from(0..=usize::MAX), ()))?,
+            dealer,
+            dealer_signature,
+            epoch,
+            commitment,
+            acks,
+            reveals,
         })
     }
 }
