@@ -151,16 +151,16 @@ impl MaxTpsArgs {
         // Generate all transactions
         let total_txs = self.tps * self.duration;
         let transactions = Arc::new(
-            generate_transactions(
+            generate_transactions(GenerateTransactionsInput {
                 total_txs,
-                self.accounts,
-                &self.mnemonic,
-                self.chain_id,
-                &target_urls[0],
+                num_accounts: self.accounts,
+                mnemonic: &self.mnemonic,
+                chain_id: self.chain_id,
+                rpc_url: target_urls[0].clone(),
                 tip20_weight,
                 place_order_weight,
                 swap_weight,
-            )
+            })
             .await
             .context("Failed to generate transactions")?,
         );
@@ -291,17 +291,20 @@ fn send_transactions(
     Ok(())
 }
 
-async fn generate_transactions(
-    total_txs: u64,
-    num_accounts: u64,
-    mnemonic: &str,
-    chain_id: u64,
-    rpc_url: &Url,
-    transfer_weight: u64,
-    place_weight: u64,
-    swap_weight: u64,
-) -> eyre::Result<Vec<Vec<u8>>> {
+async fn generate_transactions(input: GenerateTransactionsInput<'_>) -> eyre::Result<Vec<Vec<u8>>> {
+    let GenerateTransactionsInput {
+        total_txs,
+        num_accounts,
+        mnemonic,
+        chain_id,
+        rpc_url,
+        tip20_weight: transfer_weight,
+        place_order_weight: place_weight,
+        swap_weight,
+    } = input;
+
     println!("Generating {num_accounts} accounts...");
+
     let signers: Vec<PrivateKeySigner> = (0..num_accounts as u32)
         .into_par_iter()
         .tqdm()
@@ -324,7 +327,7 @@ async fn generate_transactions(
         dex::setup(rpc_url.clone(), mnemonic, signers.clone()).await?;
 
     // Fetch current nonces for all accounts
-    let provider = ProviderBuilder::new().connect_http(rpc_url.clone());
+    let provider = ProviderBuilder::new().connect_http(rpc_url);
     println!("Fetching nonces for {} accounts...", signers.len());
 
     let mut params = Vec::new();
@@ -347,7 +350,7 @@ async fn generate_transactions(
         .into_par_iter()
         .tqdm()
         .map(|(signer, nonce)| {
-            let tx_factory: [Box<dyn Fn(PrivateKeySigner, u64) -> eyre::Result<Vec<u8>>>; 3] = [
+            let tx_factory: [Box<dyn Fn(PrivateKeySigner, u64) -> _>; 3] = [
                 Box::new(|signer: PrivateKeySigner, nonce: u64| {
                     tip20::transfer(
                         signer.clone(),
@@ -576,4 +579,15 @@ fn into_signed_encoded(
     let mut payload = Vec::new();
     tx.into_signed(signature).eip2718_encode(&mut payload);
     Ok(payload)
+}
+
+struct GenerateTransactionsInput<'input> {
+    total_txs: u64,
+    num_accounts: u64,
+    mnemonic: &'input str,
+    chain_id: u64,
+    rpc_url: Url,
+    tip20_weight: u64,
+    place_order_weight: u64,
+    swap_weight: u64,
 }
