@@ -146,7 +146,7 @@ impl EncodeSize for PublicOutcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IntermediateOutcome {
     /// The number of players in this epoch.
-    n_players: u64,
+    n_players: u16,
 
     /// The public key of the dealer.
     dealer: PublicKey,
@@ -177,7 +177,7 @@ impl IntermediateOutcome {
     /// Finally, it also includes a signature over
     /// `(namespace, epoch, commitment, acks, reveals)` signed by the dealer.
     pub fn new(
-        n_players: u64,
+        n_players: u16,
         dealer_signer: &PrivateKey,
         namespace: &[u8],
         epoch: Epoch,
@@ -186,7 +186,8 @@ impl IntermediateOutcome {
         reveals: Vec<group::Share>,
     ) -> Self {
         // Sign the resharing outcome
-        let payload = Self::signature_payload_from_parts(epoch, &commitment, &acks, &reveals);
+        let payload =
+            Self::signature_payload_from_parts(n_players, epoch, &commitment, &acks, &reveals);
         let dealer_signature = dealer_signer.sign(Some(namespace), payload.as_ref());
 
         Self {
@@ -203,6 +204,7 @@ impl IntermediateOutcome {
     /// Verifies the intermediate outcome's signature.
     pub fn verify(&self, namespace: &[u8]) -> bool {
         let payload = Self::signature_payload_from_parts(
+            self.n_players,
             self.epoch,
             &self.commitment,
             &self.acks,
@@ -214,17 +216,20 @@ impl IntermediateOutcome {
 
     /// Returns the payload that was signed by the dealer, formed from raw parts.
     fn signature_payload_from_parts(
+        n_players: u16,
         epoch: Epoch,
         commitment: &Public<MinSig>,
         acks: &Vec<Ack>,
         reveals: &Vec<group::Share>,
     ) -> Vec<u8> {
         let mut buf = Vec::with_capacity(
-            UInt(epoch).encode_size()
+            UInt(n_players).encode_size()
+                + UInt(epoch).encode_size()
                 + commitment.encode_size()
                 + acks.encode_size()
                 + reveals.encode_size(),
         );
+        UInt(n_players).write(&mut buf);
         UInt(epoch).write(&mut buf);
         commitment.write(&mut buf);
         acks.write(&mut buf);

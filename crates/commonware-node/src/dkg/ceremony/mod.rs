@@ -678,7 +678,7 @@ where
         );
 
         let dealing_outcome = Some(IntermediateOutcome::new(
-            self.config.players.len() as u64,
+            self.config.players.len().clamp(0, u16::MAX as usize) as u16,
             &self.config.me,
             &union(&self.config.namespace, OUTCOME_NAMESPACE),
             self.config.epoch,
