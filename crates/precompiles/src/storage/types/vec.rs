@@ -16,7 +16,7 @@ use alloy::primitives::U256;
 use crate::{
     error::{Result, TempoPrecompileError},
     storage::{
-        Storable, StorableType, StorageKey, StorageOps,
+        Layout, Storable, StorableType, StorageKey, StorageOps,
         packing::{
             calc_element_offset, calc_element_slot, calc_packed_slot_count, extract_packed_value,
             insert_packed_value, is_packable, zero_packed_value,
@@ -26,16 +26,14 @@ use crate::{
 };
 
 impl<T: StorableType> StorableType for Vec<T> {
-    /// Vec base slot is always 32 bytes (stores length).
-    const BYTE_COUNT: usize = 32;
+    /// Vec base slot occupies one full storage slot (stores length).
+    const LAYOUT: Layout = Layout::Slots(1);
 }
 
 impl<T> Storable<1> for Vec<T>
 where
     T: Storable<1> + StorableType,
 {
-    const SLOT_COUNT: usize = 1;
-
     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
         // Read length from base slot
         let length_value = storage.sload(base_slot)?;
@@ -48,8 +46,8 @@ where
         let data_start = calc_data_slot(base_slot);
 
         // Pack elements if necessary
-        if is_packable(T::BYTE_COUNT) {
-            load_packed_elements(storage, data_start, length, T::BYTE_COUNT)
+        if is_packable(T::BYTES) {
+            load_packed_elements(storage, data_start, length, T::BYTES)
         } else {
             load_unpacked_elements(storage, data_start, length)
         }
@@ -66,8 +64,8 @@ where
         let data_start = calc_data_slot(base_slot);
 
         // Pack elements if necessary
-        if is_packable(T::BYTE_COUNT) {
-            store_packed_elements(self, storage, data_start, T::BYTE_COUNT)
+        if is_packable(T::BYTES) {
+            store_packed_elements(self, storage, data_start, T::BYTES)
         } else {
             store_unpacked_elements(self, storage, data_start)
         }
@@ -86,9 +84,9 @@ where
         }
 
         let data_start = calc_data_slot(base_slot);
-        if is_packable(T::BYTE_COUNT) {
+        if is_packable(T::BYTES) {
             // Clear packed element slots
-            let slot_count = calc_packed_slot_count(length, T::BYTE_COUNT);
+            let slot_count = calc_packed_slot_count(length, T::BYTES);
             for slot_idx in 0..slot_count {
                 storage.sstore(data_start + U256::from(slot_idx), U256::ZERO)?;
             }
@@ -261,7 +259,7 @@ pub(crate) fn calc_data_slot(base_slot: U256) -> U256 {
 
 /// Load packed elements from storage.
 ///
-/// Used when `T::BYTE_COUNT < 32` and evenly divides 32, allowing multiple elements per slot.
+/// Used when `T::BYTES < 32` and evenly divides 32, allowing multiple elements per slot.
 fn load_packed_elements<T, S>(
     storage: &mut S,
     data_start: U256,
@@ -358,7 +356,7 @@ where
 /// Load unpacked elements from storage.
 ///
 /// Used when elements don't pack efficiently (32 bytes or multi-slot types).
-/// Each element occupies `T::SLOT_COUNT` consecutive slots.
+/// Each element occupies `T: Storable<SLOTS>` consecutive slots.
 fn load_unpacked_elements<T, S>(storage: &mut S, data_start: U256, length: usize) -> Result<Vec<T>>
 where
     T: Storable<1>,
@@ -374,7 +372,7 @@ where
 
 /// Store unpacked elements to storage.
 ///
-/// Each element uses its full `T::SLOT_COUNT` consecutive slots.
+/// Each element uses its full `T: Storable<SLOTS>` consecutive slots.
 fn store_unpacked_elements<T, S>(elements: &[T], storage: &mut S, data_start: U256) -> Result<()>
 where
     T: Storable<1>,
@@ -515,7 +513,7 @@ where
     S: StorageOps,
     T: Storable<1> + StorableType,
 {
-    let byte_count = T::BYTE_COUNT;
+    let byte_count = T::BYTES;
     let data_start = calc_data_slot(base_slot);
 
     if is_packable(byte_count) {
@@ -534,7 +532,7 @@ where
     S: StorageOps,
     T: Storable<1> + StorableType,
 {
-    let byte_count = T::BYTE_COUNT;
+    let byte_count = T::BYTES;
     let data_start = calc_data_slot(base_slot);
     let length = read_length(storage, base_slot)?;
 
@@ -561,7 +559,7 @@ where
     S: StorageOps,
     T: Storable<1> + StorableType,
 {
-    let byte_count = T::BYTE_COUNT;
+    let byte_count = T::BYTES;
     let data_start = calc_data_slot(base_slot);
     let length = read_length(storage, base_slot)?;
 
@@ -585,7 +583,7 @@ where
     S: StorageOps,
     T: Storable<1> + StorableType,
 {
-    let byte_count = T::BYTE_COUNT;
+    let byte_count = T::BYTES;
     let data_start = calc_data_slot(base_slot);
 
     // Read current length
@@ -774,7 +772,7 @@ mod tests {
         );
 
         // Also verify each element can be extracted correctly
-        let byte_count = u8::BYTE_COUNT;
+        let byte_count = u8::BYTES;
         verify_packed_element(&mut contract, data_start, 10u8, 0, byte_count, "elem[0]");
         verify_packed_element(&mut contract, data_start, 20u8, 1, byte_count, "elem[1]");
         verify_packed_element(&mut contract, data_start, 30u8, 2, byte_count, "elem[2]");
@@ -818,7 +816,7 @@ mod tests {
         );
 
         // Also verify each element can be extracted
-        let byte_count = u16::BYTE_COUNT;
+        let byte_count = u16::BYTES;
         for (i, &expected) in data_exact.iter().enumerate() {
             verify_packed_element(
                 &mut contract,
@@ -931,7 +929,7 @@ mod tests {
         );
 
         // Also verify each element in slot 1 can be extracted
-        let byte_count = u8::BYTE_COUNT;
+        let byte_count = u8::BYTES;
         verify_packed_element(
             &mut contract,
             slot1_addr,
@@ -1114,7 +1112,7 @@ mod tests {
     #[test]
     fn test_vec_small_struct_storage() {
         // Test that single-slot structs are stored correctly in Vec
-        // NOTE: Structs always have BYTE_COUNT = 32 (even if they only use part of the slot),
+        // NOTE: Structs always have LAYOUT = Slots(1) (even if they only use part of the slot),
         // so they DON'T pack - each struct uses its own full slot. Only primitives pack.
         #[derive(Debug, Clone, PartialEq, Eq, Storable)]
         struct SmallStruct {
@@ -1309,7 +1307,7 @@ mod tests {
     //         field3: U256::from(3),
     //     }];
 
-    //     data.store(&mut contract, base_slot).unwrap();
+    //     data.store(&mut contract, base_slot, 0).unwrap();
 
     //     let data_start = calc_data_slot(base_slot);
     // }
@@ -1397,7 +1395,7 @@ mod tests {
             // Verify data slots are cleared (if length > 0)
             if data_len > 0 {
                 let data_start = calc_data_slot(base_slot);
-                let byte_count = u8::BYTE_COUNT;
+                let byte_count = u8::BYTES;
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
@@ -1430,7 +1428,7 @@ mod tests {
             // Verify data slots are cleared (if length > 0)
             if data_len > 0 {
                 let data_start = calc_data_slot(base_slot);
-                let byte_count = u16::BYTE_COUNT;
+                let byte_count = u16::BYTES;
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
@@ -1463,7 +1461,7 @@ mod tests {
             // Verify data slots are cleared (if length > 0)
             if data_len > 0 {
                 let data_start = calc_data_slot(base_slot);
-                let byte_count = u32::BYTE_COUNT;
+                let byte_count = u32::BYTES;
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
@@ -1491,7 +1489,7 @@ mod tests {
             // Verify data slots are cleared (if length > 0)
             if data_len > 0 {
                 let data_start = calc_data_slot(base_slot);
-                let byte_count = u64::BYTE_COUNT;
+                let byte_count = u64::BYTES;
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
@@ -1519,7 +1517,7 @@ mod tests {
             // Verify data slots are cleared (if length > 0)
             if data_len > 0 {
                 let data_start = calc_data_slot(base_slot);
-                let byte_count = u128::BYTE_COUNT;
+                let byte_count = u128::BYTES;
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
@@ -1609,7 +1607,7 @@ mod tests {
             // Verify data slots are cleared (if length > 0)
             if !data.is_empty() {
                 let data_start = calc_data_slot(base_slot);
-                let byte_count = u8::BYTE_COUNT;
+                let byte_count = u8::BYTES;
                 let slot_count = calc_packed_slot_count(data.len(), byte_count);
 
                 for i in 0..slot_count {

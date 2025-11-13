@@ -3,8 +3,8 @@
 //! This module provides helper functions for bit-level manipulation of storage slots,
 //! enabling efficient packing of multiple small values into single 32-byte slots.
 //!
-//! Packing only applies to primitive types where `BYTE_COUNT < 32`. Non-primitives
-//! (structs, fixed-size arrays, dynamic types) have `BYTE_COUNT = SLOT_COUNT * 32`.
+//! Packing only applies to primitive types where `LAYOUT::Bytes(count) && count < 32`.
+//! Non-primitives (structs, fixed-size arrays, dynamic types) have `LAYOUT = Layout::Slot`.
 //!
 //! ## Solidity Compatibility
 //!

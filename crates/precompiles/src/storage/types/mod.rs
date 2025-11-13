@@ -11,18 +11,88 @@ pub mod vec;
 use crate::{error::Result, storage::StorageOps};
 use alloy::primitives::U256;
 
-// Helper trait to access byte count without requiring const generic parameter.
+/// Describes how a type is laid out in EVM storage.
 ///
-/// This trait exists to allow the derive macro to query the byte size of field types
-/// during layout computation, before the slot count is known.
-///
-/// Primitives may have `BYTE_COUNT < 32`.
-/// Non-primitives (arrays, Vec, structs) must satisfy `BYTE_COUNT = SLOT_COUNT * 32` as they are not packable.
-pub trait StorableType {
-    /// Number of bytes that the type occupies (even if partially-empty).
+/// This determines whether a type can be packed with other fields
+/// and how many storage slots it occupies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    /// Single slot, N bytes (1-32). Can be packed with other fields if N < 32.
     ///
-    /// For dynamic types, set to a full 32-byte slot.
-    const BYTE_COUNT: usize;
+    /// Used for primitive types like integers, booleans, and addresses.
+    /// Types with `Bytes(32)` (like U256) cannot be packed because they
+    /// occupy a full slot.
+    Bytes(usize),
+
+    /// Occupies N full slots (each 32 bytes). Cannot be packed.
+    ///
+    /// Used for:
+    /// - Multi-slot types (structs, arrays)
+    /// - Dynamic types (String, Bytes, Vec) that store their base slot
+    Slots(usize),
+}
+
+impl Layout {
+    /// Returns true if this field can be packed with adjacent fields.
+    ///
+    /// Only `Bytes` variants with size < 32 can be packed.
+    /// Full-slot types (`Bytes(32)` and all `Slots` variants) cannot be packed.
+    pub const fn is_packable(&self) -> bool {
+        match self {
+            Self::Bytes(n) => *n < 32,
+            Self::Slots(_) => false,
+        }
+    }
+
+    /// Returns the number of storage slots this type occupies.
+    pub const fn slots(&self) -> usize {
+        match self {
+            Self::Bytes(_) => 1,
+            Self::Slots(n) => *n,
+        }
+    }
+
+    /// Returns the number of bytes this type occupies.
+    ///
+    /// For `Bytes(n)`, returns n.
+    /// For `Slots(n)`, returns n * 32 (each slot is 32 bytes).
+    pub const fn bytes(&self) -> usize {
+        match self {
+            Self::Bytes(n) => *n,
+            Self::Slots(n) => {
+                // Compute n * 32 using repeated addition for const compatibility
+                let (mut i, mut result) = (0, 0);
+                while i < *n {
+                    result += 32;
+                    i += 1;
+                }
+                result
+            }
+        }
+    }
+}
+
+/// Helper trait to access storage layout information without requiring const generic parameter.
+///
+/// This trait exists to allow the derive macro to query the layout and size of field types
+/// during layout computation, before the slot count is known.
+pub trait StorableType {
+    /// Describes how this type is laid out in storage.
+    ///
+    /// - Primitives use `Layout::Bytes(N)` where N is their size
+    /// - Full-slot primitives (U256, B256) use `Layout::Bytes(32)`
+    /// - Dynamic types (String, Bytes, Vec) use `Layout::Slots(1)`
+    /// - Structs and arrays use `Layout::Slots(N)` where N is the slot count
+    const LAYOUT: Layout;
+
+    /// Number of storage slots this type takes.
+    const SLOTS: usize = Self::LAYOUT.slots();
+
+    /// Number of bytes this type takes.
+    const BYTES: usize = Self::LAYOUT.bytes();
+
+    /// Whether this type can be packed with adjacent fields.
+    const IS_PACKABLE: bool = Self::LAYOUT.is_packable();
 }
 
 /// Trait for types that can be stored/loaded from EVM storage.
@@ -50,18 +120,13 @@ pub trait StorableType {
 ///
 /// Implementations must ensure that:
 /// - Round-trip conversions preserve data: `load(store(x)) == Ok(x)`
-/// - `N` accurately reflects the number of slots used
-/// - `store` and `load` access exactly `N` consecutive slots
+/// - `SLOTS` accurately reflects the number of slots used
+/// - `store` and `load` access exactly `SLOTS` consecutive slots
 /// - `to_evm_words` and `from_evm_words` produce/consume exactly `N` words
-pub trait Storable<const N: usize>: Sized + StorableType {
-    /// The number of consecutive storage slots this type occupies.
-    ///
-    /// Must be equal to `N`, and is provided as a convenient type-level access constant.
-    const SLOT_COUNT: usize;
-
+pub trait Storable<const SLOTS: usize>: Sized + StorableType {
     /// Load this type from storage starting at the given base slot.
     ///
-    /// Reads `N` consecutive slots starting from `base_slot`.
+    /// Reads `SLOTS` consecutive slots starting from `base_slot`.
     ///
     /// # Errors
     ///
@@ -72,7 +137,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
 
     /// Store this type to storage starting at the given base slot.
     ///
-    /// Writes `N` consecutive slots starting from `base_slot`.
+    /// Writes `SLOTS` consecutive slots starting from `base_slot`.
     ///
     /// # Errors
     ///
@@ -81,7 +146,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
 
     /// Delete this type from storage (set all slots to zero).
     ///
-    /// Sets `N` consecutive slots to zero, starting from `base_slot`.
+    /// Sets `SLOTS` consecutive slots to zero, starting from `base_slot`.
     ///
     /// The default implementation sets each slot to zero individually.
     /// Types may override this for optimized bulk deletion.
@@ -90,7 +155,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
     ///
     /// Returns an error if the storage write fails.
     fn delete<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<()> {
-        for offset in 0..N {
+        for offset in 0..SLOTS {
             storage.sstore(base_slot + U256::from(offset), U256::ZERO)?;
         }
         Ok(())
@@ -98,8 +163,8 @@ pub trait Storable<const N: usize>: Sized + StorableType {
 
     /// Encode this type to an array of U256 words.
     ///
-    /// Returns exactly `N` words, where each word represents one storage slot.
-    /// For single-slot types (`N = 1`), returns a single-element array.
+    /// Returns exactly `SLOTS` words, where each word represents one storage slot.
+    /// For single-slot types (`SLOTS = 1`), returns a single-element array.
     /// For multi-slot types, each array element corresponds to one slot's data.
     ///
     /// # Packed Storage
@@ -107,7 +172,7 @@ pub trait Storable<const N: usize>: Sized + StorableType {
     /// When multiple small fields are packed into a single slot, they are
     /// positioned and combined into a single U256 word according to their
     /// byte offsets. The derive macro handles this automatically.
-    fn to_evm_words(&self) -> Result<[U256; N]>;
+    fn to_evm_words(&self) -> Result<[U256; SLOTS]>;
 
     /// Decode this type from an array of U256 words.
     ///
@@ -119,7 +184,12 @@ pub trait Storable<const N: usize>: Sized + StorableType {
     /// When multiple small fields are packed into a single slot, they are
     /// extracted from the appropriate word using bit shifts and masks.
     /// The derive macro handles this automatically.
-    fn from_evm_words(words: [U256; N]) -> Result<Self>;
+    fn from_evm_words(words: [U256; SLOTS]) -> Result<Self>;
+
+    /// Test helper to ensure `LAYOUT` and `SLOTS` are in sync.
+    fn validate_layout() {
+        debug_assert_eq!(<Self as StorableType>::LAYOUT.slots(), SLOTS)
+    }
 }
 
 /// Trait for types that can be used as storage mapping keys.

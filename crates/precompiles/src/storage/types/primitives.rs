@@ -23,12 +23,10 @@ tempo_precompiles_macros::storable_nested_arrays!();
 // -- MANUAL STORAGE TRAIT IMPLEMENTATIONS -------------------------------------
 
 impl StorableType for bool {
-    const BYTE_COUNT: usize = 1;
+    const LAYOUT: Layout = Layout::Bytes(1);
 }
 
 impl Storable<1> for bool {
-    const SLOT_COUNT: usize = 1;
-
     #[inline]
     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
         storage.sload(base_slot).map(|val| !val.is_zero())
@@ -52,12 +50,10 @@ impl Storable<1> for bool {
 }
 
 impl StorableType for Address {
-    const BYTE_COUNT: usize = 20;
+    const LAYOUT: Layout = Layout::Bytes(20);
 }
 
 impl Storable<1> for Address {
-    const SLOT_COUNT: usize = 1;
-
     #[inline]
     fn load<S: StorageOps>(storage: &mut S, base_slot: U256) -> Result<Self> {
         storage.sload(base_slot).map(|val| val.into_address())
@@ -517,9 +513,9 @@ mod tests {
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
 
-        // Verify BYTE_COUNT and SLOT_COUNT
-        assert_eq!(<[u8; 32] as StorableType>::BYTE_COUNT, 32);
-        assert_eq!(<[u8; 32] as Storable<1>>::SLOT_COUNT, 1);
+        // Verify LAYOUT
+        <[u8; 32] as Storable<1>>::validate_layout();
+        assert_eq!(<[u8; 32] as StorableType>::LAYOUT, Layout::Slots(1));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -547,7 +543,8 @@ mod tests {
         let data: [u64; 5] = [1, 2, 3, 4, 5];
 
         // Verify slot count
-        assert_eq!(<[u64; 5] as Storable<2>>::SLOT_COUNT, 2);
+        <[u64; 5] as Storable<2>>::validate_layout();
+        assert_eq!(<[u64; 5] as StorableType>::LAYOUT, Layout::Slots(2));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -577,7 +574,8 @@ mod tests {
         let data: [u16; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Verify slot count
-        assert_eq!(<[u16; 16] as Storable<1>>::SLOT_COUNT, 1);
+        <[u16; 16] as Storable<1>>::validate_layout();
+        assert_eq!(<[u16; 16] as StorableType>::LAYOUT, Layout::Slots(1));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -594,7 +592,8 @@ mod tests {
         let data: [U256; 3] = [U256::from(12345), U256::from(67890), U256::from(111111)];
 
         // Verify slot count
-        assert_eq!(<[U256; 3] as Storable<3>>::SLOT_COUNT, 3);
+        <[U256; 3] as Storable<3>>::validate_layout();
+        assert_eq!(<[U256; 3] as StorableType>::LAYOUT, Layout::Slots(3));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -621,7 +620,8 @@ mod tests {
         ];
 
         // Verify slot count
-        assert_eq!(<[Address; 3] as Storable<3>>::SLOT_COUNT, 3);
+        <[Address; 3] as Storable<3>>::validate_layout();
+        assert_eq!(<[Address; 3] as StorableType>::LAYOUT, Layout::Slots(3));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -638,7 +638,8 @@ mod tests {
         let data: [u8; 1] = [42];
 
         // Verify slot count
-        assert_eq!(<[u8; 1] as Storable<1>>::SLOT_COUNT, 1);
+        <[u8; 1] as Storable<1>>::validate_layout();
+        assert_eq!(<[u8; 1] as StorableType>::LAYOUT, Layout::Slots(1));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -665,9 +666,9 @@ mod tests {
             [29, 30, 31, 32],
         ];
 
-        // Verify SLOT_COUNT: 8 slots (one per inner array)
-        assert_eq!(<[[u8; 4]; 8] as StorableType>::BYTE_COUNT, 256); // 8 slots × 32 bytes
-        assert_eq!(<[[u8; 4]; 8] as Storable<8>>::SLOT_COUNT, 8);
+        // Verify LAYOUT: 8 slots (one per inner array)
+        <[[u8; 4]; 8] as Storable<8>>::validate_layout();
+        assert_eq!(<[[u8; 4]; 8] as StorableType>::LAYOUT, Layout::Slots(8));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();
@@ -708,9 +709,9 @@ mod tests {
             [800, 801],
         ];
 
-        // Verify SLOT_COUNT: 8 slots (one per inner array)
-        assert_eq!(<[[u16; 2]; 8] as StorableType>::BYTE_COUNT, 256); // 8 slots × 32 bytes
-        assert_eq!(<[[u16; 2]; 8] as Storable<8>>::SLOT_COUNT, 8);
+        // Verify LAYOUT: 8 slots (one per inner array)
+        <[[u16; 2]; 8] as Storable<8>>::validate_layout();
+        assert_eq!(<[[u16; 2]; 8] as StorableType>::LAYOUT, Layout::Slots(8));
 
         // Store and load
         data.store(&mut contract, base_slot).unwrap();

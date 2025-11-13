@@ -311,8 +311,8 @@ pub fn gen_storable_tests(_input: TokenStream) -> TokenStream {
 /// - FixedBytes<20>, FixedBytes<32>
 ///
 /// Each array gets:
-/// - `StorableType` impl with `BYTE_COUNT = SLOT_COUNT * 32`
-/// - `Storable<N>` impl where N is computed from element packing
+/// - `StorableType` impl with `LAYOUT = Layout::Slot`
+/// - `Storable<SLOTS>` impl where `SLOTS` is computed from element packing
 #[proc_macro]
 pub fn storable_arrays(_input: TokenStream) -> TokenStream {
     storable_primitives::gen_storable_arrays().into()
