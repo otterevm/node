@@ -342,7 +342,7 @@ pub(crate) fn gen_byte_count_expr(ty: &Type, is_mapping: bool) -> TokenStream {
         // TODO(rusowsky): remove once `SlotId` is dropped
         quote! { 32 }
     } else {
-        quote! { <#ty as crate::storage::StorableType>::LAYOUT.bytes() }
+        quote! { <#ty as crate::storage::StorableType>::BYTES }
     }
 }
 
@@ -440,7 +440,7 @@ pub(crate) fn gen_layout_ctx_expr(
     } else {
         quote! {
             {
-                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::LAYOUT.is_packable();
+                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::IS_PACKABLE;
                 const OFFSET: usize = #offset_const_ref;
                 if IS_PACKABLE {
                     crate::storage::LayoutCtx::Packed(OFFSET)
@@ -489,7 +489,7 @@ pub(crate) fn gen_collision_check_fn(
         if kind.is_mapping() {
             quote! { ::alloy::primitives::U256::ONE }
         } else {
-            quote! { ::alloy::primitives::U256::from_limbs([<#ty as crate::storage::StorableType>::LAYOUT.slots() as u64, 0, 0, 0]) }
+            quote! { ::alloy::primitives::U256::from_limbs([<#ty as crate::storage::StorableType>::SLOTS as u64, 0, 0, 0]) }
         }
     }
 

@@ -227,8 +227,8 @@ fn gen_to_evm_words_impl(
 
         quote! {
             {
-                const SLOT_COUNT: usize = <#ty as crate::storage::StorableType>::LAYOUT.slots();
-                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::LAYOUT.is_packable();
+                const SLOT_COUNT: usize = <#ty as crate::storage::StorableType>::SLOTS;
+                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::IS_PACKABLE;
 
                 if IS_PACKABLE {
                     // Packable primitive: use packing module (handles both packed and unpacked)
@@ -266,8 +266,8 @@ fn gen_from_evm_words_impl(
 
         quote! {
             let #name = {
-                const SLOT_COUNT: usize = <#ty as crate::storage::StorableType>::LAYOUT.slots();
-                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::LAYOUT.is_packable();
+                const SLOT_COUNT: usize = <#ty as crate::storage::StorableType>::SLOTS;
+                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::IS_PACKABLE;
 
                 if IS_PACKABLE {
                     // Packable primitive: use packing module (handles both packed and unpacked)
