@@ -90,7 +90,7 @@ pub(crate) struct LayoutField<'a> {
 
 /// Helper trait to extract field information needed for layout IR construction.
 ///
-/// This allows `build_layout_ir` to work with different field types from
+/// This allows `allocate_slots` to work with different field types from
 /// different macros (e.g., `FieldInfo` from `#[contract]`, or tuples from `#[derive(Storable)]`).
 pub(crate) trait FieldInfoExt {
     fn field_name(&self) -> &Ident;
@@ -119,7 +119,7 @@ impl<'a> FieldInfoExt for (&'a Ident, &'a Type) {
 /// Build layout IR from field information.
 ///
 /// This function performs slot allocation and packing decisions, returning
-/// a complete IR that can be used for code generation. The actual byte-level
+/// a complete layout that can be used for code generation. The actual byte-level
 /// packing calculations (offsets, whether fields actually pack) are computed
 /// at compile-time via const expressions in the generated code.
 ///
