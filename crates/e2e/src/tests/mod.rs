@@ -15,6 +15,7 @@ use crate::ExecutionRuntime;
 mod backfill;
 mod dkg;
 mod linkage;
+mod restart;
 mod subblocks;
 
 #[test_traced]

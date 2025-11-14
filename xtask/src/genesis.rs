@@ -184,7 +184,7 @@ impl GenesisArgs {
         initialize_tip20_rewards_registry(&mut evm)?;
 
         println!("Initializing validator config");
-        let (initial_dkg, validators) = initialize_validator_config(
+        let (initial_dkg, mut validators) = initialize_validator_config(
             admin,
             self.validator_addresses,
             self.validator_pubkeys,
@@ -192,6 +192,7 @@ impl GenesisArgs {
             self.mnemonic,
             &mut evm,
         )?;
+        validators.push(self.coinbase);
 
         println!("Initializing fee manager");
         initialize_fee_manager(alpha_token_address, addresses.clone(), validators, &mut evm);
@@ -498,17 +499,6 @@ fn initialize_fee_manager(
             .expect("Could not set fee token");
     }
 
-    let beneficiary = Address::random();
-    fee_manager
-        .set_validator_token(
-            Address::ZERO,
-            IFeeManager::setValidatorTokenCall {
-                token: default_fee_address,
-            },
-            beneficiary,
-        )
-        .expect("Could not set 0x00 validator fee token");
-
     // Set validator fee tokens to linking USD
     for validator in validators {
         fee_manager
@@ -517,7 +507,8 @@ fn initialize_fee_manager(
                 IFeeManager::setValidatorTokenCall {
                     token: LINKING_USD_ADDRESS,
                 },
-                beneficiary,
+                // use random address to avoid `CannotChangeWithinBlock` error
+                Address::random(),
             )
             .expect("Could not set validator fee token");
     }

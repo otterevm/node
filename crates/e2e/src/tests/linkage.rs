@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{Setup, run};
+use crate::{run, Setup};
 use commonware_macros::test_traced;
 use commonware_p2p::simulated::Link;
 
@@ -96,7 +96,7 @@ fn many_bad_links() {
     // for seed in 0..5 {
     for seed in 0..1 {
         let setup = Setup {
-            how_many_signers: 5,
+            how_many_signers: 4,
             how_many_verifiers: 0,
             seed,
             linkage: link.clone(),

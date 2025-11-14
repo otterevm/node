@@ -8,7 +8,6 @@ use commonware_runtime::{
     Clock as _, Metrics as _, Runner as _,
     deterministic::{Config, Runner},
 };
-use commonware_utils::set::Ordered;
 use futures::future::join_all;
 
 use crate::{
@@ -107,20 +106,15 @@ fn validator_lost_key_but_gets_key_in_next_epoch() {
                 .last_mut()
                 .expect("we just asked for a couple of validators");
             last_node
-                .engine_config
+                .consensus_config
                 .share
                 .take()
                 .expect("the node must have had a share");
             last_node.uid.clone()
         };
 
-        let ids: Ordered<_> = nodes
-            .iter()
-            .map(|node| node.public_key.clone())
-            .collect::<Vec<_>>()
-            .into();
-        join_all(nodes.into_iter().map(|node| node.start())).await;
-        link_validators(&mut oracle, ids.as_ref(), linkage, None).await;
+        let running = join_all(nodes.into_iter().map(|node| node.start())).await;
+        link_validators(&mut oracle, &running, linkage, None).await;
 
         let mut epoch_reached = false;
         let mut height_reached = false;
@@ -254,32 +248,26 @@ fn validator_is_added() {
         let new_node = {
             let idx = nodes
                 .iter()
-                .position(|node| node.engine_config.share.is_none())
+                .position(|node| node.consensus_config.share.is_none())
                 .expect("at least one node must be a verifier, i.e. not have a share");
             nodes.remove(idx)
         };
 
         assert!(
-            nodes.iter().all(|node| node.engine_config.share.is_some()),
+            nodes
+                .iter()
+                .all(|node| node.consensus_config.share.is_some()),
             "must have removed the one non-signer node; must be left with only signers",
         );
 
         let mut running = join_all(nodes.into_iter().map(|node| node.start())).await;
 
-        let ids: Ordered<_> = running
-            .iter()
-            .map(|node| node.public_key.clone())
-            .collect::<Vec<_>>()
-            .into();
-
-        link_validators(&mut oracle, ids.as_ref(), linkage.clone(), None).await;
+        link_validators(&mut oracle, &running, linkage.clone(), None).await;
 
         // We will send an arbitrary node of the initial validator set the smart
-        //  contract call.
-        let old_node = running.remove(0);
-
-        let http_url = old_node
-            .node
+        // contract call.
+        let http_url = running[0]
+            .execution_node
             .node
             .rpc_server_handle()
             .http_url()
@@ -305,12 +293,8 @@ fn validator_is_added() {
         // Now start the node and link it to the other validators. There will
         // duplicate linking, but that's ok.
         let new_node = new_node.start().await;
-        let ids: Ordered<_> = {
-            let mut ids = Vec::from(ids);
-            ids.push(new_node.public_key.clone());
-            ids.into()
-        };
-        link_validators(&mut oracle, ids.as_ref(), linkage, None).await;
+        running.push(new_node);
+        link_validators(&mut oracle, &running, linkage, None).await;
 
         let pat = format!("{}-", crate::CONSENSUS_NODE_PREFIX);
 
