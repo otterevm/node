@@ -81,7 +81,8 @@ pub(super) async fn setup(
     let provider = ProviderBuilder::new().connect_http(url.clone());
     let mut nonce = provider.get_transaction_count(caller).await?;
     let user_tokens = [*base1.address(), *base2.address()];
-    let tokens = [&base1, &base2, &quote];
+    let tokens = [*base1.address(), *base2.address(), *quote.address()];
+    let tokens_count = tokens.len();
     let mut futures = Vec::new();
 
     for token in user_tokens {
@@ -120,7 +121,7 @@ pub(super) async fn setup(
                         nonce,
                         gas_price: TEMPO_BASE_FEE as u128,
                         gas_limit: GAS_LIMIT,
-                        to: TxKind::Call(*token.address()),
+                        to: TxKind::Call(token),
                         value: U256::ZERO,
                         input: ITIP20::mintCall {
                             to: recipient,
@@ -150,9 +151,6 @@ pub(super) async fn setup(
         .await?
         .into_iter()
         .map(|(signer, nonce)| {
-            let tokens = [*base1.address(), *base2.address(), *quote.address()];
-            let length = tokens.len();
-
             for (i, token) in tokens.into_iter().enumerate() {
                 let provider = provider.clone();
                 let signer = signer.clone();
@@ -179,7 +177,7 @@ pub(super) async fn setup(
                 }) as Pin<Box<dyn Future<Output = _>>>);
             }
 
-            eyre::Ok((signer, nonce + length as u64))
+            eyre::Ok((signer, nonce + tokens_count as u64))
         })
         .collect::<eyre::Result<_, _>>()?;
 
