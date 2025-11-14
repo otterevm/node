@@ -663,7 +663,7 @@ impl Inner<Init> {
                     block.epoch = block_outcome.epoch,
                     block.participants = ?block_outcome.participants,
                     block.public = ?block_outcome.public,
-                    "our public dkg ceremont outcome does not match what's stored in the block; failing block",
+                    "our public dkg ceremony outcome does not match what's stored in the block; failing block",
                 );
                 return Ok((block, false));
             }

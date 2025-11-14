@@ -29,7 +29,7 @@ epoch is then defined by:
 
 At genesis, the network is launched with a known public threshold key
 polynomial, a set of private threshold key shares (one per validator), a list
-of `(ed25519-public-key, socket-address)` to identify and coontact each
+of `(ed25519-public-key, socket-address)` to identify and contact each
 validator, and a so-called `epoch_length`, a fixed number of blocks defining the
 length of an epoch.
 
