@@ -1,5 +1,9 @@
 //! The environment to launch tempo execution nodes in.
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use eyre::WrapErr as _;
 use futures::StreamExt;
@@ -90,6 +94,7 @@ impl ExecutionRuntime {
     pub fn handle(&self) -> ExecutionRuntimeHandle {
         ExecutionRuntimeHandle {
             to_runtime: self.to_runtime.clone(),
+            nodes_dir: self._tempdir.path().to_path_buf(),
         }
     }
 
@@ -142,11 +147,18 @@ impl Default for ExecutionRuntime {
 /// A handle to the execution runtime.
 ///
 /// Can be used to spawn nodes.
+#[derive(Clone)]
 pub struct ExecutionRuntimeHandle {
     to_runtime: tokio::sync::mpsc::UnboundedSender<Message>,
+    nodes_dir: PathBuf,
 }
 
 impl ExecutionRuntimeHandle {
+    /// Returns the base directory where execution node data is stored.
+    pub fn nodes_dir(&self) -> &Path {
+        &self.nodes_dir
+    }
+
     /// Requests a new execution node and blocks until its returned.
     pub async fn spawn_node(&self, name: &str) -> eyre::Result<ExecutionNode> {
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -214,11 +226,20 @@ impl ExecutionNode {
     }
 }
 
-// TODO(janis): allow configuring this.
-fn chainspec() -> Arc<TempoChainSpec> {
+/// Returns the chainspec used for e2e tests.
+///
+/// TODO(janis): allow configuring this.
+pub(crate) fn chainspec() -> Arc<TempoChainSpec> {
     Arc::new(TempoChainSpec::from_genesis(
         serde_json::from_str(include_str!("../../node/tests/assets/test-genesis.json")).unwrap(),
     ))
+}
+
+/// Generate execution node name from public key.
+pub(crate) fn execution_node_name(
+    public_key: &commonware_cryptography::ed25519::PublicKey,
+) -> String {
+    format!("{}-{}", crate::EXECUTION_NODE_PREFIX, public_key)
 }
 
 // TODO(janis): would be nicer if we could identify the node somehow?

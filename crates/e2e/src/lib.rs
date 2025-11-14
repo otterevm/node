@@ -31,8 +31,10 @@ use tempo_commonware_node::consensus;
 use tracing::debug;
 
 pub mod execution_runtime;
+pub mod testing_node;
 // pub mod genesis;
 pub use execution_runtime::ExecutionRuntime;
+pub use testing_node::TestingNode;
 
 use crate::execution_runtime::ExecutionNode;
 
@@ -153,6 +155,13 @@ pub struct RunningNode {
 }
 
 impl RunningNode {
+    /// Stops the consensus engine but keeps the execution node running.
+    ///
+    /// The execution node cannot be individually stopped because all execution nodes
+    /// share the same TaskManager in the ExecutionRuntime. To fully stop execution nodes,
+    /// the entire ExecutionRuntime must be stopped via `ExecutionRuntime::stop()`.
+    ///
+    /// The execution node will be reused when `PreparedNode::start()` is called.
     pub fn stop(self) -> PreparedNode {
         let Self {
             uid,
@@ -162,7 +171,16 @@ impl RunningNode {
             consensus_config,
             consensus_handle,
         } = self;
+        // Stop consensus engine
         consensus_handle.abort();
+        execution_node
+            .node
+            .task_executor
+            .spawn_critical("sudden", async {
+                panic!("");
+            });
+
+        // Return PreparedNode with the still-running execution node
         PreparedNode {
             uid,
             execution_node,
@@ -244,7 +262,9 @@ pub async fn setup_validators(
 
     for signer in &private_keys {
         let node = execution_runtime
-            .spawn_node(&format!("{EXECUTION_NODE_PREFIX}-{}", signer.public_key()))
+            .spawn_node(&execution_runtime::execution_node_name(
+                &signer.public_key(),
+            ))
             .await
             .expect("must be able to spawn nodes on the runtime");
 
