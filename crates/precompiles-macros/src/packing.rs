@@ -68,8 +68,6 @@ pub(crate) enum SlotAssignment {
     Auto {
         /// Base slot for packing decisions.
         base_slot: U256,
-        /// Whether this field is directly assigned to a slot (not a mapping).
-        direct_alloc: bool,
     },
 }
 
@@ -150,25 +148,15 @@ where
             assignment
         } else {
             // Auto-assignment with packing support
-            let is_primitive = kind.is_direct();
-
-            // Non-primitives always start a new slot
-            let base_slot = if index == 0 || !is_primitive {
+            let base_slot = if index == 0 {
                 let slot = last_auto_slot;
                 last_auto_slot += U256::ONE;
                 slot
-            }
-            // Otherwise, check if previous field was also primitive
-            else {
+            } else {
                 let prev: &LayoutField<'_> = &result[index - 1];
 
-                // If previous was also a primitive, reuse base slot (becomes packing candidate)
-                if let SlotAssignment::Auto {
-                    base_slot,
-                    direct_alloc: true,
-                } = &prev.assigned_slot
-                    && prev.kind.is_direct()
-                {
+                // If previous also was auto-assigned, reuse base slot (becomes packing candidate)
+                if let SlotAssignment::Auto { base_slot } = &prev.assigned_slot {
                     *base_slot
                 }
                 // Otherwise, start new slot
@@ -179,10 +167,7 @@ where
                 }
             };
 
-            SlotAssignment::Auto {
-                base_slot,
-                direct_alloc: is_primitive,
-            }
+            SlotAssignment::Auto { base_slot }
         };
 
         result.push(LayoutField {
@@ -362,9 +347,9 @@ pub(crate) fn gen_slot_packing_logic(
 ) -> (TokenStream, TokenStream) {
     // Helper reused in several arms
     let prev_layout_slots = match slot_type {
-        SlotType::Usize => quote! {  PREV_LAYOUT.slots() },
+        SlotType::Usize => quote! { <#prev_ty as crate::storage::StorableType>::SLOTS },
         SlotType::U256 => {
-            quote! { ::alloy::primitives::U256::from_limbs([PREV_LAYOUT.slots() as u64, 0, 0, 0]) }
+            quote! { ::alloy::primitives::U256::from_limbs([<#prev_ty as crate::storage::StorableType>::SLOTS as u64, 0, 0, 0]) }
         }
     };
 
@@ -382,50 +367,33 @@ pub(crate) fn gen_slot_packing_logic(
     // If current field is a mapping, it must start on a new slot
     if is_curr_mapping {
         let slot_expr = match slot_type {
-            SlotType::Usize => quote! {
-                {
-                    const PREV_LAYOUT: crate::storage::Layout = <#prev_ty as crate::storage::StorableType>::LAYOUT;
-                    #prev_slot_expr + #prev_layout_slots
-                }
-            },
-            SlotType::U256 => quote! {
-                {
-                    const PREV_LAYOUT: crate::storage::Layout = <#prev_ty as crate::storage::StorableType>::LAYOUT;
-                    #prev_slot_expr.checked_add(#prev_layout_slots).expect("slot overflow")
-                }
-            },
+            SlotType::Usize => quote! {{ #prev_slot_expr + #prev_layout_slots }},
+            SlotType::U256 => {
+                quote! {{ #prev_slot_expr.checked_add(#prev_layout_slots).expect("slot overflow") }}
+            }
         };
         return (slot_expr, quote! { 0 });
     }
 
-    // Standard packing logic for non-mapping fields
+    // Compute packing decision at compile-time
     let can_pack_expr = quote! {
-        const PREV_LAYOUT: crate::storage::Layout = <#prev_ty as crate::storage::StorableType>::LAYOUT;
-        const CURR_LAYOUT: crate::storage::Layout = <#curr_ty as crate::storage::StorableType>::LAYOUT;
-
-        // Compute packing decision at compile-time
-        const PREV_END: usize = #prev_offset_expr + PREV_LAYOUT.bytes();
-        const CAN_PACK: bool = PREV_LAYOUT.is_packable() && CURR_LAYOUT.is_packable() && PREV_END + CURR_LAYOUT.bytes() <= 32;
+        #prev_offset_expr
+            + <#prev_ty as crate::storage::StorableType>::BYTES
+            + <#curr_ty as crate::storage::StorableType>::BYTES <= 32
     };
 
-    let slot_expr = quote! {
-        {
-            #can_pack_expr
-            if CAN_PACK { #prev_slot_expr } else { #prev_slot_expr.checked_add(#prev_layout_slots).expect("slot overflow") }
-        }
-    };
+    let slot_expr = quote! {{
+        if #can_pack_expr { #prev_slot_expr } else { #prev_slot_expr.checked_add(#prev_layout_slots).expect("slot overflow") }
+    }};
 
-    let offset_expr = quote! {
-        {
-            #can_pack_expr
-            if CAN_PACK { PREV_END } else { 0 }
-        }
-    };
+    let offset_expr = quote! {{
+        if #can_pack_expr { #prev_offset_expr + <#prev_ty as crate::storage::StorableType>::BYTES } else { 0 }
+    }};
 
     (slot_expr, offset_expr)
 }
 
-/// Generate a LayoutCtx expression for accessing a field.
+/// Generate a `LayoutCtx` expression for accessing a field.
 ///
 /// This helper unifies the logic for choosing between `LayoutCtx::Full` and
 /// `LayoutCtx::Packed` based on whether the field is manually assigned and
@@ -440,10 +408,8 @@ pub(crate) fn gen_layout_ctx_expr(
     } else {
         quote! {
             {
-                const IS_PACKABLE: bool = <#ty as crate::storage::StorableType>::IS_PACKABLE;
-                const OFFSET: usize = #offset_const_ref;
-                if IS_PACKABLE {
-                    crate::storage::LayoutCtx::Packed(OFFSET)
+                if <#ty as crate::storage::StorableType>::IS_PACKABLE {
+                    crate::storage::LayoutCtx::Packed(#offset_const_ref)
                 } else {
                     crate::storage::LayoutCtx::Full
                 }
