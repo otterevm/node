@@ -176,7 +176,7 @@ pub async fn setup_validators(
         connect_execution_layer_nodes,
         ..
     }: Setup,
-) -> (Vec<Node>, simulated::Oracle<PublicKey>) {
+) -> (Vec<Node>, Oracle<PublicKey>) {
     let (network, oracle) = Network::new(
         context.with_label("network"),
         simulated::Config {
@@ -193,6 +193,7 @@ pub async fn setup_validators(
         let signer = PrivateKey::from_seed(seed + u64::from(i));
         private_keys.push(signer);
     }
+
     private_keys.sort_by_key(|s| s.public_key());
 
     let threshold = quorum(how_many_signers);

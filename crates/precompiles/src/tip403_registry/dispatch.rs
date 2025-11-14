@@ -16,7 +16,7 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TIP403Registry<'a, S> {
         let selector: [u8; 4] = calldata
             .get(..4)
             .ok_or_else(|| {
-                PrecompileError::Other("Invalid input: missing function selector".to_string())
+                PrecompileError::Other("Invalid input: missing function selector".into())
             })?
             .try_into()
             .unwrap();
@@ -66,9 +66,7 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TIP403Registry<'a, S> {
                     |s, call| self.modify_policy_blacklist(s, call),
                 )
             }
-            _ => Err(PrecompileError::Other(
-                "Unknown function selector".to_string(),
-            )),
+            _ => Err(PrecompileError::Other("Unknown function selector".into())),
         };
 
         result.map(|mut res| {
@@ -81,8 +79,12 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TIP403Registry<'a, S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::hashmap::HashMapStorageProvider;
+    use crate::{
+        storage::hashmap::HashMapStorageProvider,
+        test_util::{assert_full_coverage, check_selector_coverage},
+    };
     use alloy::sol_types::SolValue;
+    use tempo_contracts::precompiles::ITIP403Registry::ITIP403RegistryCalls;
 
     #[test]
     fn test_is_authorized_precompile() {
@@ -472,5 +474,20 @@ mod tests {
         let result = precompile.call(&calldata, admin).unwrap();
         let counter = u64::abi_decode(&result.bytes).unwrap();
         assert_eq!(counter, 4);
+    }
+
+    #[test]
+    fn tip403_registry_test_selector_coverage() {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut registry = TIP403Registry::new(&mut storage);
+
+        let unsupported = check_selector_coverage(
+            &mut registry,
+            ITIP403RegistryCalls::SELECTORS,
+            "ITIP403Registry",
+            ITIP403RegistryCalls::name_by_selector,
+        );
+
+        assert_full_coverage([unsupported]);
     }
 }

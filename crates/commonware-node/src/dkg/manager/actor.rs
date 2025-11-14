@@ -780,14 +780,10 @@ async fn read_validator_config_from_contract(
     epoch_length: u64,
 ) -> eyre::Result<OrderedAssociated<PublicKey, DecodedValidator>> {
     use alloy_evm::EvmInternals;
-    use reth_chainspec::EthChainSpec as _;
-    use reth_ethereum::evm::revm::{
-        State, context::ContextTr as _, database::StateProviderDatabase,
-    };
+    use reth_ethereum::evm::revm::{State, database::StateProviderDatabase};
     use reth_node_builder::{Block as _, ConfigureEvm as _};
     use reth_provider::{BlockReader as _, StateProviderFactory as _};
     use tempo_precompiles::{
-        VALIDATOR_CONFIG_ADDRESS,
         storage::evm::EvmPrecompileStorageProvider,
         validator_config::{IValidatorConfig, ValidatorConfig},
     };
@@ -818,13 +814,11 @@ async fn read_validator_config_from_contract(
             .evm_for_block(db, block.header())
             .wrap_err("failed instantiating evm for genesis block")?;
 
-        let block = evm.block.clone();
-        let internals = EvmInternals::new(evm.journal_mut(), &block);
-        let mut precompile_storage =
-            EvmPrecompileStorageProvider::new_max_gas(internals, node.chain_spec().chain_id());
+        let ctx = evm.ctx_mut();
+        let internals = EvmInternals::new(&mut ctx.journaled_state, &ctx.block);
+        let mut provider = EvmPrecompileStorageProvider::new_max_gas(internals, &ctx.cfg);
 
-        let mut validator_config =
-            ValidatorConfig::new(VALIDATOR_CONFIG_ADDRESS, &mut precompile_storage);
+        let mut validator_config = ValidatorConfig::new(&mut provider);
         validator_config
             .get_validators(IValidatorConfig::getValidatorsCall {})
             .wrap_err("failed to query contract for validator config")?

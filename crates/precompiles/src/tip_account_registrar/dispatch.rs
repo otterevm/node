@@ -13,7 +13,7 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TipAccountRegistrar<'a, S>
         let selector: [u8; 4] = calldata
             .get(..4)
             .ok_or_else(|| {
-                PrecompileError::Other("Invalid input: missing function selector".to_string())
+                PrecompileError::Other("Invalid input: missing function selector".into())
             })?
             .try_into()
             .unwrap();
@@ -26,14 +26,37 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TipAccountRegistrar<'a, S>
                     |_, call| self.delegate_to_default(call),
                 )
             }
-            _ => Err(PrecompileError::Other(
-                "Unknown function selector".to_string(),
-            )),
+            _ => Err(PrecompileError::Other("Unknown function selector".into())),
         };
 
         result.map(|mut res| {
             res.gas_used = self.storage.gas_used();
             res
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        storage::hashmap::HashMapStorageProvider,
+        test_util::{assert_full_coverage, check_selector_coverage},
+    };
+    use tempo_contracts::precompiles::ITipAccountRegistrar::ITipAccountRegistrarCalls;
+
+    #[test]
+    fn tip_account_registrar_test_selector_coverage() {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut registrar = TipAccountRegistrar::new(&mut storage);
+
+        let unsupported = check_selector_coverage(
+            &mut registrar,
+            ITipAccountRegistrarCalls::SELECTORS,
+            "ITipAccountRegistrar",
+            ITipAccountRegistrarCalls::name_by_selector,
+        );
+
+        assert_full_coverage([unsupported]);
     }
 }

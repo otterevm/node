@@ -23,7 +23,7 @@ use futures::StreamExt;
 // use reth::{revm::inspector::JournalExt, rpc::types::TransactionReceipt};
 use reth_db::mdbx::DatabaseArguments;
 use reth_ethereum::{
-    evm::revm::{context::ContextTr as _, inspector::JournalExt as _},
+    evm::revm::inspector::JournalExt as _,
     network::{
         Peers,
         api::{
@@ -487,13 +487,12 @@ impl GenesisSetup {
         let mut evm = setup_tempo_evm();
 
         {
-            let block = evm.block.clone();
-            let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
-            let mut provider = EvmPrecompileStorageProvider::new_max_gas(evm_internals, 1);
+            let ctx = evm.ctx_mut();
+            let evm_internals = EvmInternals::new(&mut ctx.journaled_state, &ctx.block);
+            let mut provider = EvmPrecompileStorageProvider::new_max_gas(evm_internals, &ctx.cfg);
 
             // TODO(janis): figure out the owner of the test-genesis.json
-            let mut validator_config =
-                ValidatorConfig::new(VALIDATOR_CONFIG_ADDRESS, &mut provider);
+            let mut validator_config = ValidatorConfig::new(&mut provider);
             validator_config
                 .initialize(admin())
                 .wrap_err("Failed to initialize validator config")
@@ -502,7 +501,7 @@ impl GenesisSetup {
             for (i, (peer, addr)) in peers.iter_pairs().enumerate() {
                 validator_config
                     .add_validator(
-                        &admin(),
+                        admin(),
                         IValidatorConfig::addValidatorCall {
                             newValidatorAddress: validator(i as u32),
                             publicKey: peer.encode().freeze().as_ref().try_into().unwrap(),
