@@ -161,11 +161,7 @@ impl Order {
         OrderAmount::write_at_offset_packed(
             storage,
             order_base_slot,
-            crate::storage::FieldLocation::new(
-                __packing_order::REMAINING_SLOT,
-                __packing_order::REMAINING_OFFSET,
-                __packing_order::REMAINING_BYTES,
-            ),
+            __packing_order::REMAINING_LOC,
             new_remaining,
         )?;
         Ok(())
@@ -180,11 +176,7 @@ impl Order {
         OrderId::write_at_offset_packed(
             storage,
             order_base_slot,
-            crate::storage::FieldLocation::new(
-                __packing_order::NEXT_SLOT,
-                __packing_order::NEXT_OFFSET,
-                __packing_order::NEXT_BYTES,
-            ),
+            __packing_order::NEXT_LOC,
             new_next,
         )?;
         Ok(())
@@ -199,11 +191,7 @@ impl Order {
         OrderId::write_at_offset_packed(
             storage,
             order_base_slot,
-            crate::storage::FieldLocation::new(
-                __packing_order::PREV_SLOT,
-                __packing_order::PREV_OFFSET,
-                __packing_order::PREV_BYTES,
-            ),
+            __packing_order::PREV_LOC,
             new_prev,
         )?;
         Ok(())

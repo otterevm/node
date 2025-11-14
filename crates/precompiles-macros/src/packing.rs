@@ -25,9 +25,15 @@ impl PackingConstants {
     }
 
     /// The `_SLOT` suffixed constant (usize slot, used by `Storable` macro)
-    pub(crate) fn slot_usize(&self) -> Ident {
+    fn slot_usize(&self) -> Ident {
         let span = proc_macro2::Span::call_site();
         Ident::new(&format!("{}_SLOT", self.0), span)
+    }
+
+    /// The `_LOC` suffixed constant
+    fn location(&self) -> Ident {
+        let span = proc_macro2::Span::call_site();
+        Ident::new(&format!("{}_LOC", self.0), span)
     }
 
     /// The `_OFFSET` constant identifier
@@ -36,20 +42,14 @@ impl PackingConstants {
         Ident::new(&format!("{}_OFFSET", self.0), span)
     }
 
-    /// The `_BYTES` constant identifier
-    pub(crate) fn bytes(&self) -> Ident {
-        let span = proc_macro2::Span::call_site();
-        Ident::new(&format!("{}_BYTES", self.0), span)
+    /// Returns the constant identifiers required by both macros (slot, offset)
+    pub(crate) fn into_tuple(self) -> (Ident, Ident) {
+        (self.slot(), self.offset())
     }
 
-    /// Returns all three constant identifiers as a tuple (slot, offset, bytes)
-    pub(crate) fn into_tuple(self) -> (Ident, Ident, Ident) {
-        (self.slot(), self.offset(), self.bytes())
-    }
-
-    /// Returns all three constant identifiers as a tuple (slot_usize, offset, bytes)
-    pub(crate) fn into_tuple_usize(self) -> (Ident, Ident, Ident) {
-        (self.slot_usize(), self.offset(), self.bytes())
+    /// Returns the constant identifiers only required by `Storable` (slot_usize, loc)
+    pub(crate) fn storable(&self) -> (Ident, Ident) {
+        (self.slot_usize(), self.location())
     }
 }
 
@@ -172,13 +172,14 @@ where
 /// This function generates compile-time constants (`<FIELD>`, `<FIELD>_OFFSET`, `<FIELD>_BYTES`)
 /// for slot assignments, offsets, and byte sizes based on the layout IR using field-name-based naming.
 /// Slot constants (`<FIELD>`) are generated as `U256` types, while offset and bytes constants use `usize`.
-pub(crate) fn gen_constants_from_ir(fields: &[LayoutField<'_>]) -> TokenStream {
+pub(crate) fn gen_constants_from_ir(fields: &[LayoutField<'_>], gen_location: bool) -> TokenStream {
     let mut constants = TokenStream::new();
 
     for field in fields {
         let ty = field.ty;
         let consts = PackingConstants::new(field.name);
-        let (slot_const, offset_const, bytes_const) = consts.into_tuple();
+        let (slot_usize, loc_const) = consts.storable();
+        let (slot_const, offset_const) = consts.into_tuple();
 
         // Generate byte count constants for each field
         let bytes_expr = quote! { <#ty as crate::storage::StorableType>::BYTES };
@@ -210,7 +211,7 @@ pub(crate) fn gen_constants_from_ir(fields: &[LayoutField<'_>]) -> TokenStream {
                         (slot_expr, quote! { 0 })
                     } else {
                         // If previous was also auto, use packing logic
-                        let (prev_slot, prev_offset, _) =
+                        let (prev_slot, prev_offset) =
                             PackingConstants::new(prev_field.name).into_tuple();
                         let (slot_expr, offset_expr) = gen_slot_packing_logic(
                             prev_field.ty,
@@ -228,9 +229,24 @@ pub(crate) fn gen_constants_from_ir(fields: &[LayoutField<'_>]) -> TokenStream {
         // Generate slot constant without suffix (U256) and offset constant (usize)
         constants.extend(quote! {
             pub const #slot_const: ::alloy::primitives::U256 = #slot_expr;
-            pub const #bytes_const: usize = #bytes_expr;
             pub const #offset_const: usize = #offset_expr;
         });
+        #[cfg(debug_assertions)]
+        {
+            let bytes_const = format_ident!("{slot_const}_BYTES");
+            constants.extend(quote! {
+                pub const #bytes_const: usize = #bytes_expr;
+            });
+        }
+
+        // For the `Storable` macro, also generate the usize version of the slot, and the location constant
+        if gen_location {
+            constants.extend(quote! {
+                pub const #slot_usize: usize = #slot_const.as_limbs()[0] as usize;
+                pub const #loc_const: crate::storage::packing::FieldLocation =
+                    crate::storage::packing::FieldLocation::new(#slot_usize, #offset_const, #bytes_expr);
+            });
+        }
     }
 
     constants

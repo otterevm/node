@@ -27,17 +27,17 @@ pub struct FieldLocation {
     /// Offset in bytes within the target slot
     pub offset_bytes: usize,
     /// Size of the field in bytes
-    pub size_bytes: usize,
+    pub size: usize,
 }
 
 impl FieldLocation {
     /// Create a new field location
     #[inline]
-    pub const fn new(offset_slots: usize, offset_bytes: usize, size_bytes: usize) -> Self {
+    pub const fn new(offset_slots: usize, offset_bytes: usize, size: usize) -> Self {
         Self {
             offset_slots,
             offset_bytes,
-            size_bytes,
+            size,
         }
     }
 }
@@ -191,7 +191,7 @@ where
 {
     let slot = struct_base_slot + U256::from(location.offset_slots);
     let slot_value = storage.sload(slot)?;
-    extract_packed_value::<1, T>(slot_value, location.offset_bytes, location.size_bytes)
+    extract_packed_value::<1, T>(slot_value, location.offset_bytes, location.size)
 }
 
 /// Write a packed field to a struct at a given base slot.
@@ -207,8 +207,7 @@ where
 {
     let slot = struct_base_slot + U256::from(location.offset_slots);
     let current = storage.sload(slot)?;
-    let new_value =
-        insert_packed_value(current, value, location.offset_bytes, location.size_bytes)?;
+    let new_value = insert_packed_value(current, value, location.offset_bytes, location.size)?;
     storage.sstore(slot, new_value)
 }
 
@@ -223,7 +222,7 @@ where
 {
     let slot = struct_base_slot + U256::from(location.offset_slots);
     let current = storage.sload(slot)?;
-    let cleared = zero_packed_value(current, location.offset_bytes, location.size_bytes)?;
+    let cleared = zero_packed_value(current, location.offset_bytes, location.size)?;
     storage.sstore(slot, cleared)
 }
 

@@ -171,7 +171,7 @@ pub(crate) fn gen_getters_and_setters(
 /// Returns the slots module containing only constants and collision detection functions
 pub(crate) fn gen_slots_module(allocated_fields: &[LayoutField<'_>]) -> proc_macro2::TokenStream {
     // Generate constants and collision check functions
-    let constants = packing::gen_constants_from_ir(allocated_fields);
+    let constants = packing::gen_constants_from_ir(allocated_fields, false);
     let collision_checks = gen_collision_checks(allocated_fields);
 
     quote! {

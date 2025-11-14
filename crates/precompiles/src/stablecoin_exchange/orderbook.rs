@@ -153,11 +153,7 @@ impl Orderbook {
         BestOrders::write_at_offset_packed(
             contract,
             orderbook_base_slot,
-            crate::storage::FieldLocation::new(
-                __packing_orderbook::BEST_BID_TICK_SLOT,
-                __packing_orderbook::BEST_BID_TICK_OFFSET,
-                __packing_orderbook::BEST_BID_TICK_BYTES,
-            ),
+            __packing_orderbook::BEST_BID_TICK_LOC,
             new_best_bid,
         )?;
         Ok(())
@@ -173,11 +169,7 @@ impl Orderbook {
         BestOrders::write_at_offset_packed(
             contract,
             orderbook_base_slot,
-            crate::storage::FieldLocation::new(
-                __packing_orderbook::BEST_ASK_TICK_SLOT,
-                __packing_orderbook::BEST_ASK_TICK_OFFSET,
-                __packing_orderbook::BEST_ASK_TICK_BYTES,
-            ),
+            __packing_orderbook::BEST_ASK_TICK_LOC,
             new_best_ask,
         )?;
         Ok(())
