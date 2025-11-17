@@ -8,7 +8,7 @@ pub use tempo_contracts::precompiles::{
 };
 
 use crate::{
-    ACCOUNT_KEYCHAIN_ADDRESS, LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
+    LINKING_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     account_keychain::{AccountKeychain, getTransactionKeyCall},
     error::{Result, TempoPrecompileError},
     storage::PrecompileStorageProvider,
@@ -784,10 +784,10 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     /// spending limits if the transaction is using an access key.
     fn check_spending_limit(&mut self, account: &Address, amount: U256) -> Result<()> {
         // Create AccountKeychain instance to read transaction key
-        let mut keychain = AccountKeychain::new(self.storage, ACCOUNT_KEYCHAIN_ADDRESS);
+        let mut keychain = AccountKeychain::new(self.storage);
 
         // Get the transaction key for this account
-        let transaction_key = keychain.get_transaction_key(getTransactionKeyCall {}, account)?;
+        let transaction_key = keychain.get_transaction_key(getTransactionKeyCall {}, *account)?;
 
         // If using main key (Address::ZERO), no spending limits apply
         if transaction_key == Address::ZERO {
@@ -795,7 +795,7 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         }
 
         // Verify and update spending limits for this access key
-        keychain.verify_and_update_spending(account, &transaction_key, &self.address, amount)?;
+        keychain.verify_and_update_spending(*account, transaction_key, self.address, amount)?;
 
         Ok(())
     }

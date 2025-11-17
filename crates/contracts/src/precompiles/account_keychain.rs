@@ -1,4 +1,6 @@
-pub use IAccountKeychain::IAccountKeychainErrors as AccountKeychainError;
+pub use IAccountKeychain::{
+    IAccountKeychainErrors as AccountKeychainError, IAccountKeychainEvents as AccountKeychainEvent,
+};
 
 use alloy::sol;
 

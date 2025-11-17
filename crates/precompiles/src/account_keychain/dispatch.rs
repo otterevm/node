@@ -22,7 +22,7 @@ impl<S: PrecompileStorageProvider> Precompile for AccountKeychain<'_, S> {
                 mutate_void::<IAccountKeychain::authorizeKeyCall>(
                     calldata,
                     msg_sender,
-                    |sender, call| self.authorize_key(call, &sender),
+                    |sender, call| self.authorize_key(sender, call),
                 )
             }
 
@@ -30,7 +30,7 @@ impl<S: PrecompileStorageProvider> Precompile for AccountKeychain<'_, S> {
                 mutate_void::<IAccountKeychain::revokeKeyCall>(
                     calldata,
                     msg_sender,
-                    |sender, call| self.revoke_key(call, &sender),
+                    |sender, call| self.revoke_key(sender, call),
                 )
             }
 
@@ -38,7 +38,7 @@ impl<S: PrecompileStorageProvider> Precompile for AccountKeychain<'_, S> {
                 mutate_void::<IAccountKeychain::updateSpendingLimitCall>(
                     calldata,
                     msg_sender,
-                    |sender, call| self.update_spending_limit(call, &sender),
+                    |sender, call| self.update_spending_limit(sender, call),
                 )
             }
 
@@ -54,7 +54,7 @@ impl<S: PrecompileStorageProvider> Precompile for AccountKeychain<'_, S> {
 
             IAccountKeychain::getTransactionKeyCall::SELECTOR => {
                 view::<IAccountKeychain::getTransactionKeyCall>(calldata, |call| {
-                    self.get_transaction_key(call, &msg_sender)
+                    self.get_transaction_key(call, msg_sender)
                 })
             }
 

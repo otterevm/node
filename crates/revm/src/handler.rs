@@ -683,10 +683,7 @@ where
                 let mut storage_provider =
                     EvmPrecompileStorageProvider::new_max_gas(internals, cfg);
 
-                let mut keychain = AccountKeychain::new(
-                    &mut storage_provider,
-                    tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
-                );
+                let mut keychain = AccountKeychain::new(&mut storage_provider);
 
                 let access_key_addr = key_auth.key_id;
 
@@ -718,7 +715,7 @@ where
 
                 // Call precompile to authorize the key (same phase as nonce increment)
                 keychain
-                    .authorize_key(authorize_call, root_account)
+                    .authorize_key(*root_account, authorize_call)
                     .map_err(|err| match err {
                         TempoPrecompileError::Fatal(err) => EVMError::Custom(err),
                         err => TempoInvalidTransaction::AccessKeyAuthorizationFailed {
@@ -775,18 +772,15 @@ where
                 .unwrap_or(false);
 
             // Always need to set the transaction key for Keychain signatures
-            let mut keychain = AccountKeychain::new(
-                &mut storage_provider,
-                tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
-            );
+            let mut keychain = AccountKeychain::new(&mut storage_provider);
 
             if !is_authorizing_this_key {
                 // Not authorizing this key in the same transaction, so validate it exists now
                 // Validate that user_address has authorized this access key in the keychain
                 keychain
                     .validate_keychain_authorization(
-                        user_address,
-                        &access_key_addr,
+                        *user_address,
+                        access_key_addr,
                         block.timestamp().to::<u64>(),
                     )
                     .map_err(|e| {
@@ -802,7 +796,7 @@ where
             // This marks that the current transaction is using an access key
             // The TIP20 precompile will read this during execution to enforce spending limits
             keychain
-                .set_transaction_key(user_address, &access_key_addr)
+                .set_transaction_key(*user_address, access_key_addr)
                 .map_err(|e| EVMError::Custom(e.to_string()))?;
         }
 
@@ -900,12 +894,9 @@ where
         // Clear the transaction key after transaction execution completes
         // This ensures the transaction key doesn't persist across transactions
         // The transaction key is used to track which key (main or access) authorized the transaction
-        let mut keychain = AccountKeychain::new(
-            &mut storage_provider,
-            tempo_precompiles::ACCOUNT_KEYCHAIN_ADDRESS,
-        );
+        let mut keychain = AccountKeychain::new(&mut storage_provider);
         keychain
-            .set_transaction_key(&tx_caller, &Address::ZERO)
+            .set_transaction_key(tx_caller, Address::ZERO)
             .map_err(|e| EVMError::Custom(e.to_string()))?;
 
         Ok(())
