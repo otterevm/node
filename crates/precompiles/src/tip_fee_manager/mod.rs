@@ -8,7 +8,7 @@ pub use tempo_contracts::precompiles::{
 };
 
 use crate::{
-    DEFAULT_FEE_TOKEN,
+    DEFAULT_FEE_TOKEN, LINKING_USD_ADDRESS,
     error::{Result, TempoPrecompileError},
     storage::{Mapping, PrecompileStorageProvider, Slot, VecSlotExt},
     tip_fee_manager::amm::Pool,
@@ -106,6 +106,11 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         call: IFeeManager::setUserTokenCall,
     ) -> Result<()> {
         if !is_tip20(call.token) {
+            return Err(FeeManagerError::invalid_token().into());
+        }
+
+        // Forbid setting LinkingUSD as the user's fee token (only after Moderato hardfork)
+        if self.storage.spec().is_moderato() && call.token == LINKING_USD_ADDRESS {
             return Err(FeeManagerError::invalid_token().into());
         }
 
@@ -261,6 +266,9 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         let tokens_with_fees = TokensWithFees::new(slots::TOKENS_WITH_FEES);
         while let Some(token) = tokens_with_fees.pop(self)? {
             tokens.push(token);
+            if self.storage.spec().is_moderato() {
+                self.sstore_token_in_fees_array(token, false)?;
+            }
         }
 
         Ok(tokens)
@@ -333,6 +341,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
 
 #[cfg(test)]
 mod tests {
+    use tempo_chainspec::hardfork::TempoHardfork;
     use tempo_contracts::precompiles::TIP20Error;
 
     use super::*;
@@ -401,6 +410,56 @@ mod tests {
 
         let call = IFeeManager::userTokensCall { user };
         assert_eq!(fee_manager.user_tokens(call)?, token);
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_user_token_cannot_be_linking_usd_post_moderato() -> eyre::Result<()> {
+        // Test with Moderato hardfork (validation should be enforced)
+        let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
+        let user = Address::random();
+
+        // Initialize LinkingUSD first
+        initialize_linking_usd(&mut storage, user).unwrap();
+
+        let mut fee_manager = TipFeeManager::new(&mut storage);
+
+        // Try to set LinkingUSD as user token - should fail
+        let call = IFeeManager::setUserTokenCall {
+            token: LINKING_USD_ADDRESS,
+        };
+        let result = fee_manager.set_user_token(user, call);
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::FeeManagerError(
+                FeeManagerError::InvalidToken(_)
+            ))
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_user_token_allows_linking_usd_pre_moderato() -> eyre::Result<()> {
+        // Test with Adagio (pre-Moderato) - validation should not be enforced
+        let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
+        let user = Address::random();
+
+        // Initialize LinkingUSD first
+        initialize_linking_usd(&mut storage, user).unwrap();
+
+        let mut fee_manager = TipFeeManager::new(&mut storage);
+
+        // Try to set LinkingUSD as user token - should succeed pre-Moderato
+        let call = IFeeManager::setUserTokenCall {
+            token: LINKING_USD_ADDRESS,
+        };
+        let result = fee_manager.set_user_token(user, call);
+
+        // Pre-Moderato: should be allowed to set LinkingUSD as user token
+        assert!(result.is_ok());
+
         Ok(())
     }
 

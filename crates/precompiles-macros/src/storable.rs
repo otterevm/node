@@ -172,22 +172,59 @@ fn gen_packing_module_from_ir(fields: &[LayoutField<'_>], mod_ident: &Ident) -> 
     }
 }
 
+/// Helper to compute prev and next slot constant references for a field at a given index.
+fn get_neighbor_slot_refs(
+    idx: usize,
+    indexed_fields: &[(usize, &Ident, &Type)],
+    packing: &Ident,
+) -> (Option<TokenStream>, Option<TokenStream>) {
+    let prev_slot_ref = if idx > 0 {
+        let prev_name = indexed_fields[idx - 1].1;
+        let prev_slot = PackingConstants::new(prev_name).location();
+        Some(quote! { #packing::#prev_slot.offset_slots })
+    } else {
+        None
+    };
+
+    let next_slot_ref = if idx + 1 < indexed_fields.len() {
+        let next_name = indexed_fields[idx + 1].1;
+        let next_slot = PackingConstants::new(next_name).location();
+        Some(quote! { #packing::#next_slot.offset_slots })
+    } else {
+        None
+    };
+
+    (prev_slot_ref, next_slot_ref)
+}
+
 /// Generate the `fn load()` implementation with unpacking logic.
 /// Accepts indexed fields where the usize is the original field index in the struct.
 fn gen_load_impl(indexed_fields: &[(usize, &Ident, &Type)], packing: &Ident) -> TokenStream {
-    let load_fields = indexed_fields.iter().map(|(_, name, ty)| {
-        let loc_const = PackingConstants::new(name).location();
-        let layout_ctx =
-            packing::gen_layout_ctx_expr(ty, false, quote! { #packing::#loc_const.offset_bytes });
+    let load_fields = indexed_fields
+        .iter()
+        .enumerate()
+        .map(|(idx, (_orig_idx, name, ty))| {
+            let (prev_slot_const_ref, next_slot_const_ref) =
+                get_neighbor_slot_refs(idx, indexed_fields, packing);
 
-        quote! {
-            let #name = <#ty>::load(
-                storage,
-                base_slot + ::alloy::primitives::U256::from(#packing::#loc_const.offset_slots),
-                #layout_ctx
-            )?;
-        }
-    });
+            let loc_const = PackingConstants::new(name).location();
+            let layout_ctx = packing::gen_layout_ctx_expr(
+                ty,
+                false,
+                quote! { #packing::#loc_const.offset_slots },
+                quote! { #packing::#loc_const.offset_bytes },
+                prev_slot_const_ref,
+                next_slot_const_ref,
+            );
+
+            quote! {
+                let #name = <#ty>::load(
+                    storage,
+                    base_slot + ::alloy::primitives::U256::from(#packing::#loc_const.offset_slots),
+                    #layout_ctx
+                )?;
+            }
+        });
 
     quote! {
         #(#load_fields)*
@@ -197,10 +234,19 @@ fn gen_load_impl(indexed_fields: &[(usize, &Ident, &Type)], packing: &Ident) -> 
 /// Generate the `fn store()` implementation with packing logic.
 /// Accepts indexed fields where the usize is the original field index in the struct.
 fn gen_store_impl(indexed_fields: &[(usize, &Ident, &Type)], packing: &Ident) -> TokenStream {
-    let store_fields = indexed_fields.iter().map(|(_, name, ty)| {
+    let store_fields = indexed_fields.iter().enumerate().map(|(idx, (_orig_idx, name, ty))| {
+        let (prev_slot_const_ref, next_slot_const_ref) =
+            get_neighbor_slot_refs(idx, indexed_fields, packing);
+
         let loc_const = PackingConstants::new(name).location();
-        let layout_ctx =
-            packing::gen_layout_ctx_expr(ty, false, quote! { #packing::#loc_const.offset_bytes });
+        let layout_ctx = packing::gen_layout_ctx_expr(
+            ty,
+            false,
+            quote! { #packing::#loc_const.offset_slots },
+            quote! { #packing::#loc_const.offset_bytes },
+            prev_slot_const_ref,
+            next_slot_const_ref,
+        );
 
         quote! {{
             let target_slot = base_slot + ::alloy::primitives::U256::from(#packing::#loc_const.offset_slots);

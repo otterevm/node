@@ -59,6 +59,15 @@ pub(crate) enum SlotAssignment {
     },
 }
 
+impl SlotAssignment {
+    pub(crate) fn ref_slot(&self) -> &U256 {
+        match self {
+            Self::Manual(slot) => slot,
+            Self::Auto { base_slot } => base_slot,
+        }
+    }
+}
+
 /// A single field in the storage layout with computed slot information.
 #[derive(Debug)]
 pub(crate) struct LayoutField<'a> {
@@ -70,8 +79,6 @@ pub(crate) struct LayoutField<'a> {
     pub kind: FieldKind<'a>,
     /// The assigned storage slot for this field (or base for const-eval chain)
     pub assigned_slot: SlotAssignment,
-    /// Original field index in the struct
-    pub index: usize,
 }
 
 /// Helper trait to extract field information needed for layout IR construction.
@@ -104,44 +111,25 @@ where
     F: AllocInfoExt,
 {
     let mut result = Vec::with_capacity(fields.len());
-    let mut last_auto_slot = U256::ZERO;
+    let mut current_base_slot = U256::ZERO;
 
-    for (index, field) in fields.iter().enumerate() {
+    for field in fields.iter() {
         let (name, ty, manual_slot, base_slot) = field.alloc_info();
         let kind = classify_field_type(ty)?;
 
         // Explicit fixed slot, doesn't affect auto-assignment chain
         let assigned_slot = if let Some(explicit) = manual_slot {
             SlotAssignment::Manual(explicit)
-        }
-        // Explicit base slot, resets auto-assignment chain
-        else if let Some(base) = base_slot {
-            let assignment = SlotAssignment::Manual(base);
-            last_auto_slot = base + U256::ONE;
-            assignment
-        }
-        // Auto-assignment with packing support
-        else {
-            let base_slot = if index == 0 {
-                let slot = last_auto_slot;
-                last_auto_slot += U256::ONE;
-                slot
-            } else {
-                let prev: &LayoutField<'_> = &result[index - 1];
-
-                // If previous also was auto-assigned, reuse base slot (becomes packing candidate)
-                if let SlotAssignment::Auto { base_slot } = &prev.assigned_slot {
-                    *base_slot
-                }
-                // Otherwise, start new slot
-                else {
-                    let slot = last_auto_slot;
-                    last_auto_slot += U256::ONE;
-                    slot
-                }
-            };
-
-            SlotAssignment::Auto { base_slot }
+        } else if let Some(new_base) = base_slot {
+            // Explicit base slot, resets auto-assignment chain
+            current_base_slot = new_base;
+            SlotAssignment::Auto {
+                base_slot: new_base,
+            }
+        } else {
+            SlotAssignment::Auto {
+                base_slot: current_base_slot,
+            }
         };
 
         result.push(LayoutField {
@@ -149,7 +137,6 @@ where
             ty,
             kind,
             assigned_slot,
-            index,
         });
     }
 
@@ -163,6 +150,7 @@ where
 /// Slot constants (`<FIELD>`) are generated as `U256` types, while offset and bytes constants use `usize`.
 pub(crate) fn gen_constants_from_ir(fields: &[LayoutField<'_>], gen_location: bool) -> TokenStream {
     let mut constants = TokenStream::new();
+    let mut current_base_slot: Option<&LayoutField<'_>> = None;
 
     for field in fields {
         let ty = field.ty;
@@ -183,34 +171,34 @@ pub(crate) fn gen_constants_from_ir(fields: &[LayoutField<'_>], gen_location: bo
             }
             // Auto-assignment computes slot/offset using const expressions
             SlotAssignment::Auto { base_slot, .. } => {
-                // First field always starts at slot 0, offset 0
-                if field.index == 0 {
-                    let slot_expr = quote! { ::alloy::primitives::U256::ZERO };
-                    (slot_expr, quote! { 0 })
-                }
-                // Subsequent fields compute their slots based on the previous field
-                else {
-                    let prev_field = &fields[field.index - 1];
-                    if matches!(prev_field.assigned_slot, SlotAssignment::Manual(_)) {
-                        // If previous was manual and current is auto, use base slot directly
-                        let limbs = *base_slot.as_limbs();
-                        let slot_expr =
-                            quote! { ::alloy::primitives::U256::from_limbs([#(#limbs),*]) };
-                        (slot_expr, quote! { 0 })
-                    } else {
-                        // If previous was also auto, use packing logic
+                let output = if let Some(current_base) = current_base_slot {
+                    // Fields that share the same base compute their slots based on the previous field
+                    if current_base.assigned_slot.ref_slot() == field.assigned_slot.ref_slot() {
                         let (prev_slot, prev_offset) =
-                            PackingConstants::new(prev_field.name).into_tuple();
-                        let (slot_expr, offset_expr) = gen_slot_packing_logic(
-                            prev_field.ty,
+                            PackingConstants::new(current_base.name).into_tuple();
+                        gen_slot_packing_logic(
+                            current_base.ty,
                             field.ty,
                             quote! { #prev_slot },
                             quote! { #prev_offset },
-                        );
-
-                        (slot_expr, offset_expr)
+                        )
+                    }
+                    // If a new base is adopted, start from the base slot and offset 0
+                    else {
+                        let limbs = *base_slot.as_limbs();
+                        (
+                            quote! { ::alloy::primitives::U256::from_limbs([#(#limbs),*]) },
+                            quote! { 0 },
+                        )
                     }
                 }
+                // First field always starts at slot 0 and offset 0
+                else {
+                    (quote! { ::alloy::primitives::U256::ZERO }, quote! { 0 })
+                };
+                // update cache
+                current_base_slot = Some(field);
+                output
             }
         };
 
@@ -303,25 +291,68 @@ pub(crate) fn gen_slot_packing_logic(
 /// Generate a `LayoutCtx` expression for accessing a field.
 ///
 /// This helper unifies the logic for choosing between `LayoutCtx::Full` and
-/// `LayoutCtx::Packed` based on whether the field is manually assigned and
-/// whether it's packable.
+/// `LayoutCtx::Packed` based on compile-time slot comparison with neighboring fields.
+///
+/// A field uses `Packed` if it shares a slot with any neighboring field.
 pub(crate) fn gen_layout_ctx_expr(
     ty: &Type,
     is_manual_slot: bool,
+    slot_const_ref: TokenStream,
     offset_const_ref: TokenStream,
+    prev_slot_const_ref: Option<TokenStream>,
+    next_slot_const_ref: Option<TokenStream>,
 ) -> TokenStream {
-    if is_manual_slot {
-        quote! { crate::storage::LayoutCtx::Full }
-    } else {
+    if !is_manual_slot && (prev_slot_const_ref.is_some() || next_slot_const_ref.is_some()) {
+        // Check if this field shares a slot with prev or next field
+        let prev_check = prev_slot_const_ref.map(|prev| quote! { #slot_const_ref == #prev });
+        let next_check = next_slot_const_ref.map(|next| quote! { #slot_const_ref == #next });
+
+        let shares_slot_check = match (prev_check, next_check) {
+            (Some(prev), Some(next)) => quote! { (#prev || #next) },
+            (Some(prev), None) => prev,
+            (None, Some(next)) => next,
+            (None, None) => unreachable!(),
+        };
+
         quote! {
             {
-                if <#ty as crate::storage::StorableType>::IS_PACKABLE {
+                if #shares_slot_check && <#ty as crate::storage::StorableType>::IS_PACKABLE {
                     crate::storage::LayoutCtx::Packed(#offset_const_ref)
                 } else {
                     crate::storage::LayoutCtx::Full
                 }
             }
         }
+    } else {
+        quote! { crate::storage::LayoutCtx::Full }
+    }
+}
+
+// TODO(rusowsky): fully embrace `fn gen_layout_ctx_expr` to reduce gas usage.
+// Note that this requires a hardfork and must be properly coordinated.
+
+/// Generate a `LayoutCtx` expression for accessing a field.
+///
+/// Despite we could deterministically know if a field shares its slot with a neighbour, we
+/// treat all primitive types as packable for backward-compatibility reasons.
+pub(crate) fn gen_layout_ctx_expr_inefficient(
+    ty: &Type,
+    is_manual_slot: bool,
+    _slot_const_ref: TokenStream,
+    offset_const_ref: TokenStream,
+    _prev_slot_const_ref: Option<TokenStream>,
+    _next_slot_const_ref: Option<TokenStream>,
+) -> TokenStream {
+    if !is_manual_slot {
+        quote! {
+            if <#ty as crate::storage::StorableType>::IS_PACKABLE {
+                crate::storage::LayoutCtx::Packed(#offset_const_ref)
+            } else {
+                crate::storage::LayoutCtx::Full
+            }
+        }
+    } else {
+        quote! { crate::storage::LayoutCtx::Full }
     }
 }
 
