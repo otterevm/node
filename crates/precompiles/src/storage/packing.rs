@@ -788,6 +788,109 @@ mod tests {
         assert_eq!(extract_packed_value::<1, u8>(slot, 10, 1).unwrap(), 0xff);
     }
 
+    // -- SLOT PACKED FIELD TESTS ------------------------------------------
+
+    use crate::storage::{
+        PrecompileStorageProvider, StorageOps, hashmap::HashMapStorageProvider, types::SlotPacked,
+    };
+
+    /// Test helper that implements StorageOps for integration tests
+    struct TestContract<'a, S> {
+        address: Address,
+        storage: &'a mut S,
+    }
+
+    impl<'a, S: PrecompileStorageProvider> StorageOps for TestContract<'a, S> {
+        fn sstore(&mut self, slot: U256, value: U256) -> Result<()> {
+            self.storage.sstore(self.address, slot, value)
+        }
+
+        fn sload(&mut self, slot: U256) -> Result<U256> {
+            self.storage.sload(self.address, slot)
+        }
+    }
+
+    /// Helper to create a test contract with fresh storage
+    fn setup_test_contract<'a>(
+        storage: &'a mut HashMapStorageProvider,
+    ) -> TestContract<'a, HashMapStorageProvider> {
+        TestContract {
+            address: Address::random(),
+            storage,
+        }
+    }
+
+    #[test]
+    fn test_packed_at_multiple_types() -> Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut contract = setup_test_contract(&mut storage);
+        let struct_base = U256::from(0x2000);
+
+        // Pack multiple types in same slot: bool(1) + u64(8) + u128(16)
+        let flag = true;
+        let timestamp: u64 = 1234567890;
+        let amount: u128 = 999888777666;
+
+        SlotPacked::<bool>::new_at_offset(struct_base, 0, 0).write(&mut contract, flag)?;
+        SlotPacked::<u64>::new_at_offset(struct_base, 0, 1).write(&mut contract, timestamp)?;
+        SlotPacked::<u128>::new_at_offset(struct_base, 0, 9).write(&mut contract, amount)?;
+
+        // Verify all packed correctly
+        let read_flag = SlotPacked::<bool>::new_at_offset(struct_base, 0, 0).read(&mut contract)?;
+        let read_time = SlotPacked::<u64>::new_at_offset(struct_base, 0, 1).read(&mut contract)?;
+        let read_amount =
+            SlotPacked::<u128>::new_at_offset(struct_base, 0, 9).read(&mut contract)?;
+
+        assert_eq!(read_flag, flag);
+        assert_eq!(read_time, timestamp);
+        assert_eq!(read_amount, amount);
+
+        // Clear the middle one
+        SlotPacked::<u64>::new_at_offset(struct_base, 0, 1).delete(&mut contract)?;
+
+        // Verify
+        let read_flag = SlotPacked::<bool>::new_at_offset(struct_base, 0, 0).read(&mut contract)?;
+        let read_time = SlotPacked::<u64>::new_at_offset(struct_base, 0, 1).read(&mut contract)?;
+        let read_amount =
+            SlotPacked::<u128>::new_at_offset(struct_base, 0, 9).read(&mut contract)?;
+
+        assert_eq!(read_flag, flag);
+        assert_eq!(read_time, 0);
+        assert_eq!(read_amount, amount);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_packed_at_different_slots() -> Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let mut contract = setup_test_contract(&mut storage);
+        let struct_base = U256::from(0x4000);
+
+        // Field in slot 0
+        let addr = Address::random();
+        SlotPacked::<Address>::new_at_offset(struct_base, 0, 0).write(&mut contract, addr)?;
+
+        // Field in slot 1
+        let value = U256::from(0xdeadbeefu32);
+        SlotPacked::<U256>::new_at_offset(struct_base, 1, 0).write(&mut contract, value)?;
+
+        // Field in slot 2
+        let flag = false;
+        SlotPacked::<bool>::new_at_offset(struct_base, 2, 0).write(&mut contract, flag)?;
+
+        // Verify all independent
+        let read_addr =
+            SlotPacked::<Address>::new_at_offset(struct_base, 0, 0).read(&mut contract)?;
+        let read_val = SlotPacked::<U256>::new_at_offset(struct_base, 1, 0).read(&mut contract)?;
+        let read_flag = SlotPacked::<bool>::new_at_offset(struct_base, 2, 0).read(&mut contract)?;
+
+        assert_eq!(read_addr, addr);
+        assert_eq!(read_val, value);
+        assert_eq!(read_flag, flag);
+
+        Ok(())
+    }
     // -- PROPERTY TESTS -----------------------------------------------------------
 
     use proptest::prelude::*;
@@ -995,10 +1098,6 @@ mod tests {
                 prop_assert_eq!(extracted, expected_flag, "Flag at offset {} mismatch", i);
             }
         }
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(500))]
 
         #[test]
         fn proptest_element_slot_offset_consistency_u8(
