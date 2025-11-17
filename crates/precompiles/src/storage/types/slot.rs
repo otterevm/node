@@ -30,6 +30,12 @@ pub struct Slot<T> {
     _phantom: PhantomData<T>,
 }
 
+impl<T> Default for Slot<T> {
+    fn default() -> Self {
+        Self::new(U256::ZERO)
+    }
+}
+
 impl<T> Slot<T> {
     /// Creates a new `Slot` with the given slot number.
     ///
@@ -38,6 +44,17 @@ impl<T> Slot<T> {
     pub const fn new(slot: U256) -> Self {
         Self {
             slot,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Creates a new `Slot` with the given base slot number with the given offset.
+    ///
+    /// This is convenience method for accessing struct fields.
+    #[inline]
+    pub const fn new_at_offset(base_slot: U256, offset_slots: usize) -> Self {
+        Self {
+            slot: base_slot.saturating_add(U256::from_limbs([offset_slots as u64, 0, 0, 0])),
             _phantom: PhantomData,
         }
     }
@@ -104,143 +121,134 @@ impl<T> Slot<T> {
     {
         T::delete(storage, self.slot, crate::storage::types::LayoutCtx::Full)
     }
+}
 
-    /// Reads a value from a field within a struct at a runtime base slot.
-    ///
-    /// This enables accessing non-packed fields within structs when you have
-    /// the struct's base slot at runtime and know the field's offset.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // For: mapping(bytes32 => Orderbook) books, where Orderbook.base is at field offset 0
-    /// let orderbook_base = mapping_slot(pair_key, BooksSlot::SLOT);
-    /// let base_address = Slot::<Address, DummySlot>::read_at_offset(
-    ///     &mut storage,
-    ///     orderbook_base,
-    ///     0  // field offset
-    /// )?;
-    /// ```
-    #[inline]
-    pub fn read_at_offset<S: StorageOps, const N: usize>(
-        storage: &mut S,
-        struct_base_slot: U256,
-        field_offset_slots: usize,
-    ) -> Result<T>
-    where
-        T: Storable<N>,
-    {
-        let slot = struct_base_slot + U256::from(field_offset_slots);
-        T::load(storage, slot, crate::storage::types::LayoutCtx::Full)
-    }
+/// Type-safe wrapper for a type packed in an EVM storage slot.
+///
+/// # Type Parameters
+///
+/// - `T`: The Rust type stored in this slot (must implement `Storable<N>`)
+/// - `N`: In practice `N = 1` (validated with debug assertions)
+///
+/// The actual storage operations are handled by generated accessor methods
+/// that read/write values using the `PrecompileStorageProvider` trait.
+#[derive(Debug, Clone, Copy)]
+pub struct SlotPacked<T> {
+    slot: U256,
+    offset: usize,
+    _phantom: PhantomData<T>,
+}
 
-    /// Writes a value to a field within a struct at a runtime base slot.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let orderbook_base = mapping_slot(pair_key, BooksSlot::SLOT);
-    /// Slot::<Address, DummySlot>::write_at_offset(
-    ///     &mut storage,
-    ///     orderbook_base,
-    ///     0,  // field offset
-    ///     base_address
-    /// )?;
-    /// ```
-    #[inline]
-    pub fn write_at_offset<S: StorageOps, const N: usize>(
-        storage: &mut S,
-        struct_base_slot: U256,
-        field_offset_slots: usize,
-        value: T,
-    ) -> Result<()>
-    where
-        T: Storable<N>,
-    {
-        let slot = struct_base_slot + U256::from(field_offset_slots);
-        value.store(storage, slot, crate::storage::types::LayoutCtx::Full)
-    }
-
-    /// Deletes a field within a struct at a runtime base slot (sets slots to zero).
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let orderbook_base = mapping_slot(pair_key, BooksSlot::SLOT);
-    /// Slot::<Address, DummySlot>::delete_at_offset(
-    ///     &mut storage,
-    ///     orderbook_base,
-    ///     0  // field offset
-    /// )?;
-    /// ```
-    #[inline]
-    pub fn delete_at_offset<S: StorageOps, const N: usize>(
-        storage: &mut S,
-        struct_base_slot: U256,
-        field_offset_slots: usize,
-    ) -> Result<()>
-    where
-        T: Storable<N>,
-    {
-        let slot = struct_base_slot + U256::from(field_offset_slots);
-        T::delete(storage, slot, crate::storage::types::LayoutCtx::Full)
-    }
-
-    /// Reads a packed field from storage at a given base slot.
-    ///
-    /// Use this method when the field shares a storage slot with other fields (i.e., is packed).
-    /// For fields that occupy their own slot(s), use `read_at_offset` instead.
-    #[inline]
-    pub fn read_at_offset_packed<S: StorageOps>(
-        storage: &mut S,
-        struct_base_slot: U256,
-        location: crate::storage::FieldLocation,
-    ) -> Result<T>
-    where
-        T: Storable<1>,
-    {
-        crate::storage::packing::read_packed_at(storage, struct_base_slot, location)
-    }
-
-    /// Writes a packed field to storage at a given base slot.
-    ///
-    /// Use this method when the field shares a storage slot with other fields (i.e., is packed).
-    /// This correctly preserves other fields in the same slot.
-    /// For fields that occupy their own slot(s), use `write_at_offset` instead.
-    #[inline]
-    pub fn write_at_offset_packed<S: StorageOps>(
-        storage: &mut S,
-        struct_base_slot: U256,
-        location: crate::storage::FieldLocation,
-        value: T,
-    ) -> Result<()>
-    where
-        T: Storable<1>,
-    {
-        crate::storage::packing::write_packed_at(storage, struct_base_slot, location, &value)
-    }
-
-    /// Deletes a packed field in storage at a given base slot (sets bytes to zero).
-    ///
-    /// Use this method when the field shares a storage slot with other fields (i.e., is packed).
-    /// This correctly preserves other fields in the same slot.
-    /// For fields that occupy their own slot(s), use `delete_at_offset` instead.
-    #[inline]
-    pub fn delete_at_offset_packed<S: StorageOps>(
-        storage: &mut S,
-        struct_base_slot: U256,
-        location: crate::storage::FieldLocation,
-    ) -> Result<()>
-    where
-        T: Storable<1>,
-    {
-        crate::storage::packing::clear_packed_at(storage, struct_base_slot, location)
+impl<T> Default for SlotPacked<T> {
+    fn default() -> Self {
+        Self::new(U256::ZERO, 0)
     }
 }
 
-impl<T> Default for Slot<T> {
-    fn default() -> Self {
-        Self::new(U256::ZERO)
+impl<T> SlotPacked<T> {
+    /// Creates a new `SlotPacked` with the given slot number and bytes offset.
+    ///
+    /// This is typically called with slot constants generated by the `#[contract]` macro.
+    #[inline]
+    pub const fn new(slot: U256, offset: usize) -> Self {
+        Self {
+            slot,
+            offset,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Creates a new `Slot` with the given base slot number with the given offset.
+    ///
+    /// This is convenience method for accessing struct fields.
+    #[inline]
+    pub const fn new_at_offset(base_slot: U256, offset_slots: usize, offset_bytes: usize) -> Self {
+        Self {
+            slot: base_slot.saturating_add(U256::from_limbs([offset_slots as u64, 0, 0, 0])),
+            offset: offset_bytes,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Returns the U256 storage slot number.
+    #[inline]
+    pub const fn slot(&self) -> U256 {
+        self.slot
+    }
+
+    /// Returns the usize bytes offset within the storage slot.
+    #[inline]
+    pub const fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Reads a value from storage at this slot.
+    ///
+    /// This method delegates to the `Storable::load` implementation.
+    /// In practice, N = 1 (validated with debug assertions).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let last_update_slot = SlotPacked::<u64>::new(slots::LAST_UPDATE_AT);
+    /// let last_update_at = last_update_slot.read(&mut contract)?;
+    /// ```
+    #[inline]
+    pub fn read<S: StorageOps, const N: usize>(&self, storage: &mut S) -> Result<T>
+    where
+        T: Storable<N>,
+    {
+        T::load(
+            storage,
+            self.slot,
+            crate::storage::types::LayoutCtx::Packed(self.offset),
+        )
+    }
+
+    /// Writes a packed value to storage at this slot and offset.
+    ///
+    /// This method delegates to the `Storable::store` implementation.
+    /// In practice, N = 1 (validated with debug assertions).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let last_update_slot = SlotPacked::<u64>::new(slots::LAST_UPDATE_AT);
+    /// last_update_slot.write(&mut contract, u64::MAX)?;
+    /// ```
+    #[inline]
+    pub fn write<S: StorageOps, const N: usize>(&self, storage: &mut S, value: T) -> Result<()>
+    where
+        T: Storable<N>,
+    {
+        value.store(
+            storage,
+            self.slot,
+            crate::storage::types::LayoutCtx::Packed(self.offset),
+        )
+    }
+
+    /// Deletes the packed value at this slot offset.
+    ///
+    /// This method doesn't clear the rest of the slot.
+    /// In practice, N = 1 (validated with debug assertions).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let last_update_slot = SlotPacked::<u64>::new(slots::LAST_UPDATE_AT);
+    /// last_update_slot.delete(&mut contract)?;
+    /// ```
+    #[inline]
+    pub fn delete<S: StorageOps, const N: usize>(&self, storage: &mut S) -> Result<()>
+    where
+        T: Storable<N>,
+    {
+        T::delete(
+            storage,
+            self.slot,
+            crate::storage::types::LayoutCtx::Packed(self.offset),
+        )
     }
 }
 
@@ -510,22 +518,18 @@ mod tests {
         let base_address = Address::random();
 
         // Write to orderbook.base using runtime offset
-        Slot::<Address>::write_at_offset(
-            &mut contract,
-            orderbook_base_slot,
-            0, // base field at offset 0
-            base_address,
-        )?;
+        let slot = Slot::<Address>::new_at_offset(orderbook_base_slot, 0);
+        slot.write(&mut contract, base_address)?;
 
         // Read back
-        let read_address = Slot::<Address>::read_at_offset(&mut contract, orderbook_base_slot, 0)?;
+        let read_address = slot.read(&mut contract)?;
 
         assert_eq!(read_address, base_address);
 
         // Delete
-        Slot::<Address>::delete_at_offset(&mut contract, orderbook_base_slot, 0)?;
+        slot.delete(&mut contract)?;
 
-        let deleted = Slot::<Address>::read_at_offset(&mut contract, orderbook_base_slot, 0)?;
+        let deleted = slot.read(&mut contract)?;
 
         assert_eq!(deleted, Address::ZERO);
 
@@ -543,9 +547,10 @@ mod tests {
         // Test writing a multi-slot value like a String at offset 2
         let test_string = "Hello, Orderbook!".to_string();
 
-        Slot::<String>::write_at_offset(&mut contract, struct_base, 2, test_string.clone())?;
+        let slot = Slot::<String>::new_at_offset(struct_base, 2);
+        slot.write(&mut contract, test_string.clone())?;
 
-        let read_string = Slot::<String>::read_at_offset(&mut contract, struct_base, 2)?;
+        let read_string = slot.read(&mut contract)?;
 
         assert_eq!(read_string, test_string);
 
@@ -565,14 +570,14 @@ mod tests {
         let field_1: u64 = 12345;
         let field_2 = U256::from(999999);
 
-        Slot::<Address>::write_at_offset(&mut contract, base, 0, field_0)?;
-        Slot::<u64>::write_at_offset(&mut contract, base, 1, field_1)?;
-        Slot::<U256>::write_at_offset(&mut contract, base, 2, field_2)?;
+        Slot::<Address>::new_at_offset(base, 0).write(&mut contract, field_0)?;
+        Slot::<u64>::new_at_offset(base, 1).write(&mut contract, field_1)?;
+        Slot::<U256>::new_at_offset(base, 2).write(&mut contract, field_2)?;
 
         // Verify independence
-        let read_0 = Slot::<Address>::read_at_offset(&mut contract, base, 0)?;
-        let read_1 = Slot::<u64>::read_at_offset(&mut contract, base, 1)?;
-        let read_2 = Slot::<U256>::read_at_offset(&mut contract, base, 2)?;
+        let read_0 = Slot::<Address>::new_at_offset(base, 0).read(&mut contract)?;
+        let read_1 = Slot::<u64>::new_at_offset(base, 1).read(&mut contract)?;
+        let read_2 = Slot::<U256>::new_at_offset(base, 2).read(&mut contract)?;
 
         assert_eq!(read_0, field_0);
         assert_eq!(read_1, field_1);

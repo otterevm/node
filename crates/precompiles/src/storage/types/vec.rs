@@ -16,12 +16,12 @@ use alloy::primitives::U256;
 use crate::{
     error::{Result, TempoPrecompileError},
     storage::{
-        Layout, LayoutCtx, Storable, StorableType, StorageKey, StorageOps,
+        Layout, LayoutCtx, Storable, StorableType, StorageOps,
         packing::{
             calc_element_offset, calc_element_slot, calc_packed_slot_count, extract_packed_value,
             insert_packed_value, is_packable, zero_packed_value,
         },
-        types::{Slot, mapping::mapping_slot},
+        types::Slot,
     },
 };
 
@@ -181,92 +181,6 @@ where
 
     fn pop<S: StorageOps>(&self, storage: &mut S) -> Result<Option<T>> {
         vec_pop(storage, self.slot())
-    }
-}
-
-// -- VEC MAPPING EXTENSION ----------------------------------------------------
-
-/// Extension trait for efficient vector operations on `Mapping<K, Vec<V>, Id>`.
-///
-/// This trait adds methods for reading, writing, pushing, and popping individual
-/// elements in a storage-backed vector without requiring a full vector load/store cycle.
-pub trait VecMappingExt<K, V>
-where
-    K: StorageKey,
-    V: Storable<1> + StorableType,
-{
-    /// Returns the length of the vector for the given key.
-    fn len<S: StorageOps>(&self, storage: &mut S, key: K) -> Result<usize>;
-
-    /// Reads a single element at the specified index for the given key.
-    fn read_at<S: StorageOps>(&self, storage: &mut S, key: K, index: usize) -> Result<V>;
-
-    /// Writes a single element at the specified index for the given key.
-    ///
-    /// If the index is >= the current length, the vector is automatically expanded
-    /// and the length is updated. Intermediate elements remain zero.
-    fn write_at<S: StorageOps>(
-        &self,
-        storage: &mut S,
-        key: K,
-        index: usize,
-        value: V,
-    ) -> Result<()>;
-
-    /// Pushes a new element to the end of the vector for the given key.
-    ///
-    /// Automatically increments the length and handles packing for small types.
-    fn push<S: StorageOps>(&self, storage: &mut S, key: K, value: V) -> Result<()>;
-
-    /// Pops the last element from the vector for the given key.
-    ///
-    /// Returns `None` if the vector is empty. Automatically decrements the length
-    /// and zeros out the popped element's storage slot.
-    fn pop<S: StorageOps>(&self, storage: &mut S, key: K) -> Result<Option<V>>;
-}
-
-impl<K, V> VecMappingExt<K, V> for crate::storage::types::mapping::Mapping<K, Vec<V>>
-where
-    K: StorageKey,
-    V: Storable<1> + StorableType,
-{
-    fn len<S: StorageOps>(&self, storage: &mut S, key: K) -> Result<usize> {
-        read_length(storage, mapping_slot(key.as_storage_bytes(), self.slot()))
-    }
-
-    fn read_at<S: StorageOps>(&self, storage: &mut S, key: K, index: usize) -> Result<V> {
-        vec_read_at(
-            storage,
-            mapping_slot(key.as_storage_bytes(), self.slot()),
-            index,
-        )
-    }
-
-    fn write_at<S: StorageOps>(
-        &self,
-        storage: &mut S,
-        key: K,
-        index: usize,
-        value: V,
-    ) -> Result<()> {
-        vec_write_at(
-            storage,
-            mapping_slot(key.as_storage_bytes(), self.slot()),
-            index,
-            value,
-        )
-    }
-
-    fn push<S: StorageOps>(&self, storage: &mut S, key: K, value: V) -> Result<()> {
-        vec_push(
-            storage,
-            mapping_slot(key.as_storage_bytes(), self.slot()),
-            value,
-        )
-    }
-
-    fn pop<S: StorageOps>(&self, storage: &mut S, key: K) -> Result<Option<V>> {
-        vec_pop(storage, mapping_slot(key.as_storage_bytes(), self.slot()))
     }
 }
 
