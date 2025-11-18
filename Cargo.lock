@@ -11448,6 +11448,8 @@ dependencies = [
  "alloy",
  "alloy-consensus",
  "alloy-signer-local",
+ "async-trait",
+ "chrono",
  "clap",
  "core_affinity",
  "crossbeam-utils",

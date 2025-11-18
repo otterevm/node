@@ -1,0 +1,48 @@
+# Foundry artifacts
+out/
+cache/
+
+# Foundry broadcast logs
+broadcast/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+
+# Coverage
+lcov.info
+coverage/
+
+# Fuzzing
+corpus/
+failures/
+
+# Scripts artifacts
+script/
+
+# Test artifacts
+test/fixtures/
+
+# Dependency directories
+lib/
+node_modules/
+
+# Forge install cache
+.forge-install/
+
+# Soldeer
+dependencies/
+soldeer.lock
+
+# zkSync artifacts
+zkout/
+cache-zk/
+
+# Misc
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
