@@ -204,6 +204,14 @@ mod tests {
     }
 
     #[test]
+    fn test_slot_size() {
+        // slot (U256) 32 bytes + LayoutCtx (usize) 8 bytes + PhantomData (zero-sized)
+        assert_eq!(std::mem::size_of::<Slot<U256>>(), 40);
+        assert_eq!(std::mem::size_of::<Slot<Address>>(), 40);
+        assert_eq!(std::mem::size_of::<Slot<bool>>(), 40);
+    }
+
+    #[test]
     fn test_slot_number_extraction() {
         let slot_0 = Slot::<U256>::new(TEST_SLOT_0);
         let slot_1 = Slot::<Address>::new(TEST_SLOT_1);
