@@ -110,13 +110,13 @@ async fn decode_from_contract(
 /// 2. the player, that will become dealers in the next ceremony
 /// 3. the syncing players, that will become players in the next ceremony
 #[derive(Clone, Debug)]
-pub(super) struct Tracked {
+pub(super) struct ValidatorState {
     dealers: OrderedAssociated<PublicKey, DecodedValidator>,
     players: OrderedAssociated<PublicKey, DecodedValidator>,
     syncing_players: OrderedAssociated<PublicKey, DecodedValidator>,
 }
 
-impl Tracked {
+impl ValidatorState {
     pub(super) fn new(validators: OrderedAssociated<PublicKey, DecodedValidator>) -> Self {
         Self {
             dealers: validators.clone(),
@@ -154,7 +154,9 @@ impl Tracked {
     /// If a validator has entries across the tracked sets, then then its entry
     /// for the latest pushed set is taken. For those cases where looking up
     /// domain names failed, the last successfully looked up name is taken.
-    pub(super) fn resolve_addresses_and_merge(&self) -> OrderedAssociated<PublicKey, SocketAddr> {
+    pub(super) fn resolve_addresses_and_merge_peers(
+        &self,
+    ) -> OrderedAssociated<PublicKey, SocketAddr> {
         // IMPORTANT: Starting with the syncing players to ensure that the
         // latest address for a validator with a given pubkey is used.
         // OrderedAssociated takes the first instance of a key it sees and
@@ -202,7 +204,7 @@ impl Tracked {
     }
 }
 
-impl Write for Tracked {
+impl Write for ValidatorState {
     fn write(&self, buf: &mut impl bytes::BufMut) {
         self.dealers().write(buf);
         self.players().write(buf);
@@ -210,7 +212,7 @@ impl Write for Tracked {
     }
 }
 
-impl EncodeSize for Tracked {
+impl EncodeSize for ValidatorState {
     fn encode_size(&self) -> usize {
         self.dealers().encode_size()
             + self.players().encode_size()
@@ -218,7 +220,7 @@ impl EncodeSize for Tracked {
     }
 }
 
-impl Read for Tracked {
+impl Read for ValidatorState {
     type Cfg = ();
 
     fn read_cfg(
@@ -245,7 +247,7 @@ impl Read for Tracked {
 /// form `<host>:<port>` for inbound, and `<ip>:<port>` for outbound. Here,
 /// `<host>` is either an IPv4 or IPV6 address, or a fully qualified domain name.
 /// `<ip>` is an IPv4 or IPv6 address.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct DecodedValidator {
     pub(super) public_key: PublicKey,
     pub(super) inbound: String,
@@ -335,7 +337,7 @@ impl Write for DecodedValidator {
         self.inbound.as_bytes().write(buf);
         self.outbound.as_bytes().write(buf);
         UInt(self.index).write(buf);
-        self.address.as_slice().write(buf);
+        self.address.0.write(buf);
     }
 }
 
@@ -345,7 +347,7 @@ impl EncodeSize for DecodedValidator {
             + self.inbound.as_bytes().encode_size()
             + self.outbound.as_bytes().encode_size()
             + UInt(self.index).encode_size()
-            + self.address.as_slice().encode_size()
+            + self.address.0.encode_size()
     }
 }
 
@@ -356,7 +358,7 @@ impl Read for DecodedValidator {
         mut buf: &mut impl bytes::Buf,
         _cfg: &Self::Cfg,
     ) -> Result<Self, commonware_codec::Error> {
-        let public_key = PublicKey::decode(&mut buf)?;
+        let public_key = PublicKey::read_cfg(buf, &())?;
         let inbound = {
             // 253 is the maximum length of a fqdn.
             let bytes = Vec::<u8>::read_cfg(buf, &(RangeCfg::new(0..=253usize), ()))?;
@@ -371,9 +373,8 @@ impl Read for DecodedValidator {
                 commonware_codec::Error::Invalid("decode outbound address", "not utf8")
             })?
         };
-        let index = UInt::decode(&mut buf)?.into();
-        let address = Address::new(<[u8; 20]>::decode(&mut buf)?);
-
+        let index = UInt::read_cfg(&mut buf, &())?.into();
+        let address = Address::new(<[u8; 20]>::read_cfg(&mut buf, &())?);
         Ok(Self {
             public_key,
             inbound,
@@ -388,4 +389,28 @@ fn last_height_before_epoch(epoch: Epoch, epoch_length: u64) -> u64 {
     epoch
         .checked_sub(1)
         .map_or(0, |epoch| utils::last_block_in_epoch(epoch_length, epoch))
+}
+
+#[cfg(test)]
+mod tests {
+    use commonware_codec::{DecodeExt as _, Encode as _};
+    use commonware_cryptography::{PrivateKeyExt, Signer, ed25519::PrivateKey};
+
+    use crate::dkg::manager::DecodedValidator;
+
+    #[test]
+    fn roundtrip_decoded_validator() {
+        let private_key = PrivateKey::from_seed(42);
+        let decoded_validator = DecodedValidator {
+            public_key: private_key.public_key(),
+            inbound: "localhost:1234".into(),
+            outbound: "localhost:4321".into(),
+            index: 42,
+            address: alloy_primitives::Address::ZERO,
+        };
+        assert_eq!(
+            decoded_validator,
+            DecodedValidator::decode(&mut decoded_validator.encode().freeze()).unwrap()
+        );
+    }
 }

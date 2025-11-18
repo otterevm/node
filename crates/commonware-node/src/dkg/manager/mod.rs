@@ -18,7 +18,7 @@ mod validators;
 pub(crate) use actor::Actor;
 pub(crate) use ingress::Mailbox;
 
-use validators::{DecodedValidator, Tracked};
+use validators::DecodedValidator;
 
 use ingress::{Command, Message};
 

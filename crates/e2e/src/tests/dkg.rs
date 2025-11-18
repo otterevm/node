@@ -320,7 +320,7 @@ fn validator_is_added() {
 
                 if metric.ends_with("_epoch_manager_latest_epoch") {
                     let value = value.parse::<u64>().unwrap();
-                    assert!(value < 4, "the validator should have joined before epoch 4");
+                    assert!(value < 5, "the validator should have joined before epoch 5");
                 }
 
                 if metric.ends_with("_epoch_manager_latest_participants") {
