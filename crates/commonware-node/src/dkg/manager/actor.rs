@@ -40,7 +40,7 @@ use crate::{
             validators,
         },
     },
-    epoch,
+    epoch::{self, is_first_block_in_epoch},
 };
 
 const EPOCH_KEY: u64 = 0;
@@ -521,7 +521,7 @@ where
         // Recall, for an epoch length E the first heights are 0E, 1E, 2E, ...
         //
         // So for E = 100, the first heights are 0, 100, 200, ...
-        if block.height().is_multiple_of(self.config.epoch_length) {
+        if is_first_block_in_epoch(self.config.epoch_length, block.height()).is_some() {
             self.report_epoch_entered().await;
         }
 
