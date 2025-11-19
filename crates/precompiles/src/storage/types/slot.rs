@@ -46,7 +46,7 @@ impl<T> Slot<T> {
     pub const fn new(slot: U256) -> Self {
         Self {
             slot,
-            ctx: crate::storage::types::LayoutCtx::Full,
+            ctx: crate::storage::types::LayoutCtx::FULL,
             _ty: PhantomData,
         }
     }
@@ -59,7 +59,7 @@ impl<T> Slot<T> {
     pub const fn new_at_offset(base_slot: U256, offset_slots: usize) -> Self {
         Self {
             slot: base_slot.saturating_add(U256::from_limbs([offset_slots as u64, 0, 0, 0])),
-            ctx: crate::storage::types::LayoutCtx::Full,
+            ctx: crate::storage::types::LayoutCtx::FULL,
             _ty: PhantomData,
         }
     }
@@ -81,7 +81,7 @@ impl<T> Slot<T> {
         );
         Self {
             slot: base_slot.saturating_add(U256::from_limbs([loc.offset_slots as u64, 0, 0, 0])),
-            ctx: crate::storage::types::LayoutCtx::Packed(loc.offset_bytes),
+            ctx: crate::storage::types::LayoutCtx::packed(loc.offset_bytes),
             _ty: PhantomData,
         }
     }

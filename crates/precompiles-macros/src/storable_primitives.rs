@@ -125,13 +125,13 @@ fn gen_storable_impl(
         //         impl Storable<1> for #type_path {
         //             #[inline]
         //             fn load<S: StorageOps>(storage: &mut S, base_slot: #type_path, ctx: LayoutCtx) -> Result<Self> {
-        //                 debug_assert_eq!(ctx, LayoutCtx::Full, "U256 takes a full slot and cannot be packed");
+        //                 debug_assert_eq!(ctx, LayoutCtx::FULL, "U256 takes a full slot and cannot be packed");
         //                 storage.sload(base_slot)
         //             }
 
         //             #[inline]
         //             fn store<S: StorageOps>(&self, storage: &mut S, base_slot: #type_path, ctx: LayoutCtx) -> Result<()> {
-        //                 debug_assert_eq!(ctx, LayoutCtx::Full, "U256 takes a full slot and cannot be packed");
+        //                 debug_assert_eq!(ctx, LayoutCtx::FULL, "U256 takes a full slot and cannot be packed");
         //                 storage.sstore(base_slot, *self)
         //             }
 
@@ -523,8 +523,8 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
         impl Storable<{ #mod_ident::SLOT_COUNT }> for [#elem_type; #array_size] {
             fn load<S: StorageOps>(storage: &mut S, base_slot: U256, ctx: LayoutCtx) -> Result<Self> {
                 debug_assert_eq!(
-                    ctx, crate::storage::LayoutCtx::Full,
-                    "Arrays can only be loaded with LayoutCtx::Full"
+                    ctx, crate::storage::LayoutCtx::FULL,
+                    "Arrays can only be loaded with LayoutCtx::FULL"
                 );
 
                 use crate::storage::packing::{calc_element_slot, calc_element_offset, extract_packed_value};
@@ -533,8 +533,8 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
 
             fn store<S: StorageOps>(&self, storage: &mut S, base_slot: U256, ctx: LayoutCtx) -> Result<()> {
                 debug_assert_eq!(
-                    ctx, crate::storage::LayoutCtx::Full,
-                    "Arrays can only be stored with LayoutCtx::Full"
+                    ctx, crate::storage::LayoutCtx::FULL,
+                    "Arrays can only be stored with LayoutCtx::FULL"
                 );
 
                 use crate::storage::packing::{calc_element_slot, calc_element_offset, insert_packed_value};
@@ -615,7 +615,7 @@ fn gen_unpacked_array_load(array_size: &usize) -> TokenStream {
         let mut result = [Default::default(); #array_size];
         for i in 0..#array_size {
             let elem_slot = base_slot + U256::from(i);
-            result[i] = Storable::<1>::load(storage, elem_slot, LayoutCtx::Full)?;
+            result[i] = Storable::<1>::load(storage, elem_slot, LayoutCtx::FULL)?;
         }
         Ok(result)
     }
@@ -626,7 +626,7 @@ fn gen_unpacked_array_store() -> TokenStream {
     quote! {
         for (i, elem) in self.iter().enumerate() {
             let elem_slot = base_slot + U256::from(i);
-            elem.store(storage, elem_slot, LayoutCtx::Full)?;
+            elem.store(storage, elem_slot, LayoutCtx::FULL)?;
         }
         Ok(())
     }
