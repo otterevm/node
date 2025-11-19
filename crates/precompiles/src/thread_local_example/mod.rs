@@ -1,6 +1,9 @@
 use crate::{
     error::Result,
-    storage::{Mapping, Slot, thread_local::ContractCall},
+    storage::{
+        Mapping, Slot,
+        thread_local::{ContractCall, RootContext},
+    },
 };
 use alloy::primitives::{Address, U256};
 
@@ -11,7 +14,7 @@ pub struct ThreadLocalToken {
 
 // macro generated
 impl ContractCall for ThreadLocalToken {
-    fn _new() -> Self {
+    unsafe fn __new() -> Self {
         Self {
             total_supply: Slot::new(U256::ZERO),
             balances: Mapping::new(U256::ONE),
@@ -82,7 +85,8 @@ pub struct ThreadLocalRewards {
 
 // macro generated
 impl ContractCall for ThreadLocalRewards {
-    fn _new() -> Self {
+    // mark unsafe to discourage direct usage
+    unsafe fn __new() -> Self {
         Self {
             rewards_pool: Slot::new(U256::ZERO),
         }
@@ -111,12 +115,11 @@ mod tests {
     #[test]
     fn test_pure_thread_local() -> Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let _storage_guard = unsafe { StorageGuard::new(&mut storage) };
+        let (_guard, mut ctx) = unsafe { StorageGuard::new(&mut storage) };
 
         let token_address = Address::new([0x01; 20]);
         let alice = Address::new([0xA1; 20]);
         let bob = Address::new([0xB0; 20]);
-        let mut ctx = ();
 
         // For top-level test entry points, pass `&mut ctx` to get `ReadWrite` context
         let mut token = ThreadLocalToken::new(&mut ctx, token_address)?;
@@ -137,12 +140,11 @@ mod tests {
     #[test]
     fn test_cross_contract_calls() -> Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let _storage_guard = unsafe { StorageGuard::new(&mut storage) };
+        let (_guard, mut ctx) = unsafe { StorageGuard::new(&mut storage) };
 
         let token_address = Address::new([0x01; 20]);
         let alice = Address::new([0xA1; 20]);
         let bob = Address::new([0xB0; 20]);
-        let mut ctx = ();
 
         let mut token = ThreadLocalToken::new(&mut ctx, token_address)?;
         token.mint(alice, U256::from(1000))?;
@@ -165,35 +167,31 @@ mod tests {
         use crate::storage::thread_local::context;
 
         let mut storage = HashMapStorageProvider::new(1);
-        let _storage_guard = unsafe { StorageGuard::new(&mut storage) };
+        let (_guard, ctx) = unsafe { StorageGuard::new(&mut storage) };
 
         let addr1 = Address::new([0x01; 20]);
         let addr2 = Address::new([0x02; 20]);
         let addr3 = Address::new([0x03; 20]);
-        let ctx = ();
 
         // demonstrate nested contract calls with automatic address stack management
         let token1 = ThreadLocalToken::new(&ctx, addr1)?;
         assert_eq!(context::call_depth(), 1);
 
-        let token2 = ThreadLocalToken::new(&token1, addr2)?;
-        assert_eq!(context::call_depth(), 2);
+        {
+            let token2 = ThreadLocalToken::new(&token1, addr2)?;
+            assert_eq!(context::call_depth(), 2);
+            // can't call `token1` until `token2` is dropped
 
-        // can't call `token1` until `token2` is dropped
+            {
+                let _token3 = ThreadLocalToken::new(&token2, addr3)?;
+                assert_eq!(context::call_depth(), 3);
+                // can't call `token2` until `token3` is dropped
+            }
 
-        let token3 = ThreadLocalToken::new(&token2, addr3)?;
-        assert_eq!(context::call_depth(), 3);
+            assert_eq!(context::call_depth(), 2);
+        }
 
-        // can't call `token2` until `token3` is dropped
-
-        std::mem::drop(token3);
-        assert_eq!(context::call_depth(), 2);
-
-        std::mem::drop(token2);
         assert_eq!(context::call_depth(), 1);
-
-        std::mem::drop(token1);
-        assert_eq!(context::call_depth(), 0);
 
         Ok(())
     }

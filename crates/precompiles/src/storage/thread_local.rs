@@ -42,7 +42,7 @@ pub struct StorageGuard {
 }
 
 impl StorageGuard {
-    /// Create a new storage guard
+    /// Create a new storage guard and root context
     ///
     /// # Safety
     ///
@@ -54,7 +54,7 @@ impl StorageGuard {
     /// # Panics
     ///
     /// Panics if a `StorageGuard` already exists on the current thread
-    pub unsafe fn new<S: PrecompileStorageProvider>(storage: &mut S) -> Self {
+    pub unsafe fn new<S: PrecompileStorageProvider>(storage: &mut S) -> (Self, RootContext) {
         if STORAGE.with(|s| s.get()).is_some() {
             panic!(
                 "StorageGuard already exists - double initialization detected. \
@@ -68,9 +68,12 @@ impl StorageGuard {
         let ptr_static: *mut dyn PrecompileStorageProvider = unsafe { std::mem::transmute(ptr) };
         STORAGE.with(|s| s.set(Some(ptr_static)));
 
-        Self {
+        let guard = Self {
             _lifetime: PhantomData,
-        }
+        };
+        let root_ctx = RootContext(());
+
+        (guard, root_ctx)
     }
 }
 
@@ -171,6 +174,12 @@ pub struct ReadOnly;
 /// Marker type for read-write (mutable) call context
 pub struct ReadWrite;
 
+/// Root context marker for top-level contract entry points.
+///
+/// Created by `StorageGuard::new()`, which returns `(StorageGuard, RootContext)`.
+/// Additionally, the unit field is private, preventing external initialization.
+pub struct RootContext(());
+
 // Marker traits to determine call context
 pub trait CallCtx {}
 pub trait StaticCtx: CallCtx {}
@@ -185,15 +194,36 @@ impl MutableCtx for ReadWrite {}
 /// Trait to infer call context from method receiver type
 ///
 /// This enables automatic inference: `&self` → `ReadOnly`, `&mut self` → `ReadWrite`
+///
+/// This trait is only implemented for:
+/// - `&RootContext` / `&mut RootContext` - for top-level entry points
+/// - `&T` / `&mut T` where `T: ContractCall` - for cross-contract calls
 pub trait MethodCtx {
     type Allowed: CallCtx;
 }
 
-impl<T> MethodCtx for &T {
+// Root context implementations - for top-level entry points
+impl MethodCtx for &RootContext {
     type Allowed = ReadOnly;
 }
 
-impl<T> MethodCtx for &mut T {
+impl MethodCtx for &mut RootContext {
+    type Allowed = ReadWrite;
+}
+
+impl<T: ContractCall> MethodCtx for &T {
+    type Allowed = ReadOnly;
+}
+
+impl<T: ContractCall> MethodCtx for &mut T {
+    type Allowed = ReadWrite;
+}
+
+impl<'ctx, CTX: CallCtx, T> MethodCtx for &ContractInstance<'ctx, CTX, T> {
+    type Allowed = ReadOnly;
+}
+
+impl<'ctx, CTX: MutableCtx, T> MethodCtx for &mut ContractInstance<'ctx, CTX, T> {
     type Allowed = ReadWrite;
 }
 
@@ -230,7 +260,13 @@ impl<'ctx, CTX: MutableCtx, T> std::ops::DerefMut for ContractInstance<'ctx, CTX
 /// This is typically implemented by the macro-generated code for each contract.
 pub trait ContractCall: Sized {
     /// Create a new instance of the contract (macro-generated)
-    fn _new() -> Self;
+    ///
+    /// # Safety
+    ///
+    /// This method should only be called through `ContractCall::new()`, which properly
+    /// manages the address stack. Calling this directly would create a contract instance
+    /// without an associated address, leading to incorrect storage operations.
+    unsafe fn __new() -> Self;
 
     /// Create a contract instance with context inferred from method receiver
     ///
@@ -244,7 +280,8 @@ pub trait ContractCall: Sized {
     {
         let guard = AddressGuard::new(address)?;
         Ok(ContractInstance {
-            contract: Self::_new(),
+            // SAFETY: intended `Self::__new()` usage with proper address guard.
+            contract: unsafe { Self::__new() },
             _guard: guard,
             _ctx: PhantomData,
         })
