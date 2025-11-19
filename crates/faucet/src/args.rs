@@ -53,6 +53,7 @@ pub struct FaucetArgs {
         long = "faucet.address",
         requires = "enabled",
         required_if_eq("enabled", "true"),
+        value_delimiter = ',',
         num_args(0..)
     )]
     pub token_addresses: Option<Vec<Address>>,
