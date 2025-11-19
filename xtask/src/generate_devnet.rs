@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use alloy_primitives::Address;
 use eyre::{Context, ensure};
 use rand::SeedableRng as _;
 use reth_network_peers::pk2id;
@@ -99,8 +100,8 @@ impl GenerateDevnet {
             };
 
             let consensus_p2p_port = validator.net_address.port();
-            let consensus_metrics_port = consensus_p2p_port + 1;
-            let execution_p2p_port = consensus_p2p_port + 2;
+            let execution_p2p_port = consensus_p2p_port + 1;
+            let consensus_metrics_port = consensus_p2p_port + 2;
 
             execution_peers.push(format!(
                 "enode://{execution_p2p_identity:x}@{}",
@@ -117,6 +118,9 @@ impl GenerateDevnet {
 
                     consensus_on_disk_signing_key: validator.encode_ed25519_private_key(),
                     consensus_on_disk_signing_share: validator.encode_bls12381_private_key_share(),
+
+                    // FIXME(janis): this should not be zero
+                    consensus_fee_recipient: Address::ZERO,
 
                     consensus_p2p_port,
                     consensus_metrics_port,
@@ -161,6 +165,7 @@ pub(crate) struct ConfigOutput {
     consensus_on_disk_signing_key: String,
     consensus_on_disk_signing_share: String,
     consensus_p2p_port: u16,
+    consensus_fee_recipient: Address,
     consensus_metrics_port: u16,
     node_image_tag: String,
     execution_genesis_url: String,
