@@ -116,7 +116,7 @@ pub struct MaxTpsArgs {
 
     /// A limit of the maximum amount of concurrent requests, prevents issues with too many
     /// connections open at once.
-    #[arg(long, default_value = "8")]
+    #[arg(long, default_value = "128")]
     max_concurrent_requests: usize,
 
     /// A number of transaction to send, before waiting for their receipts, that should be likely
