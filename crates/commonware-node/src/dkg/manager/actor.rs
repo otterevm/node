@@ -16,7 +16,7 @@ use commonware_p2p::{
 use commonware_runtime::{Clock, ContextCell, Handle, Metrics as _, Spawner, Storage, spawn_cell};
 use commonware_storage::metadata::Metadata;
 use commonware_utils::{
-    quorum,
+    Acknowledgement as _, quorum,
     sequence::U64,
     set::{Ordered, OrderedAssociated},
 };
@@ -40,7 +40,8 @@ use crate::{
             validators::{self, ValidatorState},
         },
     },
-    epoch::{self, is_first_block_in_epoch},
+    epoch,
+    epoch::is_first_block_in_epoch,
 };
 
 const CURRENT_EPOCH_KEY: u64 = 0;
@@ -450,7 +451,7 @@ where
         cause: Span,
         Finalize {
             block,
-            response: _response,
+            acknowledgment,
         }: Finalize,
         maybe_ceremony: &mut Option<Ceremony<ContextCell<TContext>, TReceiver, TSender>>,
         ceremony_mux: &mut MuxHandle<TSender, TReceiver>,
@@ -475,11 +476,10 @@ where
             );
             // Early return: start driving the ceremony on the first height of
             // the next epoch.
+            acknowledgment.acknowledge();
             return;
         }
 
-        // Special case first height: exit the old epoch, start a new ceremony.
-        //
         // Recall, for an epoch length E the first heights are 0E, 1E, 2E, ...
         //
         // So for E = 100, the first heights are 0, 100, 200, ...
@@ -528,6 +528,7 @@ where
                 maybe_ceremony.replace(ceremony).is_none(),
                 "putting back the ceremony we just took out",
             );
+            acknowledgment.acknowledge();
             return;
         }
 
@@ -573,6 +574,8 @@ where
             ceremony_metadata.remove(&epoch.into());
             ceremony_metadata.sync().await.expect("metadata must sync");
         }
+
+        acknowledgment.acknowledge();
     }
 
     /// Starts a new ceremony for the epoch state tracked by the actor.

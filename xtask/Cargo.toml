@@ -17,6 +17,13 @@ tempo-dkg-onchain-artifacts.workspace = true
 tempo-evm.workspace = true
 tempo-precompiles.workspace = true
 
+alloy = { workspace = true, features = [
+  "genesis",
+  "signers",
+  "signer-local",
+  "signer-mnemonic",
+  "sol-types",
+] }
 alloy-primitives.workspace = true
 clap = { version = "4.5.45", features = ["derive"] }
 commonware-codec.workspace = true
@@ -29,23 +36,15 @@ fqdn = { workspace = true, features = [
   "domain-name-length-limited-to-255",
 ] }
 indexmap.workspace = true
+indicatif = { workspace = true, features = ["rayon"] }
 itertools.workspace = true
 rand.workspace = true
+rayon = "1.10"
 reth-evm.workspace = true
 reth-network-peers.workspace = true
+secp256k1 = "0.30.0"
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
-
-alloy = { workspace = true, features = [
-  "genesis",
-  "signers",
-  "signer-local",
-  "signer-mnemonic",
-  "sol-types",
-] }
-rayon = "1.10"
-secp256k1 = "0.30.0"
-simple-tqdm = { version = "0.2.0", features = ["rayon"] }
-thiserror.workspace = true

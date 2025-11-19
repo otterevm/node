@@ -1,4 +1,5 @@
 use commonware_consensus::{Reporter, marshal::Update, types::Epoch};
+use commonware_utils::acknowledgement::Exact;
 use eyre::WrapErr as _;
 use futures::channel::{mpsc, oneshot};
 use tempo_dkg_onchain_artifacts::{IntermediateOutcome, PublicOutcome};
@@ -80,8 +81,8 @@ impl From<GetOutcome> for Command {
 }
 
 pub(super) struct Finalize {
-    pub(super) response: oneshot::Sender<()>,
     pub(super) block: Box<Block>,
+    pub(super) acknowledgment: Exact,
 }
 
 pub(super) struct GetIntermediateDealing {
@@ -94,28 +95,22 @@ pub(super) struct GetOutcome {
 }
 
 impl Reporter for Mailbox {
-    type Activity = Update<Block>;
+    type Activity = Update<Block, Exact>;
 
     async fn report(&mut self, update: Self::Activity) {
-        let block = match update {
-            Self::Activity::Block(block) => block,
-            _ => {
-                tracing::trace!("dropping tip update; DKG manager is only interested in blocks");
-                return;
-            }
+        let Update::Block(block, acknowledgment) = update else {
+            tracing::trace!("dropping tip update; DKG manager is only interested in blocks");
+            return;
         };
-
-        let (response, rx) = oneshot::channel();
         if let Err(error) = self
             .inner
             .unbounded_send(Message::in_current_span(Finalize {
-                response,
                 block: block.into(),
+                acknowledgment,
             }))
             .wrap_err("dkg manager no longer running")
         {
             warn!(%error, "failed to report finalized block to dkg manager")
         }
-        let _ = rx.await;
     }
 }

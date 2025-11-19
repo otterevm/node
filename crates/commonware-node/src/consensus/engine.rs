@@ -53,7 +53,7 @@ const REPLAY_BUFFER: NonZeroUsize = NonZeroUsize::new(8 * 1024 * 1024).expect("v
 const WRITE_BUFFER: NonZeroUsize = NonZeroUsize::new(1024 * 1024).expect("value is not zero"); // 1MB
 const BUFFER_POOL_PAGE_SIZE: NonZeroUsize = NonZeroUsize::new(4_096).expect("value is not zero"); // 4KB
 const BUFFER_POOL_CAPACITY: NonZeroUsize = NonZeroUsize::new(8_192).expect("value is not zero"); // 32MB
-const MAX_REPAIR: u64 = 20;
+const MAX_REPAIR: NonZeroU64 = NonZeroU64::new(20).expect("value is not zero");
 
 /// Settings for [`Engine`].
 ///
@@ -130,6 +130,7 @@ where
             public_key: self.signer.public_key(),
             manager: self.peer_manager.clone(),
             mailbox_size: self.mailbox_size,
+            blocker: self.blocker.clone(),
             requester_config: commonware_p2p::utils::requester::Config {
                 me: Some(self.signer.public_key()),
                 rate_limit: MARSHAL_LIMIT,
@@ -258,6 +259,7 @@ where
 
 pub struct Engine<TBlocker, TContext, TPeerManager>
 where
+    TBlocker: Blocker<PublicKey = PublicKey>,
     TContext: Clock
         + governor::clock::Clock
         + Rng
@@ -287,7 +289,7 @@ where
     application_mailbox: application::Mailbox,
 
     /// Resolver config that will be passed to the marshal actor upon start.
-    resolver_config: marshal::resolver::p2p::Config<PublicKey, TPeerManager>,
+    resolver_config: marshal::resolver::p2p::Config<PublicKey, TPeerManager, TBlocker>,
 
     /// Listens to consensus events and syncs blocks from the network to the
     /// local node.

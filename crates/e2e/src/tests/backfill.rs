@@ -18,7 +18,9 @@ async fn run_validator_late_join_test(
     blocks_after_join: u64,
     should_pipeline_sync: bool,
 ) {
-    let how_many_signers = 5;
+    let metrics_recorder = install_prometheus_recorder();
+
+    let how_many_signers = 4;
 
     let linkage = Link {
         latency: Duration::from_millis(10),
@@ -41,8 +43,8 @@ async fn run_validator_late_join_test(
     // Start all nodes except the last one
     let last = nodes.pop().unwrap();
     let mut running = join_all(nodes.into_iter().map(|node| node.start())).await;
-
     link_validators(&mut oracle, &running, linkage.clone(), None).await;
+
     // Wait for chain to advance before starting the last node
     while running[0]
         .execution_node
@@ -54,7 +56,6 @@ async fn run_validator_late_join_test(
     {
         context.sleep(Duration::from_secs(1)).await;
     }
-
     assert_eq!(
         last.execution_node
             .node
@@ -63,8 +64,6 @@ async fn run_validator_late_join_test(
             .unwrap(),
         0
     );
-
-    let metrics_recorder = install_prometheus_recorder();
 
     // Start the last node
     running.push(last.start().await);
@@ -82,7 +81,6 @@ async fn run_validator_late_join_test(
     {
         context.sleep(Duration::from_millis(100)).await;
     }
-
     // Verify backfill behavior
     let actual_runs = get_pipeline_runs(metrics_recorder);
     if should_pipeline_sync {
@@ -104,7 +102,7 @@ async fn run_validator_late_join_test(
         .provider
         .last_block_number()
         .unwrap();
-    context.sleep(Duration::from_secs(2)).await;
+    context.sleep(Duration::from_secs(5)).await;
     assert!(
         last.execution_node
             .node
