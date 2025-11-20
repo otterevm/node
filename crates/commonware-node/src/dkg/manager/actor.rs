@@ -306,7 +306,7 @@ where
         mux.start();
 
         self.report_previous_epoch_state_and_validators().await;
-        self.report_current_epoch_state().await;
+        self.register_current_epoch_state().await;
         let mut ceremony = Some(
             self.start_ceremony_for_current_epoch_state(&mut ceremony_mux)
                 .await,
@@ -480,7 +480,7 @@ where
         //
         // So for E = 100, the boundary heights would be 99, 199, 299, ...
         if utils::is_last_block_in_epoch(self.config.epoch_length, block.height()).is_some() {
-            self.update_current_epoch_state().await;
+            self.update_and_register_current_epoch_state().await;
 
             maybe_ceremony.replace(
                 self.start_ceremony_for_current_epoch_state(ceremony_mux)
@@ -671,13 +671,20 @@ where
         );
     }
 
-    /// Reports that a new epoch can be entered.
-    ///
-    /// This should trigger the epoch manager to start a new consensus engine
-    /// backing the epoch stored by the DKG manager.
+    /// Registers the new epoch by reporting to the epoch manager that it should
+    /// be entered and registering its peers on the peers manager.
     #[instrument(skip_all, fields(epoch = self.current_epoch_state().epoch()))]
-    async fn report_current_epoch_state(&mut self) {
+    async fn register_current_epoch_state(&mut self) {
         let epoch_state = self.current_epoch_state().clone();
+
+        self.validators_metadata
+            .put_sync(
+                epoch_state.epoch().into(),
+                epoch_state.validator_state.clone(),
+            )
+            .await
+            .expect("must always be able to persist validator metadata");
+
         self.config
             .epoch_manager
             .report(
@@ -772,7 +779,7 @@ where
     }
 
     #[instrument(skip_all)]
-    async fn update_current_epoch_state(&mut self) {
+    async fn update_and_register_current_epoch_state(&mut self) {
         let old_epoch_state = self
             .epoch_metadata
             .remove(&CURRENT_EPOCH_KEY.into())
@@ -809,7 +816,6 @@ where
             new_validator_state.push_on_failure(syncing_players);
         }
 
-        let epoch = dkg_outcome.epoch;
         self.epoch_metadata.put(
             CURRENT_EPOCH_KEY.into(),
             EpochState {
@@ -825,12 +831,7 @@ where
             .await
             .expect("must always be able to persists epoch state");
 
-        self.validators_metadata
-            .put_sync(epoch.into(), new_validator_state)
-            .await
-            .expect("must always be able to persist validator metadata");
-
-        self.report_current_epoch_state().await;
+        self.register_current_epoch_state().await;
     }
 
     fn current_epoch_state(&self) -> &EpochState {
