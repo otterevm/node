@@ -20,12 +20,16 @@ use commonware_cryptography::{
     ed25519::{PublicKey, Signature},
 };
 use reth_revm::{Inspector, State, context::result::ResultAndState};
-use std::collections::{HashMap, HashSet};
+use revm::{
+    context::{ContextTr, JournalTr},
+    state::Bytecode,
+};
+use std::collections::HashSet;
 use tempo_chainspec::{TempoChainSpec, hardfork::TempoHardforks};
 use tempo_precompiles::{
-    STABLECOIN_EXCHANGE_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_REWARDS_REGISTRY_ADDRESS,
-    stablecoin_exchange::IStablecoinExchange, tip_fee_manager::IFeeManager,
-    tip20_rewards_registry::ITIP20RewardsRegistry,
+    ACCOUNT_KEYCHAIN_ADDRESS, STABLECOIN_EXCHANGE_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
+    TIP20_REWARDS_REGISTRY_ADDRESS, stablecoin_exchange::IStablecoinExchange,
+    tip_fee_manager::IFeeManager, tip20_rewards_registry::ITIP20RewardsRegistry,
 };
 use tempo_primitives::{
     SubBlock, SubBlockMetadata, TempoReceipt, TempoTxEnvelope, subblock::PartialValidatorKey,
@@ -449,7 +453,33 @@ where
     type Evm = TempoEvm<&'a mut State<DB>, I>;
 
     fn apply_pre_execution_changes(&mut self) -> Result<(), alloy_evm::block::BlockExecutionError> {
-        self.inner.apply_pre_execution_changes()
+        self.inner.apply_pre_execution_changes()?;
+
+        // Initialize keychain precompile if allegretto is active
+        let block_timestamp = self.evm().block().timestamp.to::<u64>();
+        if self
+            .inner
+            .spec
+            .is_allegretto_active_at_timestamp(block_timestamp)
+        {
+            let evm = self.evm_mut();
+            let (_block, _tx, _cfg, journal, _inst, _precompiles) = evm.ctx_mut().all_mut();
+
+            // Load the keychain account (creates it if it doesn't exist)
+            let mut keychain_account = journal
+                .load_account_with_code_mut(ACCOUNT_KEYCHAIN_ADDRESS)
+                .map_err(|e| BlockExecutionError::other(e))?;
+
+            // Only initialize if the account has no code
+            if keychain_account.data.info.is_empty_code_hash() {
+                let code_hash = Bytecode::new_legacy(Bytes::from_static(&[0xef])).hash_slow();
+                keychain_account
+                    .data
+                    .set_code(code_hash, Bytecode::new_legacy(Bytes::from_static(&[0xef])));
+            }
+        }
+
+        Ok(())
     }
 
     fn execute_transaction_without_commit(

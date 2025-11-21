@@ -89,10 +89,7 @@ where
     /// - ValidateKeychain: Need to validate the keychain authorization
     /// - Skip: No validation needed (not a keychain signature, or same-tx auth is valid)
     /// - Reject: Transaction should be rejected with the given reason
-    fn check_keychain_validation(
-        &self,
-        transaction: &TempoPooledTransaction,
-    ) -> ValidationResult {
+    fn check_keychain_validation(&self, transaction: &TempoPooledTransaction) -> ValidationResult {
         let aa_signed = match transaction.inner().as_ref() {
             tempo_primitives::TempoTxEnvelope::AA(aa) => aa,
             _ => return ValidationResult::Skip,
