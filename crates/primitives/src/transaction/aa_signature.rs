@@ -227,90 +227,8 @@ impl reth_codecs::Compact for AASignature {
     fn from_compact(buf: &[u8], len: usize) -> (Self, &[u8]) {
         // Delegate to Bytes::from_compact which handles variable-length decoding
         let (bytes, rest) = Bytes::from_compact(buf, len);
-        let signature = Self::from_bytes(&bytes).unwrap_or_else(|_| {
-            // For proptest, return a default value based on the type identifier
-            // Try to preserve the signature type even if decoding fails
-            if bytes.len() == SECP256K1_SIGNATURE_LENGTH {
-                // 65 bytes = Secp256k1
-                Self::Secp256k1(Signature::test_signature())
-            } else if !bytes.is_empty() {
-                let type_id = bytes[0];
-                match type_id {
-                    SIGNATURE_TYPE_P256 => {
-                        // Return a valid P256 signature with test values
-                        Self::P256(P256SignatureWithPreHash {
-                            r: B256::from([1u8; 32]),
-                            s: B256::from([2u8; 32]),
-                            pub_key_x: B256::from([3u8; 32]),
-                            pub_key_y: B256::from([4u8; 32]),
-                            pre_hash: false,
-                        })
-                    }
-                    SIGNATURE_TYPE_WEBAUTHN => {
-                        // Return a valid WebAuthn signature with test values
-                        Self::WebAuthn(WebAuthnSignature {
-                            r: B256::from([1u8; 32]),
-                            s: B256::from([2u8; 32]),
-                            pub_key_x: B256::from([3u8; 32]),
-                            pub_key_y: B256::from([4u8; 32]),
-                            webauthn_data: Bytes::from(vec![0u8; 128]),
-                        })
-                    }
-                    SIGNATURE_TYPE_KEYCHAIN => {
-                        // Extract the user_address even if inner signature fails
-                        // Keychain format: 0x03 | user_address (20 bytes) | inner_signature
-                        let sig_data = &bytes[1..];
-                        let user_address = if sig_data.len() >= 20 {
-                            Address::from_slice(&sig_data[0..20])
-                        } else {
-                            Address::ZERO
-                        };
-
-                        // Determine inner signature type if possible
-                        let inner_signature = if sig_data.len() > 20 {
-                            let inner_bytes = &sig_data[20..];
-                            // Try to detect the inner signature type
-                            if inner_bytes.len() == SECP256K1_SIGNATURE_LENGTH {
-                                PrimitiveSignature::Secp256k1(Signature::test_signature())
-                            } else if !inner_bytes.is_empty()
-                                && inner_bytes[0] == SIGNATURE_TYPE_P256
-                            {
-                                PrimitiveSignature::P256(P256SignatureWithPreHash {
-                                    r: B256::from([1u8; 32]),
-                                    s: B256::from([2u8; 32]),
-                                    pub_key_x: B256::from([3u8; 32]),
-                                    pub_key_y: B256::from([4u8; 32]),
-                                    pre_hash: false,
-                                })
-                            } else if !inner_bytes.is_empty()
-                                && inner_bytes[0] == SIGNATURE_TYPE_WEBAUTHN
-                            {
-                                PrimitiveSignature::WebAuthn(WebAuthnSignature {
-                                    r: B256::from([1u8; 32]),
-                                    s: B256::from([2u8; 32]),
-                                    pub_key_x: B256::from([3u8; 32]),
-                                    pub_key_y: B256::from([4u8; 32]),
-                                    webauthn_data: Bytes::from(vec![0u8; 128]),
-                                })
-                            } else {
-                                PrimitiveSignature::default()
-                            }
-                        } else {
-                            PrimitiveSignature::default()
-                        };
-
-                        Self::Keychain(KeychainSignature {
-                            user_address,
-                            signature: inner_signature,
-                            cached_key_id: OnceLock::new(),
-                        })
-                    }
-                    _ => Self::default(),
-                }
-            } else {
-                Self::default()
-            }
-        });
+        let signature = Self::from_bytes(&bytes)
+            .expect("Failed to decode AASignature from compact encoding");
         (signature, rest)
     }
 }
@@ -340,41 +258,8 @@ impl reth_codecs::Compact for PrimitiveSignature {
     fn from_compact(buf: &[u8], len: usize) -> (Self, &[u8]) {
         // Delegate to Bytes::from_compact which handles variable-length decoding
         let (bytes, rest) = Bytes::from_compact(buf, len);
-        let signature = Self::from_bytes(&bytes).unwrap_or_else(|_| {
-            // For proptest, return a default value based on the type identifier
-            // Try to preserve the signature type even if decoding fails
-            if bytes.len() == SECP256K1_SIGNATURE_LENGTH {
-                // 65 bytes = Secp256k1
-                Self::Secp256k1(Signature::test_signature())
-            } else if !bytes.is_empty() {
-                let type_id = bytes[0];
-                match type_id {
-                    SIGNATURE_TYPE_P256 => {
-                        // Return a valid P256 signature with test values
-                        Self::P256(P256SignatureWithPreHash {
-                            r: B256::from([1u8; 32]),
-                            s: B256::from([2u8; 32]),
-                            pub_key_x: B256::from([3u8; 32]),
-                            pub_key_y: B256::from([4u8; 32]),
-                            pre_hash: false,
-                        })
-                    }
-                    SIGNATURE_TYPE_WEBAUTHN => {
-                        // Return a valid WebAuthn signature with test values
-                        Self::WebAuthn(WebAuthnSignature {
-                            r: B256::from([1u8; 32]),
-                            s: B256::from([2u8; 32]),
-                            pub_key_x: B256::from([3u8; 32]),
-                            pub_key_y: B256::from([4u8; 32]),
-                            webauthn_data: Bytes::from(vec![0u8; 128]),
-                        })
-                    }
-                    _ => Self::default(),
-                }
-            } else {
-                Self::default()
-            }
-        });
+        let signature = Self::from_bytes(&bytes)
+            .expect("Failed to decode PrimitiveSignature from compact encoding");
         (signature, rest)
     }
 }

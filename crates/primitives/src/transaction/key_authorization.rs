@@ -197,7 +197,6 @@ impl<'a> arbitrary::Arbitrary<'a> for KeyAuthorization {
         // not the type of the authorization signature
         let key_type = u.arbitrary()?;
 
-        // Generate an actual arbitrary signature for comprehensive testing
         let signature = u.arbitrary()?;
 
         Ok(Self {
