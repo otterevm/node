@@ -71,7 +71,7 @@ pub struct AccountKeychain {
 /// Using slot 0 since there's only one transaction key at a time
 const TRANSACTION_KEY_SLOT: U256 = U256::ZERO;
 
-/// Compute the storage slot for keys[account][key_id]
+/// Compute the storage slot for keys\[account\]\[key_id\]
 ///
 /// This is useful for read-only contexts (like pool validation) that need to
 /// directly read the keychain state using StateProvider without going through
