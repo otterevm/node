@@ -232,7 +232,7 @@ pub(crate) fn classify_field_type(ty: &Type) -> syn::Result<FieldKind<'_>> {
     }
 
     // All non-mapping fields use the same accessor pattern
-    Ok(FieldKind::Slot(ty))
+    Ok(FieldKind::Direct(ty))
 }
 
 /// Helper to compute prev and next slot constant references for a field at a given index.

@@ -5,8 +5,8 @@ use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields, Ident, Type};
 
 use crate::{
-    FieldInfo, FieldKind,
-    layout::gen_handler_field_decl,
+    FieldInfo,
+    layout::{gen_handler_field_decl, gen_handler_field_init},
     packing::{self, LayoutField, PackingConstants},
     storable_primitives::gen_struct_arrays,
     utils::{extract_mapping_types, extract_storable_array_sizes, to_snake_case},
@@ -207,57 +207,11 @@ fn gen_handler_struct(
     // Generate public handler fields (reusing shared function)
     let handler_fields = fields.iter().map(gen_handler_field_decl);
 
-    // Generate field initializations for constructor
-    // For storable structs, we need to add base_slot to field offsets
-    let field_inits = fields.iter().enumerate().map(|(idx, field)| {
-        let field_name = field.name;
-        let consts = PackingConstants::new(field_name);
-        let (loc_const, slot_const) = (consts.location(), consts.slot());
-
-        match &field.kind {
-            FieldKind::Slot(ty) => {
-                // Calculate neighbor slot references for packing detection
-                let (prev_slot_const_ref, next_slot_const_ref) =
-                    packing::get_neighbor_slot_refs(idx, fields, mod_ident, |field| field.name);
-
-                // Generate `LayoutCtx` expression with compile-time packing detection
-                let layout_ctx = packing::gen_layout_ctx_expr(
-                    ty,
-                    false,
-                    quote! { #mod_ident::#loc_const.offset_slots },
-                    quote! { #mod_ident::#loc_const.offset_bytes },
-                    prev_slot_const_ref,
-                    next_slot_const_ref,
-                );
-
-                quote! {
-                    #field_name: crate::storage::Slot::new_with_ctx(
-                        base_slot + ::alloy::primitives::U256::from(#mod_ident::#loc_const.offset_slots),
-                        #layout_ctx,
-                        ::std::rc::Rc::clone(&address_rc)
-                    )
-                }
-            }
-            FieldKind::Mapping { .. } => {
-                // For Mapping fields, add base_slot to the field's slot offset
-                quote! {
-                    #field_name: crate::storage::Mapping::new(
-                        base_slot + #mod_ident::#slot_const,
-                        ::std::rc::Rc::clone(&address_rc)
-                    )
-                }
-            }
-            FieldKind::NestedMapping { .. } => {
-                // For NestedMapping fields, add base_slot to the field's slot offset
-                quote! {
-                    #field_name: crate::storage::NestedMapping::new(
-                        base_slot + #mod_ident::#slot_const,
-                        ::std::rc::Rc::clone(&address_rc)
-                    )
-                }
-            }
-        }
-    });
+    // Generate field initializations for constructor using the shared helper
+    let field_inits = fields
+        .iter()
+        .enumerate()
+        .map(|(idx, field)| gen_handler_field_init(field, idx, fields, Some(mod_ident)));
 
     quote! {
         /// Type-safe handler for accessing `#struct_name` in storage.

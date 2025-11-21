@@ -91,7 +91,7 @@ struct FieldInfo {
 #[derive(Debug, Clone, Copy)]
 enum FieldKind<'a> {
     /// Fields with a direct slot allocation, either single or multi (`Slot<V>`).
-    Slot(&'a Type),
+    Direct(&'a Type),
     /// Single-level mapping (`Mapping<K, V>`)
     Mapping { key: &'a Type, value: &'a Type },
     /// Nested mapping (`Mapping<K1, Mapping<K2, V>>`)
