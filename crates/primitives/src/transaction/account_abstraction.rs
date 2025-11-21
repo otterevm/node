@@ -1004,7 +1004,7 @@ mod compact {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction::aa_signature::{AASignature, derive_p256_address};
+    use crate::transaction::aa_signature::{AASignature, PrimitiveSignature, derive_p256_address};
     use alloy_primitives::{Address, Bytes, Signature, TxKind, U256, address, bytes, hex};
     use alloy_rlp::{Decodable, Encodable};
 
@@ -1656,7 +1656,9 @@ mod tests {
                 limit: U256::from(10000),
             }],
             key_id: address!("0000000000000000000000000000000000000004"),
-            signature: AASignature::Secp256k1(Signature::test_signature()),
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                Signature::test_signature(),
+            )),
         };
 
         let tx_with = TxAA {
@@ -1719,7 +1721,9 @@ mod tests {
             aa_authorization_list: vec![],
         };
 
-        let signature = AASignature::Secp256k1(Signature::test_signature());
+        let signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(
+            Signature::test_signature(),
+        ));
         let signed = AASigned::new_unhashed(tx, signature);
 
         // Test direct RLP encoding/decoding
@@ -1761,7 +1765,9 @@ mod tests {
             aa_authorization_list: vec![],
         };
 
-        let signature = AASignature::Secp256k1(Signature::test_signature());
+        let signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(
+            Signature::test_signature(),
+        ));
         let signed = AASigned::new_unhashed(tx, signature);
         let envelope = TempoTxEnvelope::AA(signed);
 

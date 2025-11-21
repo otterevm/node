@@ -412,7 +412,7 @@ mod serde_impl {
     #[cfg(test)]
     mod tests {
         use crate::transaction::{
-            aa_signature::AASignature,
+            aa_signature::{AASignature, PrimitiveSignature},
             account_abstraction::{Call, TxAA},
         };
         use alloy_primitives::{Address, Bytes, Signature, TxKind, U256};
@@ -437,7 +437,9 @@ mod serde_impl {
             };
 
             // Create a secp256k1 signature
-            let signature = AASignature::Secp256k1(Signature::test_signature());
+            let signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                Signature::test_signature(),
+            ));
 
             let aa_signed = super::super::AASigned::new_unhashed(tx, signature);
 

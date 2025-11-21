@@ -65,7 +65,7 @@ async fn fund_address_with_fee_tokens(
     // Sign and send the funding transaction
     let sig_hash = funding_tx.signature_hash();
     let signature = funder_signer.sign_hash_sync(&sig_hash)?;
-    let aa_signature = AASignature::Secp256k1(signature);
+    let aa_signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(signature));
     let signed_funding_tx = AASigned::new_unhashed(funding_tx, aa_signature);
     let funding_envelope: TempoTxEnvelope = signed_funding_tx.into();
     let mut encoded_funding = Vec::new();
@@ -262,7 +262,9 @@ where
 
     let sig_hash = compute_authorization_signature_hash(&auth);
     let signature = signer.sign_hash_sync(&sig_hash)?;
-    let aa_sig = tempo_primitives::transaction::aa_signature::AASignature::Secp256k1(signature);
+    let aa_sig = tempo_primitives::transaction::aa_signature::AASignature::Primitive(
+        tempo_primitives::transaction::aa_signature::PrimitiveSignature::Secp256k1(signature),
+    );
     let signed_auth = AASignedAuthorization::new_unchecked(auth, aa_sig);
 
     Ok((signed_auth, authority_addr))
@@ -310,13 +312,13 @@ fn create_p256_authorization(
     let signature: p256::ecdsa::Signature = signing_key.sign_prehash(&pre_hashed)?;
     let sig_bytes = signature.to_bytes();
 
-    let aa_sig = AASignature::P256(P256SignatureWithPreHash {
+    let aa_sig = AASignature::Primitive(PrimitiveSignature::P256(P256SignatureWithPreHash {
         r: alloy::primitives::B256::from_slice(&sig_bytes[0..32]),
         s: alloy::primitives::B256::from_slice(&sig_bytes[32..64]),
         pub_key_x,
         pub_key_y,
         pre_hash: true,
-    });
+    }));
     let signed_auth = AASignedAuthorization::new_unchecked(auth, aa_sig);
 
     Ok((signed_auth, authority_addr, signing_key))
@@ -387,13 +389,13 @@ fn create_webauthn_authorization(
     webauthn_data.extend_from_slice(&authenticator_data);
     webauthn_data.extend_from_slice(client_data_json.as_bytes());
 
-    let aa_sig = AASignature::WebAuthn(WebAuthnSignature {
+    let aa_sig = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
         webauthn_data: Bytes::from(webauthn_data),
         r: alloy::primitives::B256::from_slice(&sig_bytes[0..32]),
         s: alloy::primitives::B256::from_slice(&sig_bytes[32..64]),
         pub_key_x,
         pub_key_y,
-    });
+    }));
     let signed_auth = AASignedAuthorization::new_unchecked(auth, aa_sig);
 
     Ok((signed_auth, authority_addr, signing_key))
@@ -546,7 +548,7 @@ fn create_key_authorization(
         expiry,
         limits: spending_limits,
         key_id: access_key_addr,
-        signature: AASignature::Secp256k1(root_auth_signature),
+        signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(root_auth_signature)),
     })
 }
 
@@ -626,7 +628,9 @@ fn create_basic_aa_tx(chain_id: u64, nonce: u64, calls: Vec<Call>, gas_limit: u6
 fn sign_aa_tx_secp256k1(tx: &TxAA, signer: &impl SignerSync) -> eyre::Result<AASignature> {
     let sig_hash = tx.signature_hash();
     let signature = signer.sign_hash_sync(&sig_hash)?;
-    Ok(AASignature::Secp256k1(signature))
+    Ok(AASignature::Primitive(PrimitiveSignature::Secp256k1(
+        signature,
+    )))
 }
 
 /// Helper to sign AA transaction with P256 key (with pre-hash)
@@ -645,13 +649,15 @@ fn sign_aa_tx_p256(
     let p256_signature: p256::ecdsa::Signature = signing_key.sign_prehash(&pre_hashed)?;
     let sig_bytes = p256_signature.to_bytes();
 
-    Ok(AASignature::P256(P256SignatureWithPreHash {
-        r: B256::from_slice(&sig_bytes[0..32]),
-        s: B256::from_slice(&sig_bytes[32..64]),
-        pub_key_x,
-        pub_key_y,
-        pre_hash: true,
-    }))
+    Ok(AASignature::Primitive(PrimitiveSignature::P256(
+        P256SignatureWithPreHash {
+            r: B256::from_slice(&sig_bytes[0..32]),
+            s: B256::from_slice(&sig_bytes[32..64]),
+            pub_key_x,
+            pub_key_y,
+            pre_hash: true,
+        },
+    )))
 }
 
 /// Helper to create WebAuthn authenticator data and client data JSON
@@ -702,13 +708,15 @@ fn sign_aa_tx_webauthn(
     webauthn_data.extend_from_slice(&authenticator_data);
     webauthn_data.extend_from_slice(client_data_json.as_bytes());
 
-    Ok(AASignature::WebAuthn(WebAuthnSignature {
-        webauthn_data: Bytes::from(webauthn_data),
-        r: B256::from_slice(&sig_bytes[0..32]),
-        s: B256::from_slice(&sig_bytes[32..64]),
-        pub_key_x,
-        pub_key_y,
-    }))
+    Ok(AASignature::Primitive(PrimitiveSignature::WebAuthn(
+        WebAuthnSignature {
+            webauthn_data: Bytes::from(webauthn_data),
+            r: B256::from_slice(&sig_bytes[0..32]),
+            s: B256::from_slice(&sig_bytes[32..64]),
+            pub_key_x,
+            pub_key_y,
+        },
+    )))
 }
 
 // ===== Transaction Encoding Helper Functions =====
@@ -1139,13 +1147,13 @@ async fn test_aa_webauthn_signature_negative_cases() -> eyre::Result<()> {
     webauthn_data1.extend_from_slice(&authenticator_data1);
     webauthn_data1.extend_from_slice(client_data_json1.as_bytes());
 
-    let aa_signature1 = AASignature::WebAuthn(WebAuthnSignature {
+    let aa_signature1 = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
         webauthn_data: Bytes::from(webauthn_data1),
         r: alloy::primitives::B256::from_slice(&sig_bytes1[0..32]),
         s: alloy::primitives::B256::from_slice(&sig_bytes1[32..64]),
         pub_key_x: wrong_pub_key_x, // WRONG public key
         pub_key_y: wrong_pub_key_y, // WRONG public key
-    });
+    }));
 
     // Try to verify - should fail
     let recovery_result1 = aa_signature1.recover_signer(&sig_hash1);
@@ -1189,13 +1197,13 @@ async fn test_aa_webauthn_signature_negative_cases() -> eyre::Result<()> {
     webauthn_data2.extend_from_slice(&authenticator_data2);
     webauthn_data2.extend_from_slice(client_data_json2.as_bytes());
 
-    let aa_signature2 = AASignature::WebAuthn(WebAuthnSignature {
+    let aa_signature2 = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
         webauthn_data: Bytes::from(webauthn_data2),
         r: alloy::primitives::B256::from_slice(&sig_bytes2[0..32]),
         s: alloy::primitives::B256::from_slice(&sig_bytes2[32..64]),
         pub_key_x: correct_pub_key_x, // Correct public key
         pub_key_y: correct_pub_key_y, // But signature is from wrong private key
-    });
+    }));
 
     // Try to verify - should fail
     let recovery_result2 = aa_signature2.recover_signer(&sig_hash2);
@@ -1239,13 +1247,13 @@ async fn test_aa_webauthn_signature_negative_cases() -> eyre::Result<()> {
     webauthn_data3.extend_from_slice(&authenticator_data3);
     webauthn_data3.extend_from_slice(client_data_json3.as_bytes());
 
-    let aa_signature3 = AASignature::WebAuthn(WebAuthnSignature {
+    let aa_signature3 = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
         webauthn_data: Bytes::from(webauthn_data3),
         r: alloy::primitives::B256::from_slice(&sig_bytes3[0..32]),
         s: alloy::primitives::B256::from_slice(&sig_bytes3[32..64]),
         pub_key_x: correct_pub_key_x,
         pub_key_y: correct_pub_key_y,
-    });
+    }));
 
     // Try to verify - should fail during WebAuthn data validation
     let recovery_result3 = aa_signature3.recover_signer(&sig_hash3);
@@ -1288,13 +1296,13 @@ async fn test_aa_webauthn_signature_negative_cases() -> eyre::Result<()> {
     webauthn_data4.extend_from_slice(&authenticator_data4);
     webauthn_data4.extend_from_slice(client_data_json4.as_bytes());
 
-    let aa_signature4 = AASignature::WebAuthn(WebAuthnSignature {
+    let aa_signature4 = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
         webauthn_data: Bytes::from(webauthn_data4),
         r: alloy::primitives::B256::from_slice(&sig_bytes4[0..32]),
         s: alloy::primitives::B256::from_slice(&sig_bytes4[32..64]),
         pub_key_x: correct_pub_key_x,
         pub_key_y: correct_pub_key_y,
-    });
+    }));
 
     // Try to verify - should fail during WebAuthn data validation
     let recovery_result4 = aa_signature4.recover_signer(&sig_hash4);
@@ -1357,13 +1365,13 @@ async fn test_aa_webauthn_signature_negative_cases() -> eyre::Result<()> {
     bad_webauthn_data.extend_from_slice(&bad_auth_data);
     bad_webauthn_data.extend_from_slice(bad_client_data.as_bytes());
 
-    let bad_aa_signature = AASignature::WebAuthn(WebAuthnSignature {
+    let bad_aa_signature = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
         webauthn_data: Bytes::from(bad_webauthn_data),
         r: alloy::primitives::B256::from_slice(&bad_sig_bytes[0..32]),
         s: alloy::primitives::B256::from_slice(&bad_sig_bytes[32..64]),
         pub_key_x: correct_pub_key_x,
         pub_key_y: correct_pub_key_y,
-    });
+    }));
 
     let signed_bad_tx = AASigned::new_unhashed(bad_tx, bad_aa_signature);
     let bad_envelope: TempoTxEnvelope = signed_bad_tx.into();
@@ -1550,7 +1558,10 @@ async fn test_aa_p256_call_batching() -> eyre::Result<()> {
 
     // Verify it used P256 signature
     match aa_tx.signature() {
-        AASignature::P256(P256SignatureWithPreHash { pre_hash, .. }) => {
+        AASignature::Primitive(PrimitiveSignature::P256(P256SignatureWithPreHash {
+            pre_hash,
+            ..
+        })) => {
             assert!(*pre_hash, "Should have pre_hash flag set");
             println!("✓ Transaction used P256 signature with pre-hash");
         }
@@ -1702,7 +1713,7 @@ async fn test_aa_fee_payer_tx() -> eyre::Result<()> {
     tx.fee_payer_signature = Some(fee_payer_signature);
 
     // Create signed transaction with user's signature
-    let aa_signature = AASignature::Secp256k1(user_signature);
+    let aa_signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(user_signature));
     let encoded = encode_aa_tx(tx.clone(), aa_signature.clone());
 
     // Recreate envelope for verification
@@ -1797,7 +1808,7 @@ async fn test_aa_empty_call_batch_should_fail() -> eyre::Result<()> {
     // Sign the transaction with secp256k1
     let sig_hash = tx.signature_hash();
     let signature = alice_signer.sign_hash_sync(&sig_hash)?;
-    let aa_signature = AASignature::Secp256k1(signature);
+    let aa_signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(signature));
     let signed_tx = AASigned::new_unhashed(tx, aa_signature);
 
     // Convert to envelope and encode
@@ -2048,7 +2059,7 @@ async fn test_aa_authorization_list() -> eyre::Result<()> {
     // Sign the transaction with sender's secp256k1 key
     let tx_sig_hash = tx.signature_hash();
     let tx_signature = sender_signer.sign_hash_sync(&tx_sig_hash)?;
-    let tx_aa_signature = AASignature::Secp256k1(tx_signature);
+    let tx_aa_signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(tx_signature));
     let signed_tx = AASigned::new_unhashed(tx, tx_aa_signature);
 
     // Convert to envelope and encode
@@ -2190,7 +2201,7 @@ async fn test_aa_bump_nonce_on_failure() -> eyre::Result<()> {
     // Sign the transaction with secp256k1
     let sig_hash = tx.signature_hash();
     let signature = alice_signer.sign_hash_sync(&sig_hash)?;
-    let aa_signature = AASignature::Secp256k1(signature);
+    let aa_signature = AASignature::Primitive(PrimitiveSignature::Secp256k1(signature));
     let signed_tx = AASigned::new_unhashed(tx, aa_signature);
 
     // Convert to envelope and encode
@@ -2326,7 +2337,7 @@ async fn test_aa_access_key() -> eyre::Result<()> {
         expiry: key_expiry,
         limits: spending_limits,
         key_id: access_key_addr, // Address derived from P256 public key
-        signature: AASignature::Secp256k1(root_auth_signature), // Root key signature (secp256k1)
+        signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(root_auth_signature)), // Root key signature (secp256k1)
     };
 
     println!("✓ Key authorization created (expiry: {key_expiry})");
@@ -2724,7 +2735,12 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
     };
     let sig_hash = tx.signature_hash();
     let signature = root_signer.sign_hash_sync(&sig_hash)?;
-    let _tx_hash = submit_and_mine_aa_tx(&mut setup, tx, AASignature::Secp256k1(signature)).await?;
+    let _tx_hash = submit_and_mine_aa_tx(
+        &mut setup,
+        tx,
+        AASignature::Primitive(PrimitiveSignature::Secp256k1(signature)),
+    )
+    .await?;
     nonce += 1; // Increment after successful submission
     println!("✓ Zero public key rejected\n");
 
@@ -2732,7 +2748,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
     println!("Test 2: Duplicate key authorization");
     let (_, pub_x, pub_y, access_key_addr) = generate_p256_access_key();
     // Create a mock P256 signature to indicate this is a P256 key
-    let mock_p256_sig = AASignature::P256(
+    let mock_p256_sig = AASignature::Primitive(PrimitiveSignature::P256(
         tempo_primitives::transaction::aa_signature::P256SignatureWithPreHash {
             r: B256::ZERO,
             s: B256::ZERO,
@@ -2740,7 +2756,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
             pub_key_y: pub_y,
             pre_hash: false,
         },
-    );
+    ));
     let key_auth = create_key_authorization(
         &root_signer,
         access_key_addr,
@@ -2776,7 +2792,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
     let sig_hash = tx1.signature_hash();
     let signature = root_signer.sign_hash_sync(&sig_hash)?;
     let _tx_hash =
-        submit_and_mine_aa_tx(&mut setup, tx1, AASignature::Secp256k1(signature)).await?;
+        submit_and_mine_aa_tx(&mut setup, tx1, AASignature::Primitive(PrimitiveSignature::Secp256k1(signature))).await?;
     nonce += 1;
     println!("  ✓ First authorization succeeded");
 
@@ -2804,7 +2820,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
     };
     let sig_hash2 = tx2.signature_hash();
     let signature2 = root_signer.sign_hash_sync(&sig_hash2)?;
-    let signed_tx2 = AASigned::new_unhashed(tx2, AASignature::Secp256k1(signature2));
+    let signed_tx2 = AASigned::new_unhashed(tx2, AASignature::Primitive(PrimitiveSignature::Secp256k1(signature2)));
     let envelope2: TempoTxEnvelope = signed_tx2.into();
     let mut encoded2 = Vec::new();
     envelope2.encode_2718(&mut encoded2);
@@ -2848,7 +2864,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
     // Test 3: Access key trying to authorize another key (should fail)
     println!("Test 3: Unauthorized authorize attempt");
     let (access_key_1, pub_x_1, pub_y_1, access_addr_1) = generate_p256_access_key();
-    let mock_p256_sig_1 = AASignature::P256(
+    let mock_p256_sig_1 = AASignature::Primitive(PrimitiveSignature::P256(
         tempo_primitives::transaction::aa_signature::P256SignatureWithPreHash {
             r: B256::ZERO,
             s: B256::ZERO,
@@ -2856,7 +2872,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
             pub_key_y: pub_y_1,
             pre_hash: false,
         },
-    );
+    ));
     let key_auth_1 = create_key_authorization(
         &root_signer,
         access_addr_1,
@@ -2892,12 +2908,12 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
     let sig_hash = tx3.signature_hash();
     let signature = root_signer.sign_hash_sync(&sig_hash)?;
     let _tx_hash =
-        submit_and_mine_aa_tx(&mut setup, tx3, AASignature::Secp256k1(signature)).await?;
+        submit_and_mine_aa_tx(&mut setup, tx3, AASignature::Primitive(PrimitiveSignature::Secp256k1(signature))).await?;
     nonce += 1;
 
     // Try to authorize second key using first access key (should fail)
     let (_, pub_x_2, pub_y_2, access_addr_2) = generate_p256_access_key();
-    let mock_p256_sig_2 = AASignature::P256(
+    let mock_p256_sig_2 = AASignature::Primitive(PrimitiveSignature::P256(
         tempo_primitives::transaction::aa_signature::P256SignatureWithPreHash {
             r: B256::ZERO,
             s: B256::ZERO,
@@ -2905,7 +2921,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
             pub_key_y: pub_y_2,
             pre_hash: false,
         },
-    );
+    ));
     let key_auth_2 = create_key_authorization(
         &root_signer,
         access_addr_2,
@@ -2985,7 +3001,7 @@ async fn test_transaction_key_authorization_and_spending_limits() -> eyre::Resul
     let spending_limit = U256::from(5u64) * U256::from(10).pow(U256::from(18)); // 5 tokens
     let over_limit_amount = U256::from(10u64) * U256::from(10).pow(U256::from(18)); // 10 tokens
 
-    let mock_p256_sig = AASignature::P256(
+    let mock_p256_sig = AASignature::Primitive(PrimitiveSignature::P256(
         tempo_primitives::transaction::aa_signature::P256SignatureWithPreHash {
             r: B256::ZERO,
             s: B256::ZERO,
@@ -2993,7 +3009,7 @@ async fn test_transaction_key_authorization_and_spending_limits() -> eyre::Resul
             pub_key_y: pub_y,
             pre_hash: false,
         },
-    );
+    ));
 
     let key_auth = create_key_authorization(
         &root_signer,
@@ -3031,7 +3047,7 @@ async fn test_transaction_key_authorization_and_spending_limits() -> eyre::Resul
     };
 
     let sig = root_signer.sign_hash_sync(&auth_tx.signature_hash())?;
-    let _tx_hash = submit_and_mine_aa_tx(&mut setup, auth_tx, AASignature::Secp256k1(sig)).await?;
+    let _tx_hash = submit_and_mine_aa_tx(&mut setup, auth_tx, AASignature::Primitive(PrimitiveSignature::Secp256k1(sig))).await?;
     nonce += 1;
 
     // Test 2: Try to use access key to call admin functions (must revert)
@@ -3288,13 +3304,13 @@ async fn test_aa_keychain_rpc_validation() -> eyre::Result<()> {
         limit: U256::from(10u64) * U256::from(10).pow(U256::from(18)), // 10 tokens
     }];
 
-    let mock_p256_sig = AASignature::P256(P256SignatureWithPreHash {
+    let mock_p256_sig = AASignature::Primitive(PrimitiveSignature::P256(P256SignatureWithPreHash {
         r: B256::ZERO,
         s: B256::ZERO,
         pub_key_x: authorized_pub_key_x,
         pub_key_y: authorized_pub_key_y,
         pre_hash: false,
-    });
+    }));
 
     let key_auth = create_key_authorization(
         &root_key_signer,
@@ -3554,13 +3570,13 @@ async fn test_aa_keychain_rpc_validation() -> eyre::Result<()> {
         expiry: u64::MAX,
         limits: spending_limits.clone(),
         key_id: addr_3,
-        signature: AASignature::P256(P256SignatureWithPreHash {
+        signature: AASignature::Primitive(PrimitiveSignature::P256(P256SignatureWithPreHash {
             r: B256::from_slice(&wrong_sig_bytes[0..32]),
             s: B256::from_slice(&wrong_sig_bytes[32..64]),
             pub_key_x: unauthorized_pub_key_x, // pub key of wrong signer
             pub_key_y: unauthorized_pub_key_y,
             pre_hash: true,
-        }),
+        })),
     };
 
     let invalid_auth_tx = TxAA {

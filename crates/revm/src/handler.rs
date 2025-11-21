@@ -81,12 +81,7 @@ fn primitive_signature_verification_gas(signature: &PrimitiveSignature) -> u64 {
 #[inline]
 fn aa_signature_verification_gas(signature: &AASignature) -> u64 {
     match signature {
-        AASignature::Secp256k1(_) => 0,
-        AASignature::P256(_) => P256_VERIFY_GAS,
-        AASignature::WebAuthn(webauthn_sig) => {
-            let tokens = get_tokens_in_calldata(&webauthn_sig.webauthn_data, true);
-            P256_VERIFY_GAS + tokens * STANDARD_TOKEN_COST
-        }
+        AASignature::Primitive(prim_sig) => primitive_signature_verification_gas(prim_sig),
         AASignature::Keychain(keychain_sig) => {
             // Keychain wraps a primitive signature - calculate gas for the inner signature
             primitive_signature_verification_gas(&keychain_sig.signature)
@@ -1373,7 +1368,9 @@ mod tests {
         };
 
         let aa_env = AATxEnv {
-            signature: AASignature::Secp256k1(alloy_primitives::Signature::test_signature()), // dummy secp256k1 sig
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                alloy_primitives::Signature::test_signature(),
+            )), // dummy secp256k1 sig
             aa_calls: vec![call],
             key_authorization: None,
             signature_hash: B256::ZERO,
@@ -1437,7 +1434,9 @@ mod tests {
         ];
 
         let aa_env = AATxEnv {
-            signature: AASignature::Secp256k1(alloy_primitives::Signature::test_signature()),
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                alloy_primitives::Signature::test_signature(),
+            )),
             aa_calls: calls.clone(),
             key_authorization: None,
             signature_hash: B256::ZERO,
@@ -1487,13 +1486,13 @@ mod tests {
         };
 
         let aa_env = AATxEnv {
-            signature: AASignature::P256(P256SignatureWithPreHash {
+            signature: AASignature::Primitive(PrimitiveSignature::P256(P256SignatureWithPreHash {
                 r: B256::ZERO,
                 s: B256::ZERO,
                 pub_key_x: B256::ZERO,
                 pub_key_y: B256::ZERO,
                 pre_hash: false,
-            }),
+            })),
             aa_calls: vec![call],
             key_authorization: None,
             signature_hash: B256::ZERO,
@@ -1538,7 +1537,9 @@ mod tests {
         };
 
         let aa_env = AATxEnv {
-            signature: AASignature::Secp256k1(alloy_primitives::Signature::test_signature()),
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                alloy_primitives::Signature::test_signature(),
+            )),
             aa_calls: vec![call],
             key_authorization: None,
             signature_hash: B256::ZERO,
@@ -1581,7 +1582,9 @@ mod tests {
         };
 
         let aa_env = AATxEnv {
-            signature: AASignature::Secp256k1(alloy_primitives::Signature::test_signature()),
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                alloy_primitives::Signature::test_signature(),
+            )),
             aa_calls: vec![call],
             key_authorization: None,
             signature_hash: B256::ZERO,
@@ -1620,7 +1623,9 @@ mod tests {
         };
 
         let aa_env = AATxEnv {
-            signature: AASignature::Secp256k1(alloy_primitives::Signature::test_signature()),
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                alloy_primitives::Signature::test_signature(),
+            )),
             aa_calls: vec![call],
             key_authorization: None,
             signature_hash: B256::ZERO,
@@ -1699,7 +1704,9 @@ mod tests {
         };
 
         let aa_env = AATxEnv {
-            signature: AASignature::Secp256k1(alloy_primitives::Signature::test_signature()),
+            signature: AASignature::Primitive(PrimitiveSignature::Secp256k1(
+                alloy_primitives::Signature::test_signature(),
+            )),
             aa_calls: vec![call],
             key_authorization: None,
             signature_hash: B256::ZERO,

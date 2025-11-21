@@ -165,16 +165,10 @@ impl<'a> arbitrary::Arbitrary<'a> for KeychainSignature {
 /// Note: Uses custom Compact implementation that delegates to `to_bytes()` / `from_bytes()`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "camelCase"))]
+#[cfg_attr(feature = "serde", serde(untagged, rename_all = "camelCase"))]
 pub enum AASignature {
-    /// Standard secp256k1 ECDSA signature (65 bytes: r, s, v)
-    Secp256k1(Signature),
-
-    /// P256 signature with embedded public key (129 bytes)
-    P256(P256SignatureWithPreHash),
-
-    /// WebAuthn signature with variable-length authenticator data
-    WebAuthn(WebAuthnSignature),
+    /// Primitive signature types: Secp256k1, P256, or WebAuthn
+    Primitive(PrimitiveSignature),
 
     /// Keychain signature - wraps another signature with a key identifier
     /// Format: key_id (20 bytes) + inner signature
@@ -185,7 +179,7 @@ pub enum AASignature {
 
 impl Default for AASignature {
     fn default() -> Self {
-        Self::Secp256k1(Signature::test_signature())
+        Self::Primitive(PrimitiveSignature::default())
     }
 }
 
@@ -500,11 +494,7 @@ impl AASignature {
 
         // For all non-Keychain signatures, delegate to PrimitiveSignature
         let primitive = PrimitiveSignature::from_bytes(data)?;
-        Ok(match primitive {
-            PrimitiveSignature::Secp256k1(sig) => Self::Secp256k1(sig),
-            PrimitiveSignature::P256(p256_sig) => Self::P256(p256_sig),
-            PrimitiveSignature::WebAuthn(webauthn_sig) => Self::WebAuthn(webauthn_sig),
-        })
+        Ok(Self::Primitive(primitive))
     }
 
     /// Encode signature to bytes
@@ -514,11 +504,7 @@ impl AASignature {
     /// - P256/WebAuthn: encoded WITH type identifier prefix
     pub fn to_bytes(&self) -> Bytes {
         match self {
-            Self::Secp256k1(sig) => PrimitiveSignature::Secp256k1(*sig).to_bytes(),
-            Self::P256(p256_sig) => PrimitiveSignature::P256(*p256_sig).to_bytes(),
-            Self::WebAuthn(webauthn_sig) => {
-                PrimitiveSignature::WebAuthn(webauthn_sig.clone()).to_bytes()
-            }
+            Self::Primitive(primitive_sig) => primitive_sig.to_bytes(),
             Self::Keychain(keychain_sig) => {
                 // Format: 0x03 | user_address (20 bytes) | inner_signature
                 let inner_bytes = keychain_sig.signature.to_bytes();
@@ -538,11 +524,7 @@ impl AASignature {
     /// - P256/WebAuthn: includes 1-byte type identifier prefix
     pub fn encoded_length(&self) -> usize {
         match self {
-            Self::Secp256k1(sig) => PrimitiveSignature::Secp256k1(*sig).encoded_length(),
-            Self::P256(p256_sig) => PrimitiveSignature::P256(*p256_sig).encoded_length(),
-            Self::WebAuthn(webauthn_sig) => {
-                PrimitiveSignature::WebAuthn(webauthn_sig.clone()).encoded_length()
-            }
+            Self::Primitive(primitive_sig) => primitive_sig.encoded_length(),
             Self::Keychain(keychain_sig) => 1 + 20 + keychain_sig.signature.encoded_length(),
         }
     }
@@ -550,11 +532,7 @@ impl AASignature {
     /// Get signature type
     pub fn signature_type(&self) -> SignatureType {
         match self {
-            Self::Secp256k1(sig) => PrimitiveSignature::Secp256k1(*sig).signature_type(),
-            Self::P256(p256_sig) => PrimitiveSignature::P256(*p256_sig).signature_type(),
-            Self::WebAuthn(webauthn_sig) => {
-                PrimitiveSignature::WebAuthn(webauthn_sig.clone()).signature_type()
-            }
+            Self::Primitive(primitive_sig) => primitive_sig.signature_type(),
             Self::Keychain(keychain_sig) => keychain_sig.signature.signature_type(),
         }
     }
@@ -562,9 +540,7 @@ impl AASignature {
     /// Get the in-memory size of the signature
     pub fn size(&self) -> usize {
         match self {
-            Self::Secp256k1(_) => SECP256K1_SIGNATURE_LENGTH,
-            Self::P256(_) => 1 + P256_SIGNATURE_LENGTH,
-            Self::WebAuthn(webauthn_sig) => 1 + webauthn_sig.webauthn_data.len() + 128,
+            Self::Primitive(primitive_sig) => primitive_sig.size(),
             Self::Keychain(keychain_sig) => 1 + 20 + keychain_sig.signature.size(),
         }
     }
@@ -584,11 +560,7 @@ impl AASignature {
         sig_hash: &B256,
     ) -> Result<Address, alloy_consensus::crypto::RecoveryError> {
         match self {
-            Self::Secp256k1(sig) => PrimitiveSignature::Secp256k1(*sig).recover_signer(sig_hash),
-            Self::P256(p256_sig) => PrimitiveSignature::P256(*p256_sig).recover_signer(sig_hash),
-            Self::WebAuthn(webauthn_sig) => {
-                PrimitiveSignature::WebAuthn(webauthn_sig.clone()).recover_signer(sig_hash)
-            }
+            Self::Primitive(primitive_sig) => primitive_sig.recover_signer(sig_hash),
             Self::Keychain(keychain_sig) => {
                 // Validate the inner signature by recovering the access key address
                 // This ensures the signature is valid before the transaction enters the pool
@@ -638,7 +610,7 @@ impl AASignature {
 
 impl From<Signature> for AASignature {
     fn from(signature: Signature) -> Self {
-        Self::Secp256k1(signature)
+        Self::Primitive(PrimitiveSignature::Secp256k1(signature))
     }
 }
 
@@ -806,13 +778,11 @@ impl<'a> arbitrary::Arbitrary<'a> for PrimitiveSignature {
 #[cfg(any(test, feature = "arbitrary"))]
 impl<'a> arbitrary::Arbitrary<'a> for AASignature {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        // Generate diverse data across all 4 signature types for property-based testing
-        let choice = u.int_in_range(0..=3)?;
+        // Generate diverse data across Primitive and Keychain signature types for property-based testing
+        let choice = u.int_in_range(0..=1)?;
         match choice {
-            0 => Ok(Self::Secp256k1(Signature::test_signature())),
-            1 => Ok(Self::P256(u.arbitrary()?)),
-            2 => Ok(Self::WebAuthn(u.arbitrary()?)),
-            3 => Ok(Self::Keychain(u.arbitrary()?)),
+            0 => Ok(Self::Primitive(u.arbitrary()?)),
+            1 => Ok(Self::Keychain(u.arbitrary()?)),
             _ => unreachable!(),
         }
     }
@@ -1087,10 +1057,10 @@ mod tests {
         let result = AASignature::from_bytes(&sig_bytes);
 
         assert!(result.is_ok());
-        if let AASignature::Secp256k1(_) = result.unwrap() {
+        if let AASignature::Primitive(PrimitiveSignature::Secp256k1(_)) = result.unwrap() {
             // Expected
         } else {
-            panic!("Expected Secp256k1 variant");
+            panic!("Expected Primitive(Secp256k1) variant");
         }
     }
 
@@ -1103,10 +1073,10 @@ mod tests {
         let result = AASignature::from_bytes(&sig_bytes);
 
         assert!(result.is_ok());
-        if let AASignature::P256 { .. } = result.unwrap() {
+        if let AASignature::Primitive(PrimitiveSignature::P256(_)) = result.unwrap() {
             // Expected
         } else {
-            panic!("Expected P256 variant");
+            panic!("Expected Primitive(P256) variant");
         }
     }
 
@@ -1119,10 +1089,10 @@ mod tests {
         let result = AASignature::from_bytes(&sig_bytes);
 
         assert!(result.is_ok());
-        if let AASignature::WebAuthn { .. } = result.unwrap() {
+        if let AASignature::Primitive(PrimitiveSignature::WebAuthn(_)) = result.unwrap() {
             // Expected
         } else {
-            panic!("Expected WebAuthn variant");
+            panic!("Expected Primitive(WebAuthn) variant");
         }
     }
 
@@ -1176,20 +1146,21 @@ mod tests {
             alloy_primitives::U256::from_be_slice(&s_bytes),
             false,
         );
-        let secp256k1_sig = AASignature::Secp256k1(sig);
+        let secp256k1_sig =
+            AASignature::Primitive(PrimitiveSignature::Secp256k1(sig));
 
         let json = serde_json::to_string(&secp256k1_sig).unwrap();
         let decoded: AASignature = serde_json::from_str(&json).unwrap();
         assert_eq!(secp256k1_sig, decoded, "Secp256k1 serde roundtrip failed");
 
         // Test P256
-        let p256_sig = AASignature::P256(P256SignatureWithPreHash {
+        let p256_sig = AASignature::Primitive(PrimitiveSignature::P256(P256SignatureWithPreHash {
             r: B256::from([1u8; 32]),
             s: B256::from([2u8; 32]),
             pub_key_x: B256::from([3u8; 32]),
             pub_key_y: B256::from([4u8; 32]),
             pre_hash: true,
-        });
+        }));
 
         let json = serde_json::to_string(&p256_sig).unwrap();
         let decoded: AASignature = serde_json::from_str(&json).unwrap();
@@ -1210,13 +1181,13 @@ mod tests {
         );
 
         // Test WebAuthn
-        let webauthn_sig = AASignature::WebAuthn(WebAuthnSignature {
+        let webauthn_sig = AASignature::Primitive(PrimitiveSignature::WebAuthn(WebAuthnSignature {
             r: B256::from([5u8; 32]),
             s: B256::from([6u8; 32]),
             pub_key_x: B256::from([7u8; 32]),
             pub_key_y: B256::from([8u8; 32]),
             webauthn_data: Bytes::from(vec![9u8; 50]),
-        });
+        }));
 
         let json = serde_json::to_string(&webauthn_sig).unwrap();
         let decoded: AASignature = serde_json::from_str(&json).unwrap();
