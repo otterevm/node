@@ -2838,7 +2838,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
 
     if let Err(e) = inject_result {
         // Transaction was rejected at pool level (expected for duplicate key)
-        println!("  ✓ Duplicate key rejected at pool level: {}", e);
+        println!("  ✓ Duplicate key rejected at pool level: {e}");
     } else {
         // Transaction was accepted, mine it and check if it reverted
         setup.node.advance_block().await?;
@@ -3533,14 +3533,12 @@ async fn test_aa_keychain_rpc_validation() -> eyre::Result<()> {
         "Error must mention 'Keychain signature validation failed'. Got: {error_msg}"
     );
     assert!(
-        error_msg.contains(&format!("{}", unauthorized_key_addr)),
-        "Error must contain unauthorized key address {}. Got: {error_msg}",
-        unauthorized_key_addr
+        error_msg.contains(&format!("{unauthorized_key_addr}")),
+        "Error must contain unauthorized key address {unauthorized_key_addr}. Got: {error_msg}"
     );
     assert!(
-        error_msg.contains(&format!("{}", root_key_addr)),
-        "Error must contain root account address {}. Got: {error_msg}",
-        root_key_addr
+        error_msg.contains(&format!("{root_key_addr}")),
+        "Error must contain root account address {root_key_addr}. Got: {error_msg}"
     );
     assert!(
         error_msg.contains("is not authorized for account"),

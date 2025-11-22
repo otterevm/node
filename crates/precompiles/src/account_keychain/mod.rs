@@ -592,11 +592,10 @@ mod tests {
                 crate::error::TempoPrecompileError::AccountKeychainError(e) => {
                     assert!(
                         matches!(e, AccountKeychainError::UnauthorizedCaller(_)),
-                        "Expected UnauthorizedCaller error, got: {:?}",
-                        e
+                        "Expected UnauthorizedCaller error, got: {e:?}"
                     );
                 }
-                _ => panic!("Expected AccountKeychainError, got: {:?}", error),
+                _ => panic!("Expected AccountKeychainError, got: {error:?}"),
             }
         }
     }
