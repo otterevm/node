@@ -330,6 +330,7 @@ where
                 blocker: self.config.blocker.clone(),
                 automaton: self.config.application.clone(),
                 relay: self.config.application.clone(),
+                // INDEXER: hook in here
                 reporter: Reporters::from((
                     self.config.subblocks.clone(),
                     self.config.marshal.clone(),
