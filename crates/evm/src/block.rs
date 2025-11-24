@@ -24,7 +24,7 @@ use revm::{
     context::{ContextTr, JournalTr},
     state::Bytecode,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tempo_chainspec::{TempoChainSpec, hardfork::TempoHardforks};
 use tempo_precompiles::{
     ACCOUNT_KEYCHAIN_ADDRESS, STABLECOIN_EXCHANGE_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
