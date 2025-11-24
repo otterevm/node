@@ -22,7 +22,7 @@ impl<'a, S: PrecompileStorageProvider> TipAccountRegistrar<'a, S> {
     ///
     /// Caution: This does not initialize the account, see [`Self::initialize`].
     pub fn new(storage: &'a mut S) -> Self {
-        Self::_new(TIP_ACCOUNT_REGISTRAR, storage)
+        Self::__new(TIP_ACCOUNT_REGISTRAR, storage)
     }
 
     /// Initializes the TIP Account Registrar contract
@@ -150,7 +150,7 @@ mod tests {
     fn test_delegate_to_default_v1_pre_moderato() {
         // Pre-Moderato: delegateToDefault(bytes32,bytes) should work
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let signer = PrivateKeySigner::random();
         let expected_address = signer.address();
@@ -183,7 +183,7 @@ mod tests {
         use crate::Precompile;
 
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let signer = PrivateKeySigner::random();
         let hash = alloy::primitives::keccak256(b"test");
@@ -221,7 +221,7 @@ mod tests {
     fn test_delegate_to_default_v2_post_moderato() {
         // Post-Moderato: delegateToDefault(bytes,bytes) should work
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let signer = PrivateKeySigner::random();
         let expected_address = signer.address();
@@ -256,7 +256,7 @@ mod tests {
         use crate::Precompile;
 
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let signer = PrivateKeySigner::random();
         let message = b"Hello, Tempo!";
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn test_malformed_signature_v1() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let hash = alloy::primitives::keccak256(b"test");
 
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_invalid_signature_v1() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let hash = alloy::primitives::keccak256(b"test");
 
@@ -349,7 +349,7 @@ mod tests {
         let expected_address = signer.address();
         storage.set_nonce(expected_address, 1);
 
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let hash = alloy::primitives::keccak256(b"test");
         let signature = signer.sign_hash_sync(&hash).unwrap();
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn test_delegate_to_default_v2_different_messages_different_signers() {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let signer = PrivateKeySigner::random();
         let expected_address = signer.address();

@@ -160,8 +160,8 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         to: Address,
     ) -> Result<U256> {
         // Validate both tokens are USD currency
-        validate_usd_currency(user_token, self.storage)?;
-        validate_usd_currency(validator_token, self.storage)?;
+        validate_usd_currency(user_token, self.storage.spec())?;
+        validate_usd_currency(validator_token, self.storage.spec())?;
 
         let pool_id = self.pool_id(user_token, validator_token);
         let mut pool = self.sload_pools(pool_id)?;
@@ -209,16 +209,13 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
             },
         )?;
 
-        self.emit_event(
-            TIPFeeAMMEvent::RebalanceSwap(ITIPFeeAMM::RebalanceSwap {
-                userToken: user_token,
-                validatorToken: validator_token,
-                swapper: msg_sender,
-                amountIn: amount_in,
-                amountOut: amount_out,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIPFeeAMMEvent::RebalanceSwap(ITIPFeeAMM::RebalanceSwap {
+            userToken: user_token,
+            validatorToken: validator_token,
+            swapper: msg_sender,
+            amountIn: amount_in,
+            amountOut: amount_out,
+        }))?;
 
         Ok(amount_in)
     }
@@ -238,8 +235,8 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         }
 
         // Validate both tokens are USD currency
-        validate_usd_currency(user_token, self.storage)?;
-        validate_usd_currency(validator_token, self.storage)?;
+        validate_usd_currency(user_token, self.storage.spec())?;
+        validate_usd_currency(validator_token, self.storage.spec())?;
 
         let pool_id = self.pool_id(user_token, validator_token);
         let mut pool = self.sload_pools(pool_id)?;
@@ -344,17 +341,14 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         )?;
 
         // Emit Mint event
-        self.emit_event(
-            TIPFeeAMMEvent::Mint(ITIPFeeAMM::Mint {
-                sender: msg_sender,
-                userToken: user_token,
-                validatorToken: validator_token,
-                amountUserToken: amount_user_token,
-                amountValidatorToken: amount_validator_token,
-                liquidity,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIPFeeAMMEvent::Mint(ITIPFeeAMM::Mint {
+            sender: msg_sender,
+            userToken: user_token,
+            validatorToken: validator_token,
+            amountUserToken: amount_user_token,
+            amountValidatorToken: amount_validator_token,
+            liquidity,
+        }))?;
 
         Ok(liquidity)
     }
@@ -373,8 +367,8 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         }
 
         // Validate both tokens are USD currency
-        validate_usd_currency(user_token, self.storage)?;
-        validate_usd_currency(validator_token, self.storage)?;
+        validate_usd_currency(user_token, self.storage.spec())?;
+        validate_usd_currency(validator_token, self.storage.spec())?;
 
         let pool_id = self.pool_id(user_token, validator_token);
         let mut pool = self.sload_pools(pool_id)?;
@@ -460,17 +454,14 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         )?;
 
         // Emit Mint event
-        self.emit_event(
-            TIPFeeAMMEvent::Mint(ITIPFeeAMM::Mint {
-                sender: msg_sender,
-                userToken: user_token,
-                validatorToken: validator_token,
-                amountUserToken: U256::ZERO,
-                amountValidatorToken: amount_validator_token,
-                liquidity,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIPFeeAMMEvent::Mint(ITIPFeeAMM::Mint {
+            sender: msg_sender,
+            userToken: user_token,
+            validatorToken: validator_token,
+            amountUserToken: U256::ZERO,
+            amountValidatorToken: amount_validator_token,
+            liquidity,
+        }))?;
 
         Ok(liquidity)
     }
@@ -489,8 +480,8 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         }
 
         // Validate both tokens are USD currency
-        validate_usd_currency(user_token, self.storage)?;
-        validate_usd_currency(validator_token, self.storage)?;
+        validate_usd_currency(user_token, self.storage.spec())?;
+        validate_usd_currency(validator_token, self.storage.spec())?;
 
         let pool_id = self.pool_id(user_token, validator_token);
         // Check user has sufficient liquidity
@@ -556,18 +547,15 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         )?;
 
         // Emit Burn event
-        self.emit_event(
-            TIPFeeAMMEvent::Burn(ITIPFeeAMM::Burn {
-                sender: msg_sender,
-                userToken: user_token,
-                validatorToken: validator_token,
-                amountUserToken: amount_user_token,
-                amountValidatorToken: amount_validator_token,
-                liquidity,
-                to,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIPFeeAMMEvent::Burn(ITIPFeeAMM::Burn {
+            sender: msg_sender,
+            userToken: user_token,
+            validatorToken: validator_token,
+            amountUserToken: amount_user_token,
+            amountValidatorToken: amount_validator_token,
+            liquidity,
+            to,
+        }))?;
 
         Ok((amount_user_token, amount_validator_token))
     }
@@ -641,15 +629,12 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         self.sstore_pools(pool_id, pool)?;
         self.clear_pending_fee_swap_in(pool_id)?;
 
-        self.emit_event(
-            TIPFeeAMMEvent::FeeSwap(ITIPFeeAMM::FeeSwap {
-                userToken: user_token,
-                validatorToken: validator_token,
-                amountIn: amount_in,
-                amountOut: pending_out,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIPFeeAMMEvent::FeeSwap(ITIPFeeAMM::FeeSwap {
+            userToken: user_token,
+            validatorToken: validator_token,
+            amountIn: amount_in,
+            amountOut: pending_out,
+        }))?;
 
         Ok(pending_out)
     }
@@ -719,7 +704,8 @@ mod tests {
     #[test]
     fn test_mint_identical_addresses() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut amm = TipFeeManager::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut amm = TipFeeManager::new();
 
         let msg_sender = Address::random();
         let token = Address::random();
@@ -739,7 +725,8 @@ mod tests {
     #[test]
     fn test_burn_identical_addresses() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut amm = TipFeeManager::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut amm = TipFeeManager::new();
 
         let msg_sender = Address::random();
         let token = Address::random();
@@ -1123,6 +1110,7 @@ mod tests {
     #[test]
     fn test_mint_rejects_non_usd_user_token() {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let amount = U256::from(1000);
 
         let admin = Address::random();
@@ -1135,7 +1123,7 @@ mod tests {
             .initialize("LinkingUSD", "LUSD", "USD", Address::ZERO, admin)
             .unwrap();
 
-        let mut user_token = TIP20Token::new(1)
+        let mut user_token = TIP20Token::new(1);
         user_token
             .initialize("TestToken", "TEST", "EUR", LINKING_USD_ADDRESS, admin)
             .unwrap();
@@ -1147,7 +1135,7 @@ mod tests {
             .unwrap();
         let validator_token_address = validator_token.address();
 
-        let mut amm = TipFeeManager::new(&mut storage);
+        let mut amm = TipFeeManager::new();
         let result = amm.mint(
             msg_sender,
             user_token_address,
@@ -1180,6 +1168,7 @@ mod tests {
     #[test]
     fn test_burn_rejects_non_usd_tokens() {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let liquidity = U256::from(1000);
 
         let admin = Address::random();
@@ -1192,7 +1181,7 @@ mod tests {
             .initialize("LinkingUSD", "LUSD", "USD", Address::ZERO, admin)
             .unwrap();
 
-        let mut user_token = TIP20Token::new(1)
+        let mut user_token = TIP20Token::new(1);
         user_token
             .initialize("TestToken", "TEST", "EUR", LINKING_USD_ADDRESS, admin)
             .unwrap();
@@ -1204,7 +1193,7 @@ mod tests {
             .unwrap();
         let validator_token_address = validator_token.address();
 
-        let mut amm = TipFeeManager::new(&mut storage);
+        let mut amm = TipFeeManager::new();
         let result = amm.burn(
             msg_sender,
             user_token_address,
@@ -1235,6 +1224,7 @@ mod tests {
     #[test]
     fn test_rebalance_swap_rejects_non_usd_tokens() {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
 
         let admin = Address::random();
         let msg_sender = Address::random();
@@ -1247,7 +1237,7 @@ mod tests {
             .initialize("LinkingUSD", "LUSD", "USD", Address::ZERO, admin)
             .unwrap();
 
-        let mut user_token = TIP20Token::new(1)
+        let mut user_token = TIP20Token::new(1);
         user_token
             .initialize("TestToken", "TEST", "EUR", LINKING_USD_ADDRESS, admin)
             .unwrap();
@@ -1259,7 +1249,7 @@ mod tests {
             .unwrap();
         let validator_token_address = validator_token.address();
 
-        let mut amm = TipFeeManager::new(&mut storage);
+        let mut amm = TipFeeManager::new();
         let result = amm.rebalance_swap(
             msg_sender,
             user_token_address,
@@ -1274,7 +1264,7 @@ mod tests {
         ));
 
         // Test the inverse tokens
-        let mut amm = TipFeeManager::new(&mut storage);
+        let mut amm = TipFeeManager::new();
         let result = amm.rebalance_swap(
             msg_sender,
             validator_token_address,

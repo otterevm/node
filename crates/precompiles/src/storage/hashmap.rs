@@ -3,7 +3,10 @@ use revm::state::{AccountInfo, Bytecode};
 use std::collections::HashMap;
 use tempo_chainspec::hardfork::TempoHardfork;
 
-use crate::{error::TempoPrecompileError, storage::PrecompileStorageProvider};
+use crate::{
+    error::TempoPrecompileError,
+    storage::{PrecompileStorageContext, PrecompileStorageProvider, StorageGuard},
+};
 
 pub struct HashMapStorageProvider {
     internals: HashMap<(Address, U256), U256>,
@@ -40,25 +43,8 @@ impl HashMapStorageProvider {
         }
     }
 
-    pub fn set_nonce(&mut self, address: Address, nonce: u64) {
-        let account = self.accounts.entry(address).or_default();
-        account.nonce = nonce;
-    }
-
-    pub fn set_timestamp(&mut self, timestamp: U256) {
-        self.timestamp = timestamp;
-    }
-
-    pub fn set_beneficiary(&mut self, beneficiary: Address) {
-        self.beneficiary = beneficiary;
-    }
-
-    pub fn set_spec(&mut self, spec: TempoHardfork) {
-        self.spec = spec;
-    }
-
     pub fn with_spec(mut self, spec: TempoHardfork) -> Self {
-        self.set_spec(spec);
+        self.spec = spec;
         self
     }
 }
@@ -141,5 +127,37 @@ impl PrecompileStorageProvider for HashMapStorageProvider {
 
     fn spec(&self) -> TempoHardfork {
         self.spec
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    fn get_events(&self, address: Address) -> &Vec<LogData> {
+        &self.events[&address]
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_nonce(&mut self, address: Address, nonce: u64) {
+        let account = self.accounts.entry(address).or_default();
+        account.nonce = nonce;
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_timestamp(&mut self, timestamp: U256) {
+        self.timestamp = timestamp;
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_beneficiary(&mut self, beneficiary: Address) {
+        self.beneficiary = beneficiary;
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_spec(&mut self, spec: TempoHardfork) {
+        self.spec = spec;
+    }
+}
+
+impl PrecompileStorageContext for HashMapStorageProvider {
+    fn enter(&mut self) -> Result<StorageGuard<'_>, TempoPrecompileError> {
+        StorageGuard::new(self)
     }
 }

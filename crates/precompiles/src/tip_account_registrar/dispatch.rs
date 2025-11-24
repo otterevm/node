@@ -65,7 +65,7 @@ mod tests {
 
         // Pre-Moderato: v1 signature should be supported, v2 should be unsupported
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Adagio);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let unsupported_pre = check_selector_coverage(
             &mut registrar,
@@ -89,7 +89,7 @@ mod tests {
 
         // Post-Moderato: v2 signature should be supported, v1 should be unsupported
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Moderato);
-        let mut registrar = TipAccountRegistrar::new(&mut storage);
+        let mut registrar = TipAccountRegistrar::new();
 
         let unsupported_post = check_selector_coverage(
             &mut registrar,

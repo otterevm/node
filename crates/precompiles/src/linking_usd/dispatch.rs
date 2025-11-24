@@ -2,7 +2,6 @@ use crate::{
     Precompile, input_cost,
     linking_usd::LinkingUSD,
     metadata, mutate, mutate_void,
-    storage::{ContractStorage, PrecompileStorageProvider, with_storage},
     tip20::{IRolesAuth, ITIP20},
     view,
 };
@@ -13,11 +12,9 @@ use tempo_contracts::precompiles::{ILinkingUSD, TIP20Error};
 
 impl Precompile for LinkingUSD {
     fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult {
-        with_storage(|storage| {
-            storage
-                .deduct_gas(input_cost(calldata.len()))
-                .map_err(|_| PrecompileError::OutOfGas)
-        })?;
+        self.storage
+            .deduct_gas(input_cost(calldata.len()))
+            .map_err(|_| PrecompileError::OutOfGas)?;
 
         let selector: [u8; 4] = calldata
             .get(..4)
@@ -205,8 +202,7 @@ impl Precompile for LinkingUSD {
             _ => Err(PrecompileError::Other("Unknown selector".into())),
         };
         result.map(|mut res| {
-            // safe to unwrap as `gas_used()` is infallible
-            res.gas_used = with_storage(|storage| Ok(storage.gas_used())).unwrap();
+            res.gas_used = self.storage.gas_used();
             res
         })
     }
@@ -215,7 +211,10 @@ impl Precompile for LinkingUSD {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{storage::hashmap::HashMapStorageProvider, test_util::check_selector_coverage};
+    use crate::{
+        storage::{PrecompileStorageContext, hashmap::HashMapStorageProvider},
+        test_util::check_selector_coverage,
+    };
     use alloy::{
         primitives::{Bytes, U256},
         sol_types::SolInterface,
@@ -227,8 +226,8 @@ mod tests {
     #[test]
     fn linking_usd_test_selector_coverage() {
         use crate::test_util::assert_full_coverage;
-
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut linking_usd = LinkingUSD::new();
 
         linking_usd.initialize(Address::ZERO).unwrap();
@@ -251,6 +250,7 @@ mod tests {
     #[test]
     fn test_start_reward_disabled() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut token = LinkingUSD::new();
         let sender = Address::from([1u8; 20]);
 
@@ -275,6 +275,7 @@ mod tests {
     #[test]
     fn test_set_reward_recipient_disabled() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut token = LinkingUSD::new();
         let sender = Address::from([1u8; 20]);
         let recipient = Address::from([2u8; 20]);
@@ -296,6 +297,7 @@ mod tests {
     #[test]
     fn test_cancel_reward_disabled() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut token = LinkingUSD::new();
         let sender = Address::from([1u8; 20]);
 
@@ -316,6 +318,7 @@ mod tests {
     #[test]
     fn test_claim_rewards_disabled() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut token = LinkingUSD::new();
         let sender = Address::from([1u8; 20]);
 

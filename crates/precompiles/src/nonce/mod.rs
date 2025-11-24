@@ -36,7 +36,7 @@ pub struct NonceManager {
 
 impl<'a, S: PrecompileStorageProvider> NonceManager<'a, S> {
     pub fn new(storage: &'a mut S) -> Self {
-        Self::_new(NONCE_PRECOMPILE_ADDRESS, storage)
+        Self::__new(NONCE_PRECOMPILE_ADDRESS, storage)
     }
 
     /// Initializes the nonce manager contract.
@@ -103,14 +103,12 @@ impl<'a, S: PrecompileStorageProvider> NonceManager<'a, S> {
 
         // Emit ActiveKeyCountChanged event (only after Moderato hardfork)
         if self.storage.spec().is_moderato() {
-            self.storage.emit_event(
-                self.address,
-                NonceEvent::ActiveKeyCountChanged(INonce::ActiveKeyCountChanged {
+            self.emit_event(NonceEvent::ActiveKeyCountChanged(
+                INonce::ActiveKeyCountChanged {
                     account,
                     newCount: new_count,
-                })
-                .into_log_data(),
-            )?;
+                },
+            ))?;
         }
 
         Ok(())
@@ -128,7 +126,7 @@ mod tests {
     #[test]
     fn test_get_nonce_returns_zero_for_new_key() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut nonce_mgr = NonceManager::new(&mut storage);
+        let mut nonce_mgr = NonceManager::new();
 
         let account = address!("0x1111111111111111111111111111111111111111");
         let nonce = nonce_mgr
@@ -144,7 +142,7 @@ mod tests {
     #[test]
     fn test_get_nonce_rejects_protocol_nonce() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut nonce_mgr = NonceManager::new(&mut storage);
+        let mut nonce_mgr = NonceManager::new();
 
         let account = address!("0x1111111111111111111111111111111111111111");
         let result = nonce_mgr.get_nonce(INonce::getNonceCall {
@@ -161,7 +159,7 @@ mod tests {
     #[test]
     fn test_increment_nonce() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut nonce_mgr = NonceManager::new(&mut storage);
+        let mut nonce_mgr = NonceManager::new();
 
         let account = address!("0x1111111111111111111111111111111111111111");
         let nonce_key = U256::from(5);
@@ -176,7 +174,7 @@ mod tests {
     #[test]
     fn test_active_key_count() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut nonce_mgr = NonceManager::new(&mut storage);
+        let mut nonce_mgr = NonceManager::new();
 
         let account = address!("0x1111111111111111111111111111111111111111");
 
@@ -211,7 +209,7 @@ mod tests {
     #[test]
     fn test_different_accounts_independent() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut nonce_mgr = NonceManager::new(&mut storage);
+        let mut nonce_mgr = NonceManager::new();
 
         let account1 = address!("0x1111111111111111111111111111111111111111");
         let account2 = address!("0x2222222222222222222222222222222222222222");
@@ -250,7 +248,7 @@ mod tests {
 
         // First increment should emit ActiveKeyCountChanged event
         {
-            let mut nonce_mgr = NonceManager::new(&mut storage);
+            let mut nonce_mgr = NonceManager::new();
             nonce_mgr.increment_nonce(account, nonce_key).unwrap();
         }
 
@@ -269,7 +267,7 @@ mod tests {
 
         // Second increment on same key should NOT emit ActiveKeyCountChanged
         {
-            let mut nonce_mgr = NonceManager::new(&mut storage);
+            let mut nonce_mgr = NonceManager::new();
             nonce_mgr.increment_nonce(account, nonce_key).unwrap();
         }
         let events = storage.events.get(&NONCE_PRECOMPILE_ADDRESS).unwrap();
@@ -278,7 +276,7 @@ mod tests {
         // Increment on different key SHOULD emit ActiveKeyCountChanged again
         let nonce_key2 = U256::from(10);
         {
-            let mut nonce_mgr = NonceManager::new(&mut storage);
+            let mut nonce_mgr = NonceManager::new();
             nonce_mgr.increment_nonce(account, nonce_key2).unwrap();
         }
         let events = storage.events.get(&NONCE_PRECOMPILE_ADDRESS).unwrap();
@@ -300,7 +298,7 @@ mod tests {
 
         // First increment should NOT emit ActiveKeyCountChanged event pre-Moderato
         {
-            let mut nonce_mgr = NonceManager::new(&mut storage);
+            let mut nonce_mgr = NonceManager::new();
             nonce_mgr.increment_nonce(account, nonce_key).unwrap();
         }
 
@@ -314,7 +312,7 @@ mod tests {
         // Increment on different key should also NOT emit event
         let nonce_key2 = U256::from(10);
         {
-            let mut nonce_mgr = NonceManager::new(&mut storage);
+            let mut nonce_mgr = NonceManager::new();
             nonce_mgr.increment_nonce(account, nonce_key2).unwrap();
         }
 

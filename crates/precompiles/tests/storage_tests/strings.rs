@@ -1,6 +1,7 @@
 //! String storage tests.
 
 use super::*;
+use tempo_precompiles::storage::PrecompileStorageContext;
 
 #[test]
 fn test_string() {
@@ -11,7 +12,7 @@ fn test_string() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::_new(*address);
+    let mut layout = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     // Test empty string
@@ -55,7 +56,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::_new(*address);
+        let mut layout = Layout::__new(*address);
         let _guard = storage.enter().unwrap();
 
         // Store arbitrary strings

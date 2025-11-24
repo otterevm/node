@@ -234,7 +234,7 @@ mod tests {
             .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, admin)
             .unwrap();
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let calldata = IFeeManager::setValidatorTokenCall { token }.abi_encode();
         let result = fee_manager.call(&Bytes::from(calldata), validator)?;
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn test_set_validator_token_zero_address() -> Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
         let validator = Address::random();
 
         let calldata = IFeeManager::setValidatorTokenCall {
@@ -284,7 +284,7 @@ mod tests {
             .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, admin)
             .unwrap();
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let calldata = IFeeManager::setUserTokenCall { token }.abi_encode();
         let result = fee_manager.call(&Bytes::from(calldata), user)?;
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_set_user_token_zero_address() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
         let user = Address::random();
 
         let calldata = IFeeManager::setUserTokenCall {
@@ -320,7 +320,7 @@ mod tests {
     fn test_get_pool_id() {
         let mut storage = HashMapStorageProvider::new(1);
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
         let token_a = Address::random();
         let token_b = Address::random();
 
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_tip_fee_amm_pool_operations() -> Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let token_a = Address::random();
         let token_b = Address::random();
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn test_pool_id_calculation() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
         let token_a = Address::random();
         let token_b = Address::random();
 
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn test_fee_manager_invalid_token_error() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
         let user = Address::random();
         let validator = Address::random();
 
@@ -428,7 +428,7 @@ mod tests {
         let user = Address::random();
         setup_token_with_balance(&mut storage, token, user, U256::MAX);
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Call executeBlock (only system contract can call)
         let call = IFeeManager::executeBlockCall {};
@@ -444,7 +444,7 @@ mod tests {
         use crate::test_util::assert_full_coverage;
 
         let mut storage = HashMapStorageProvider::new(1);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let fee_manager_unsupported = check_selector_coverage(
             &mut fee_manager,
@@ -480,7 +480,7 @@ mod tests {
         setup_token_with_balance(&mut storage, user_token, user, U256::from(1000000u64));
         setup_token_with_balance(&mut storage, validator_token, user, U256::from(1000000u64));
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Get pool ID first
         let pool_id_call = ITIPFeeAMM::getPoolIdCall {
@@ -560,7 +560,7 @@ mod tests {
         use tempo_chainspec::hardfork::TempoHardfork;
         // Before Moderato: should return generic PrecompileError::Other
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Adagio);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Call with an unknown selector (0x12345678)
         let unknown_selector = [0x12, 0x34, 0x56, 0x78];
@@ -577,7 +577,7 @@ mod tests {
         use tempo_chainspec::hardfork::TempoHardfork;
         // After Moderato: should return ABI-encoded error with selector
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Moderato);
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Call with an unknown selector (0x12345678)
         let unknown_selector = [0x12, 0x34, 0x56, 0x78];
@@ -614,7 +614,7 @@ mod tests {
         setup_token_with_balance(&mut storage, user_token, user, U256::from(1000000u64));
         setup_token_with_balance(&mut storage, validator_token, user, U256::from(1000000u64));
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let call = ITIPFeeAMM::mintCall {
             userToken: user_token,

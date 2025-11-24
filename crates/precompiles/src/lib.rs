@@ -13,7 +13,7 @@ pub mod linking_usd;
 // pub mod stablecoin_exchange;
 pub mod tip20;
 pub mod tip20_factory;
-// pub mod tip20_rewards_registry;
+pub mod tip20_rewards_registry;
 pub mod tip403_registry;
 // pub mod tip_account_registrar;
 // pub mod tip_fee_manager;
@@ -26,7 +26,7 @@ use crate::{
     linking_usd::LinkingUSD,
     // nonce::NonceManager,
     // stablecoin_exchange::StablecoinExchange,
-    storage::{PrecompileStorageProvider, evm::EvmPrecompileStorageProvider},
+    storage::PrecompileStorageContext,
     // tip_account_registrar::TipAccountRegistrar,
     // tip_fee_manager::TipFeeManager,
     tip20::{TIP20Token, address_to_token_id_unchecked, is_tip20},
@@ -295,7 +295,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{storage::evm::EvmPrecompileStorageProvider, tip20::TIP20Token};
+    use crate::tip20::TIP20Token;
     use alloy::primitives::{Address, Bytes, U256};
     use alloy_evm::{
         EthEvmFactory, EvmEnv, EvmFactory, EvmInternals,
@@ -308,15 +308,9 @@ mod tests {
 
     #[test]
     fn test_precompile_delegatecall() {
-        let precompile = tempo_precompile!("TIP20Token", |input| TIP20Token::new(
-            1,
-            &mut EvmPrecompileStorageProvider::new(
-                input.internals,
-                input.gas,
-                1,
-                Default::default()
-            ),
-        ));
+        let (chain_id, spec) = (1, TempoHardfork::default());
+        let precompile =
+            tempo_precompile!("TIP20Token", chain_id, spec, |input| TIP20Token::new(1));
 
         let db = CacheDB::new(EmptyDB::new());
         let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());

@@ -7,11 +7,9 @@ use tempo_precompiles_macros::contract;
 use crate::{
     TIP20_FACTORY_ADDRESS,
     error::{Result, TempoPrecompileError},
-    storage::PrecompileStorageProvider,
     tip20::{TIP20Error, TIP20Token, address_to_token_id_unchecked, is_tip20, token_id_to_address},
 };
-use alloy::primitives::{Address, Bytes, IntoLogData, U256};
-use revm::state::Bytecode;
+use alloy::primitives::{Address, Bytes, U256};
 use tracing::trace;
 
 #[contract]
@@ -27,7 +25,7 @@ impl TIP20Factory {
     ///
     /// Caution: This does not initialize the account, see [`Self::initialize`].
     pub fn new() -> Self {
-        Self::_new(TIP20_FACTORY_ADDRESS)
+        Self::__new(TIP20_FACTORY_ADDRESS)
     }
 
     /// Initializes the TIP20 factory contract.
@@ -36,10 +34,7 @@ impl TIP20Factory {
     /// Also ensures the [`TIP20Factory`] account isn't empty and prevents state clear.
     pub fn initialize(&mut self) -> Result<()> {
         // must ensure the account is not empty, by setting some code
-        self.storage.set_code(
-            TIP20_FACTORY_ADDRESS,
-            Bytecode::new_legacy(Bytes::from_static(&[0xef])),
-        )
+        self.__initialize()
     }
 
     pub fn create_token(
@@ -85,9 +80,8 @@ impl TIP20Factory {
 
         let token_address = token_id_to_address(token_id);
         let token_id = U256::from(token_id);
-        self.storage.emit_event(
-            TIP20_FACTORY_ADDRESS,
-            TIP20FactoryEvent::TokenCreated(ITIP20Factory::TokenCreated {
+        self.emit_event(TIP20FactoryEvent::TokenCreated(
+            ITIP20Factory::TokenCreated {
                 token: token_address,
                 tokenId: token_id,
                 name: call.name,
@@ -95,9 +89,8 @@ impl TIP20Factory {
                 currency: call.currency,
                 quoteToken: call.quoteToken,
                 admin: call.admin,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         // increase the token counter
         self.token_id_counter.write(
@@ -124,16 +117,18 @@ impl TIP20Factory {
 mod tests {
     use super::*;
     use crate::{
-        error::TempoPrecompileError, storage::hashmap::HashMapStorageProvider,
+        error::TempoPrecompileError,
+        storage::{PrecompileStorageContext, hashmap::HashMapStorageProvider},
         tip20::tests::initialize_linking_usd,
     };
+    use alloy::primitives::IntoLogData;
     use tempo_chainspec::hardfork::TempoHardfork;
     use tempo_contracts::precompiles::LINKING_USD_ADDRESS;
 
     #[test]
     fn test_create_token() {
         let mut storage = HashMapStorageProvider::new(1);
-        let guard = storage.enter().unwrap();
+        let _guard = storage.enter().unwrap();
         let sender = Address::random();
         initialize_linking_usd(sender).unwrap();
 
@@ -158,7 +153,7 @@ mod tests {
             .create_token(sender, call)
             .expect("Token creation should succeed");
 
-        let factory_events = storage.events.get(&TIP20_FACTORY_ADDRESS).unwrap();
+        let factory_events = factory.emited_events();
         assert_eq!(factory_events.len(), 2);
 
         let token_id_0 = address_to_token_id_unchecked(token_addr_0);

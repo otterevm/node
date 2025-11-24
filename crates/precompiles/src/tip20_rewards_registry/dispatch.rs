@@ -5,7 +5,7 @@ use tempo_contracts::precompiles::ITIP20RewardsRegistry;
 
 use crate::{storage::PrecompileStorageProvider, tip20_rewards_registry::TIP20RewardsRegistry};
 
-impl<'a, S: PrecompileStorageProvider> Precompile for TIP20RewardsRegistry<'a, S> {
+impl Precompile for TIP20RewardsRegistry {
     fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult {
         self.storage
             .deduct_gas(input_cost(calldata.len()))
@@ -41,7 +41,7 @@ impl<'a, S: PrecompileStorageProvider> Precompile for TIP20RewardsRegistry<'a, S
 mod tests {
     use super::*;
     use crate::{
-        storage::hashmap::HashMapStorageProvider,
+        storage::{PrecompileStorageContext, hashmap::HashMapStorageProvider},
         test_util::{assert_full_coverage, check_selector_coverage},
     };
     use tempo_contracts::precompiles::ITIP20RewardsRegistry::ITIP20RewardsRegistryCalls;
@@ -49,7 +49,8 @@ mod tests {
     #[test]
     fn tip20_rewards_registry_test_selector_coverage() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP20RewardsRegistry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut registry = TIP20RewardsRegistry::new();
 
         let unsupported = check_selector_coverage(
             &mut registry,

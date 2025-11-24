@@ -54,7 +54,7 @@ pub(crate) fn gen_handler_field_init(
     let slot_expr = if is_contract {
         quote! { #const_mod::#slot_const }
     } else {
-        quote! { base_slot.saturating_add(U256::from_limbs([#const_mod::#loc_const.offset_slots as u64, 0, 0, 0])) }
+        quote! { base_slot.saturating_add(::alloy::primitives::U256::from_limbs([#const_mod::#loc_const.offset_slots as u64, 0, 0, 0])) }
     };
 
     match &field.kind {
@@ -124,6 +124,7 @@ pub(crate) fn gen_struct(
         #vis struct #name {
             #(#handler_fields,)*
             address: ::std::rc::Rc<::alloy::primitives::Address>,
+            storage: crate::storage::StorageAccessor,
         }
     }
 }
@@ -154,20 +155,26 @@ pub(crate) fn gen_constructor(
                 Self {
                     #(#field_inits,)*
                     address: address_rc,
+                    storage: crate::storage::StorageAccessor::default(),
                 }
             }
 
             #[inline(always)]
-            fn __initialize(&self) -> crate::error::Result<()> {
-                let bytecode = Bytecode::new_legacy(Bytes::from_static(&[0xef]));
-                crate::storage::with_storage(|storage| storage.set_code(*self.address, bytecode))?;
+            fn __initialize(&mut self) -> crate::error::Result<()> {
+                let bytecode = ::revm::state::Bytecode::new_legacy(::alloy::primitives::Bytes::from_static(&[0xef]));
+                self.storage.set_code(*self.address, bytecode)?;
 
                 Ok(())
             }
 
             #[inline(always)]
             fn emit_event(&mut self, event: impl ::alloy::primitives::IntoLogData) -> crate::error::Result<()> {
-                crate::storage::with_storage(|storage| storage.emit_event(*self.address, event.into_log_data()))
+                self.storage.emit_event(*self.address, event.into_log_data())
+            }
+
+            #[cfg(any(test, feature = "test-utils"))]
+            fn emited_events(&self) -> &Vec<::alloy::primitives::LogData> {
+                self.storage.get_events(*self.address)
             }
         }
     }

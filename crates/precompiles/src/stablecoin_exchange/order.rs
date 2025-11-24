@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn test_store_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
 
         let id = 42;
         let order = Order::new_flip(id, TEST_MAKER, TEST_BOOK_KEY, 1000, 5, true, 10).unwrap();
@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn test_delete_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
 
         let id = 42;
         let order = Order::new_flip(id, TEST_MAKER, TEST_BOOK_KEY, 1000, 5, true, 10).unwrap();

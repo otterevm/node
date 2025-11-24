@@ -487,7 +487,7 @@ fn tip20_factory_mutate(c: &mut Criterion) {
 fn tip403_registry_view(c: &mut Criterion) {
     c.bench_function("tip403_registry_policy_id_counter", |b| {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
 
         b.iter(|| {
             let registry = black_box(&mut registry);
@@ -499,7 +499,7 @@ fn tip403_registry_view(c: &mut Criterion) {
     c.bench_function("tip403_registry_policy_data", |b| {
         let admin = Address::from([0u8; 20]);
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
         let policy_id = registry
             .create_policy(
                 admin,
@@ -524,7 +524,7 @@ fn tip403_registry_view(c: &mut Criterion) {
         let admin = Address::from([0u8; 20]);
         let user = Address::from([1u8; 20]);
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
         let policy_id = registry
             .create_policy(
                 admin,
@@ -551,7 +551,7 @@ fn tip403_registry_mutate(c: &mut Criterion) {
     c.bench_function("tip403_registry_create_policy", |b| {
         let admin = Address::from([0u8; 20]);
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
 
         b.iter(|| {
             let registry = black_box(&mut registry);
@@ -571,7 +571,7 @@ fn tip403_registry_mutate(c: &mut Criterion) {
         let account2 = Address::from([2u8; 20]);
         let accounts = vec![account1, account2];
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
 
         b.iter(|| {
             let registry = black_box(&mut registry);
@@ -589,7 +589,7 @@ fn tip403_registry_mutate(c: &mut Criterion) {
     c.bench_function("tip403_registry_set_policy_admin", |b| {
         let admin = Address::from([0u8; 20]);
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
         let policy_id = registry
             .create_policy(
                 admin,
@@ -615,7 +615,7 @@ fn tip403_registry_mutate(c: &mut Criterion) {
         let admin = Address::from([0u8; 20]);
         let user = Address::from([1u8; 20]);
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
         let policy_id = registry
             .create_policy(
                 admin,
@@ -642,7 +642,7 @@ fn tip403_registry_mutate(c: &mut Criterion) {
         let admin = Address::from([0u8; 20]);
         let user = Address::from([1u8; 20]);
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let mut registry = TIP403Registry::new();
         let policy_id = registry
             .create_policy(
                 admin,

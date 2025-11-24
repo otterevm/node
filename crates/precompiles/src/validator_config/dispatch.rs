@@ -88,7 +88,7 @@ mod tests {
     fn test_function_selector_dispatch() {
         use tempo_chainspec::hardfork::TempoHardfork;
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Moderato);
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         let sender = Address::from([1u8; 20]);
 
         // Initialize with owner
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_owner_view_dispatch() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         let sender = Address::from([1u8; 20]);
 
         // Initialize with owner
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_add_validator_dispatch() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
 
         // Initialize with owner
         let owner = Address::from([0u8; 20]);
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_unauthorized_add_validator_dispatch() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
 
         // Initialize with owner
         let owner = Address::from([0u8; 20]);
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn validator_config_test_selector_coverage() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
 
         let unsupported = check_selector_coverage(
             &mut validator_config,

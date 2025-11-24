@@ -80,7 +80,7 @@ impl Precompile for TIP403Registry {
 mod tests {
     use super::*;
     use crate::{
-        storage::hashmap::HashMapStorageProvider,
+        storage::{hashmap::HashMapStorageProvider, PrecompileStorageContext},
         test_util::{assert_full_coverage, check_selector_coverage},
     };
     use alloy::sol_types::SolValue;
@@ -89,7 +89,8 @@ mod tests {
     #[test]
     fn test_is_authorized_precompile() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let user = Address::from([1u8; 20]);
 
         // Test policy 1 (always allow)
@@ -107,7 +108,8 @@ mod tests {
     #[test]
     fn test_create_policy_precompile() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
 
         let call = ITIP403Registry::createPolicyCall {
@@ -127,7 +129,8 @@ mod tests {
     #[test]
     fn test_policy_id_counter_initialization() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let sender = Address::from([1u8; 20]);
 
         // Get initial counter
@@ -141,7 +144,8 @@ mod tests {
     #[test]
     fn test_create_policy_with_accounts() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
         let account1 = Address::from([2u8; 20]);
         let account2 = Address::from([3u8; 20]);
@@ -194,7 +198,8 @@ mod tests {
     #[test]
     fn test_blacklist_policy() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
         let blocked_account = Address::from([2u8; 20]);
         let allowed_account = Address::from([3u8; 20]);
@@ -271,7 +276,8 @@ mod tests {
     #[test]
     fn test_modify_policy_whitelist() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
         let account1 = Address::from([2u8; 20]);
         let account2 = Address::from([3u8; 20]);
@@ -354,7 +360,8 @@ mod tests {
     #[test]
     fn test_set_policy_admin() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
 
         // Create a policy
@@ -400,7 +407,8 @@ mod tests {
     #[test]
     fn test_special_policy_ids() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let user = Address::from([1u8; 20]);
 
         // Test policy 0 (always deny)
@@ -422,7 +430,8 @@ mod tests {
     fn test_invalid_selector() {
         use tempo_chainspec::hardfork::TempoHardfork;
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Moderato);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let sender = Address::from([1u8; 20]);
 
         // Test with invalid selector - should return Ok with reverted status
@@ -440,7 +449,8 @@ mod tests {
     #[test]
     fn test_create_multiple_policies() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut precompile = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut precompile = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
 
         // Create multiple policies with different types
@@ -477,7 +487,8 @@ mod tests {
     #[test]
     fn tip403_registry_test_selector_coverage() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut registry = TIP403Registry::new(&mut storage);
+        let _guard = storage.enter().unwrap();
+        let mut registry = TIP403Registry::new();
 
         let unsupported = check_selector_coverage(
             &mut registry,

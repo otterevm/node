@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn nonce_test_selector_coverage() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut nonce_manager = NonceManager::new(&mut storage);
+        let mut nonce_manager = NonceManager::new();
 
         let unsupported =
             check_selector_coverage(&mut nonce_manager, INonceCalls::SELECTORS, "INonce", |s| {

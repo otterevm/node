@@ -1,11 +1,10 @@
 use crate::{
     TIP20_REWARDS_REGISTRY_ADDRESS,
     error::{Result, TempoPrecompileError},
-    storage::PrecompileStorageProvider,
     tip20::TIP20Token,
     tip20_rewards_registry::TIP20RewardsRegistry,
 };
-use alloy::primitives::{Address, IntoLogData, U256, uint};
+use alloy::primitives::{Address, U256, uint};
 use tempo_contracts::precompiles::{ITIP20, TIP20Error, TIP20Event};
 use tempo_precompiles_macros::Storable;
 
@@ -23,7 +22,7 @@ impl TIP20Token {
         call: ITIP20::startRewardCall,
     ) -> Result<u64> {
         self.check_not_paused()?;
-        let token_address = self.address;
+        let token_address = *self.address;
         self.ensure_transfer_authorized(msg_sender, token_address)?;
 
         if call.amount == U256::ZERO {
@@ -50,16 +49,12 @@ impl TIP20Token {
             self.set_global_reward_per_token(new_rpt)?;
 
             // Emit reward scheduled event for immediate payout
-            self.storage.emit_event(
-                self.address,
-                TIP20Event::RewardScheduled(ITIP20::RewardScheduled {
-                    funder: msg_sender,
-                    id: 0,
-                    amount: call.amount,
-                    durationSeconds: 0,
-                })
-                .into_log_data(),
-            )?;
+            self.emit_event(TIP20Event::RewardScheduled(ITIP20::RewardScheduled {
+                funder: msg_sender,
+                id: 0,
+                amount: call.amount,
+                durationSeconds: 0,
+            }))?;
 
             Ok(0)
         } else {
@@ -106,20 +101,16 @@ impl TIP20Token {
 
             // If the stream has not been added before, add it to the registry
             if current_decrease.is_zero() {
-                let mut registry = TIP20RewardsRegistry::new(self.storage);
-                registry.add_stream(self.address, end_time)?;
+                let mut registry = TIP20RewardsRegistry::new();
+                registry.add_stream(*self.address, end_time)?;
             }
             // Emit reward scheduled event for streaming reward
-            self.storage.emit_event(
-                self.address,
-                TIP20Event::RewardScheduled(ITIP20::RewardScheduled {
-                    funder: msg_sender,
-                    id: stream_id,
-                    amount: call.amount,
-                    durationSeconds: call.secs,
-                })
-                .into_log_data(),
-            )?;
+            self.emit_event(TIP20Event::RewardScheduled(ITIP20::RewardScheduled {
+                funder: msg_sender,
+                id: stream_id,
+                amount: call.amount,
+                durationSeconds: call.secs,
+            }))?;
 
             Ok(stream_id)
         }
@@ -260,13 +251,10 @@ impl TIP20Token {
         self.user_reward_info.at(msg_sender).write(info)?;
 
         // Emit reward recipient set event
-        self.emit_event(
-            TIP20Event::RewardRecipientSet(ITIP20::RewardRecipientSet {
-                holder: msg_sender,
-                recipient: call.recipient,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIP20Event::RewardRecipientSet(ITIP20::RewardRecipientSet {
+            holder: msg_sender,
+            recipient: call.recipient,
+        }))?;
 
         Ok(())
     }
@@ -332,11 +320,11 @@ impl TIP20Token {
 
         // Remove from registry when all streams at this end_time are cancelled (Moderato+)
         if self.storage.spec().is_moderato() && new_rate == U256::ZERO {
-            let mut registry = TIP20RewardsRegistry::new(self.storage);
-            registry.remove_stream(self.address, end_time)?;
+            let mut registry = TIP20RewardsRegistry::new();
+            registry.remove_stream(*self.address, end_time)?;
         }
 
-        self.clear_streams(stream_id)?;
+        self.streams.at(stream_id).delete()?;
 
         let mut actual_refund = U256::ZERO;
         if refund > U256::ZERO && self.is_transfer_authorized(stream.funder, stream.funder)? {
@@ -352,7 +340,7 @@ impl TIP20Token {
                 )?;
             }
 
-            let contract_address = self.address;
+            let contract_address = *self.address;
             let contract_balance = self
                 .get_balance(contract_address)?
                 .checked_sub(refund)
@@ -365,27 +353,20 @@ impl TIP20Token {
                 .ok_or(TempoPrecompileError::under_overflow())?;
             self.set_balance(stream.funder, funder_balance)?;
 
-            self.storage.emit_event(
-                self.address,
-                TIP20Event::Transfer(ITIP20::Transfer {
-                    from: contract_address,
-                    to: stream.funder,
-                    amount: refund,
-                })
-                .into_log_data(),
-            )?;
+            self.emit_event(TIP20Event::Transfer(ITIP20::Transfer {
+                from: contract_address,
+                to: stream.funder,
+                amount: refund,
+            }))?;
 
             actual_refund = refund;
         }
 
-        self.emit_event(
-            TIP20Event::RewardCanceled(ITIP20::RewardCanceled {
-                funder: stream.funder,
-                id: stream_id,
-                refund: actual_refund,
-            })
-            .into_log_data(),
-        )?;
+        self.emit_event(TIP20Event::RewardCanceled(ITIP20::RewardCanceled {
+            funder: stream.funder,
+            id: stream_id,
+            refund: actual_refund,
+        }))?;
 
         Ok(actual_refund)
     }
@@ -432,7 +413,7 @@ impl TIP20Token {
 
         let mut info = self.user_reward_info.at(msg_sender).read()?;
         let amount = info.reward_balance;
-        let contract_address = self.address;
+        let contract_address = *self.address;
         let contract_balance = self.get_balance(contract_address)?;
         let max_amount = amount.min(contract_balance);
 
@@ -465,22 +446,18 @@ impl TIP20Token {
                 )?;
             }
 
-            self.storage.emit_event(
-                self.address,
-                TIP20Event::Transfer(ITIP20::Transfer {
-                    from: contract_address,
-                    to: msg_sender,
-                    amount: max_amount,
-                })
-                .into_log_data(),
-            )?;
+            self.emit_event(TIP20Event::Transfer(ITIP20::Transfer {
+                from: contract_address,
+                to: msg_sender,
+                amount: max_amount,
+            }))?;
         }
 
         Ok(max_amount)
     }
 
     /// Gets the next available stream ID (minimum 1).
-    pub fn get_next_stream_id(&mut self) -> Result<u64> {
+    pub fn get_next_stream_id(&self) -> Result<u64> {
         let id = self.next_stream_id.read()?;
 
         Ok(id.max(1))
@@ -488,52 +465,52 @@ impl TIP20Token {
 
     /// Sets the next stream ID counter.
     fn set_next_stream_id(&mut self, value: u64) -> Result<()> {
-        self.sstore_next_stream_id(value)
+        self.next_stream_id.write(value)
     }
 
     /// Gets the accumulated global reward per token.
-    fn get_global_reward_per_token(&mut self) -> Result<U256> {
-        self.global_reward_per_token().read()
+    fn get_global_reward_per_token(&self) -> Result<U256> {
+        self.global_reward_per_token.read()
     }
 
     /// Sets the accumulated global reward per token in storage.
     fn set_global_reward_per_token(&mut self, value: U256) -> Result<()> {
-        self.sstore_global_reward_per_token(value)
+        self.global_reward_per_token.write(value)
     }
 
     /// Gets the timestamp of the last reward update from storage.
-    fn get_last_update_time(&mut self) -> Result<u64> {
-        self.last_update_time().read()
+    fn get_last_update_time(&self) -> Result<u64> {
+        self.last_update_time.read()
     }
 
     /// Sets the timestamp of the last reward update in storage.
     fn set_last_update_time(&mut self, value: u64) -> Result<()> {
-        self.sstore_last_update_time(value)
+        self.last_update_time.write(value)
     }
 
     /// Gets the total supply of tokens opted into rewards from storage.
-    pub fn get_opted_in_supply(&mut self) -> Result<u128> {
-        self.opted_in_supply().read()
+    pub fn get_opted_in_supply(&self) -> Result<u128> {
+        self.opted_in_supply.read()
     }
 
     /// Sets the total supply of tokens opted into rewards in storage.
     pub fn set_opted_in_supply(&mut self, value: u128) -> Result<()> {
-        self.sstore_opted_in_supply(value)
+        self.opted_in_supply.write(value)
     }
 
     /// Gets the scheduled rate decrease at a specific time from storage.
-    fn get_scheduled_rate_decrease_at(&mut self, end_time: u128) -> Result<U256> {
+    fn get_scheduled_rate_decrease_at(&self, end_time: u128) -> Result<U256> {
         self.scheduled_rate_decrease.at(end_time).read()
     }
 
     /// Sets the scheduled rate decrease at a specific time in storage.
     fn set_scheduled_rate_decrease_at(&mut self, end_time: u128, value: U256) -> Result<()> {
-        self.sstore_scheduled_rate_decrease(end_time, value)
+        self.scheduled_rate_decrease.at(end_time).write(value)
     }
 
     /// Gets the total reward per second rate from storage.
-    pub fn get_total_reward_per_second(&mut self) -> Result<U256> {
-        self.total_reward_per_second().read()
+    pub fn get_total_reward_per_second(&self) -> Result<U256> {
+        self.total_reward_per_second.read()
     }
 
     /// Sets the total reward per second rate in storage.
@@ -595,12 +572,12 @@ impl TIP20Token {
     }
 
     /// Retrieves a reward stream by its ID.
-    pub fn get_stream(&mut self, stream_id: u64) -> Result<RewardStream> {
+    pub fn get_stream(&self, stream_id: u64) -> Result<RewardStream> {
         self.streams.at(stream_id).read()
     }
 
     /// Retrieves user reward information for a given account.
-    pub fn get_user_reward_info(&mut self, account: Address) -> Result<UserRewardInfo> {
+    pub fn get_user_reward_info(&self, account: Address) -> Result<UserRewardInfo> {
         self.user_reward_info.at(account).read()
     }
 }
@@ -667,7 +644,9 @@ mod tests {
     use super::*;
     use crate::{
         LINKING_USD_ADDRESS,
-        storage::hashmap::HashMapStorageProvider,
+        storage::{
+            PrecompileStorageContext, PrecompileStorageProvider, hashmap::HashMapStorageProvider,
+        },
         tip20::{ISSUER_ROLE, tests::initialize_linking_usd},
         tip20_rewards_registry::TIP20RewardsRegistry,
     };
@@ -677,11 +656,12 @@ mod tests {
     #[test]
     fn test_start_reward() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let current_time = storage.timestamp().to::<u64>();
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
 
         initialize_linking_usd(admin)?;
         let mut token = TIP20Token::new(1);
+        let current_time = token.storage.timestamp().to::<u64>();
         token.initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)?;
 
         token.grant_role_internal(admin, *ISSUER_ROLE)?;
@@ -705,7 +685,7 @@ mod tests {
         )?;
         assert_eq!(stream_id, 1);
 
-        let token_address = token.address;
+        let token_address = *token.address;
         let balance = token.get_balance(token_address)?;
         assert_eq!(balance, reward_amount);
 
@@ -727,6 +707,7 @@ mod tests {
     #[test]
     fn test_set_reward_recipient() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
 
@@ -741,7 +722,7 @@ mod tests {
 
         token.set_reward_recipient(alice, ITIP20::setRewardRecipientCall { recipient: alice })?;
 
-        let info = token.user_reward_infoa.at(alice).read()?;
+        let info = token.user_reward_info.at(alice).read()?;
         assert_eq!(info.reward_recipient, alice);
         assert_eq!(token.get_opted_in_supply()?, amount.to::<u128>());
         assert_eq!(info.reward_per_token, U256::ZERO);
@@ -764,6 +745,7 @@ mod tests {
     #[test]
     fn test_cancel_reward() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
 
         initialize_linking_usd(admin)?;
@@ -814,6 +796,7 @@ mod tests {
     #[test]
     fn test_update_rewards() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
 
@@ -864,6 +847,7 @@ mod tests {
     #[test]
     fn test_accrue() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
 
@@ -926,12 +910,13 @@ mod tests {
     #[test]
     fn test_finalize_streams() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let current_time = storage.timestamp().to::<u128>();
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
 
         initialize_linking_usd(admin)?;
         let mut token = TIP20Token::new(1);
+        let current_time = token.storage.timestamp().to::<u128>();
         token.initialize("Test", "TST", "USD", LINKING_USD_ADDRESS, admin)?;
 
         token.grant_role_internal(admin, *ISSUER_ROLE)?;
@@ -992,6 +977,7 @@ mod tests {
     #[test]
     fn test_start_reward_duration_0() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
 
@@ -1043,6 +1029,7 @@ mod tests {
     #[test]
     fn test_reward_distribution_pro_rata() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
 
@@ -1114,6 +1101,7 @@ mod tests {
     #[test]
     fn test_claim_rewards() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
         let alice = Address::random();
         let funder = Address::random();
@@ -1176,6 +1164,7 @@ mod tests {
         // Test with Moderato hardfork - when cancelling the last stream at an end_time,
         // the token should be removed from the registry
         let mut storage = HashMapStorageProvider::new(1);
+        let guard = storage.enter().unwrap();
         let admin = Address::random();
 
         initialize_linking_usd(admin)?;
@@ -1207,33 +1196,29 @@ mod tests {
             (stream_id, stream.end_time as u128)
         };
 
+        std::mem::drop(guard);
         storage.set_spec(TempoHardfork::Moderato);
+        let _guard = storage.enter().unwrap();
 
         // Verify the token is in the registry before cancellation
-        {
-            let mut registry = TIP20RewardsRegistry::new(&mut storage);
-            let count_before = registry.get_stream_count_at(end_time)?;
-            assert_eq!(
-                count_before, 1,
-                "Registry should have 1 stream before cancellation"
-            );
-        }
+        let mut registry = TIP20RewardsRegistry::new();
+        let count_before = registry.get_stream_count_at(end_time)?;
+        assert_eq!(
+            count_before, 1,
+            "Registry should have 1 stream before cancellation"
+        );
 
         // Cancel the stream
-        {
-            let mut token = TIP20Token::new(1);
-            token.cancel_reward(admin, ITIP20::cancelRewardCall { id: stream_id })?;
-        }
+        let mut token = TIP20Token::new(1);
+        token.cancel_reward(admin, ITIP20::cancelRewardCall { id: stream_id })?;
 
         // Verify the token is removed from the registry (post-Moderato behavior)
-        {
-            let mut registry = TIP20RewardsRegistry::new(&mut storage);
-            let count_after = registry.get_stream_count_at(end_time)?;
-            assert_eq!(
-                count_after, 0,
-                "Post-Moderato: Registry should have 0 streams after cancelling the last stream"
-            );
-        }
+        let mut registry = TIP20RewardsRegistry::new();
+        let count_after = registry.get_stream_count_at(end_time)?;
+        assert_eq!(
+            count_after, 0,
+            "Post-Moderato: Registry should have 0 streams after cancelling the last stream"
+        );
 
         Ok(())
     }
@@ -1243,6 +1228,7 @@ mod tests {
         // Test with Adagio (pre-Moderato) - token should NOT be removed from registry
         // even when all streams are cancelled (for consensus compatibility)
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
 
         initialize_linking_usd(admin)?;
@@ -1276,7 +1262,7 @@ mod tests {
 
         // Verify the token is in the registry before cancellation
         {
-            let mut registry = TIP20RewardsRegistry::new(&mut storage);
+            let mut registry = TIP20RewardsRegistry::new();
             let count_before = registry.get_stream_count_at(end_time)?;
             assert_eq!(
                 count_before, 1,
@@ -1292,7 +1278,7 @@ mod tests {
 
         // Pre-Moderato: token should NOT be removed from registry
         {
-            let mut registry = TIP20RewardsRegistry::new(&mut storage);
+            let mut registry = TIP20RewardsRegistry::new();
             let count_after = registry.get_stream_count_at(end_time)?;
             assert_eq!(
                 count_after, 1,
@@ -1306,6 +1292,7 @@ mod tests {
     #[test]
     fn test_scheduled_rewards_disabled_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
+        let _guard = storage.enter().unwrap();
         let admin = Address::random();
 
         initialize_linking_usd(admin)?;

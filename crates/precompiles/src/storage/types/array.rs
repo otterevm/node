@@ -171,8 +171,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{
-        Layout, LayoutCtx, PrecompileStorageProvider, hashmap::HashMapStorageProvider,
+    use crate::{
+        storage::{Layout, LayoutCtx, PrecompileStorageContext, PrecompileStorageProvider},
+        test_util::setup_storage,
     };
     use proptest::prelude::*;
 

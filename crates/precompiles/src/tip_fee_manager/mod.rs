@@ -46,7 +46,7 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
     ///
     /// Caution: This does not initialize the account, see [`Self::initialize`].
     pub fn new(storage: &'a mut S) -> Self {
-        Self::_new(TIP_FEE_MANAGER_ADDRESS, storage)
+        Self::__new(TIP_FEE_MANAGER_ADDRESS, storage)
     }
 
     /// Initializes the contract
@@ -85,18 +85,17 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         }
 
         // Validate that the fee token is USD
-        validate_usd_currency(call.token, self.storage)?;
+        validate_usd_currency(call.token, self.storage.spec())?;
 
         self.sstore_validator_tokens(sender, call.token)?;
 
         // Emit ValidatorTokenSet event
-        self.emit_event(
-            FeeManagerEvent::ValidatorTokenSet(IFeeManager::ValidatorTokenSet {
+        self.emit_event(FeeManagerEvent::ValidatorTokenSet(
+            IFeeManager::ValidatorTokenSet {
                 validator: sender,
                 token: call.token,
-            })
-            .into_log_data(),
-        )
+            },
+        ))
     }
 
     pub fn set_user_token(
@@ -114,18 +113,15 @@ impl<'a, S: PrecompileStorageProvider> TipFeeManager<'a, S> {
         }
 
         // Validate that the fee token is USD
-        validate_usd_currency(call.token, self.storage)?;
+        validate_usd_currency(call.token, self.storage.spec())?;
 
         self.sstore_user_tokens(sender, call.token)?;
 
         // Emit UserTokenSet event
-        self.emit_event(
-            FeeManagerEvent::UserTokenSet(IFeeManager::UserTokenSet {
-                user: sender,
-                token: call.token,
-            })
-            .into_log_data(),
-        )
+        self.emit_event(FeeManagerEvent::UserTokenSet(IFeeManager::UserTokenSet {
+            user: sender,
+            token: call.token,
+        }))
     }
 
     /// Collects fees from user before transaction execution.
@@ -400,7 +396,7 @@ mod tests {
             .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, user)
             .unwrap();
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let call = IFeeManager::setUserTokenCall { token };
         let result = fee_manager.set_user_token(user, call);
@@ -420,7 +416,7 @@ mod tests {
         // Initialize LinkingUSD first
         initialize_linking_usd(user).unwrap();
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Try to set LinkingUSD as user token - should fail
         let call = IFeeManager::setUserTokenCall {
@@ -447,7 +443,7 @@ mod tests {
         // Initialize LinkingUSD first
         initialize_linking_usd(user).unwrap();
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Try to set LinkingUSD as user token - should succeed pre-Moderato
         let call = IFeeManager::setUserTokenCall {
@@ -477,7 +473,7 @@ mod tests {
             .initialize("TestToken", "TEST", "USD", LINKING_USD_ADDRESS, admin)
             .unwrap();
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let call = IFeeManager::setValidatorTokenCall { token };
         let result = fee_manager.set_validator_token(validator, call.clone(), validator);
@@ -521,7 +517,7 @@ mod tests {
         // Setup token with balance and approval
         setup_token_with_balance(&mut storage, token, user, U256::from(u64::MAX));
 
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Set validator token
         // Set beneficiary to a random address to avoid `CannotChangeWithinBlock` error
@@ -577,7 +573,7 @@ mod tests {
         }
 
         let validator = Address::random();
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         // Set validator token
         // Set beneficiary to a random address to avoid `CannotChangeWithinBlock` error
@@ -623,7 +619,7 @@ mod tests {
             .unwrap();
 
         let validator = Address::random();
-        let mut fee_manager = TipFeeManager::new(&mut storage);
+        let mut fee_manager = TipFeeManager::new();
 
         let user = Address::random();
 

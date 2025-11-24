@@ -57,7 +57,7 @@ type BookKeys = Slot<Vec<B256>>;
 
 impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
     pub fn new(storage: &'a mut S) -> Self {
-        Self::_new(STABLECOIN_EXCHANGE_ADDRESS, storage)
+        Self::__new(STABLECOIN_EXCHANGE_ADDRESS, storage)
     }
 
     /// Stablecoin exchange address
@@ -388,8 +388,8 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         }
 
         let quote = TIP20Token::from_address(base, self.storage).quote_token()?;
-        validate_usd_currency(base, self.storage)?;
-        validate_usd_currency(quote, self.storage)?;
+        validate_usd_currency(base, self.storage.spec())?;
+        validate_usd_currency(quote, self.storage.spec())?;
 
         let book_key = compute_book_key(base, quote);
 
@@ -402,14 +402,13 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         BookKeys::new(slots::BOOK_KEYS).push(self, book_key)?;
 
         // Emit PairCreated event
-        self.emit_event(
-            StablecoinExchangeEvents::PairCreated(IStablecoinExchange::PairCreated {
+        self.emit_event(StablecoinExchangeEvents::PairCreated(
+            IStablecoinExchange::PairCreated {
                 key: book_key,
                 base,
                 quote,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         Ok(book_key)
     }
@@ -487,17 +486,16 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         self.sstore_orders(order_id, order)?;
 
         // Emit OrderPlaced event
-        self.emit_event(
-            StablecoinExchangeEvents::OrderPlaced(IStablecoinExchange::OrderPlaced {
+        self.emit_event(StablecoinExchangeEvents::OrderPlaced(
+            IStablecoinExchange::OrderPlaced {
                 orderId: order_id,
                 maker: sender,
                 token,
                 amount,
                 isBid: is_bid,
                 tick,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         Ok(order_id)
     }
@@ -574,8 +572,8 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         self.sstore_orders(order_id, order)?;
 
         // Emit FlipOrderPlaced event
-        self.emit_event(
-            StablecoinExchangeEvents::FlipOrderPlaced(IStablecoinExchange::FlipOrderPlaced {
+        self.emit_event(StablecoinExchangeEvents::FlipOrderPlaced(
+            IStablecoinExchange::FlipOrderPlaced {
                 orderId: order_id,
                 maker: sender,
                 token,
@@ -583,9 +581,8 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
                 isBid: is_bid,
                 tick,
                 flipTick: flip_tick,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         Ok(order_id)
     }
@@ -705,15 +702,14 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         Orderbook::write_tick_level(self, order.book_key(), order.is_bid(), order.tick(), *level)?;
 
         // Emit OrderFilled event for partial fill
-        self.emit_event(
-            StablecoinExchangeEvents::OrderFilled(IStablecoinExchange::OrderFilled {
+        self.emit_event(StablecoinExchangeEvents::OrderFilled(
+            IStablecoinExchange::OrderFilled {
                 orderId: order.order_id(),
                 maker: order.maker(),
                 amountFilled: fill_amount,
                 partialFill: true,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         Ok(amount_out)
     }
@@ -746,15 +742,14 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         };
 
         // Emit OrderFilled event for complete fill
-        self.emit_event(
-            StablecoinExchangeEvents::OrderFilled(IStablecoinExchange::OrderFilled {
+        self.emit_event(StablecoinExchangeEvents::OrderFilled(
+            IStablecoinExchange::OrderFilled {
                 orderId: order.order_id(),
                 maker: order.maker(),
                 amountFilled: fill_amount,
                 partialFill: false,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         if order.is_flip() {
             // Create a new flip order with flipped side and swapped ticks
@@ -1163,12 +1158,11 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         self.clear_orders(order.order_id())?;
 
         // Emit OrderCancelled event
-        self.emit_event(
-            StablecoinExchangeEvents::OrderCancelled(IStablecoinExchange::OrderCancelled {
+        self.emit_event(StablecoinExchangeEvents::OrderCancelled(
+            IStablecoinExchange::OrderCancelled {
                 orderId: order.order_id(),
-            })
-            .into_log_data(),
-        )
+            },
+        ))
     }
 
     /// Cancel an active order (already in the orderbook)
@@ -1224,12 +1218,11 @@ impl<'a, S: PrecompileStorageProvider> StablecoinExchange<'a, S> {
         self.clear_orders(order.order_id())?;
 
         // Emit OrderCancelled event
-        self.emit_event(
-            StablecoinExchangeEvents::OrderCancelled(IStablecoinExchange::OrderCancelled {
+        self.emit_event(StablecoinExchangeEvents::OrderCancelled(
+            IStablecoinExchange::OrderCancelled {
                 orderId: order.order_id(),
-            })
-            .into_log_data(),
-        )
+            },
+        ))
     }
 
     /// Withdraw tokens from exchange balance
@@ -1606,7 +1599,7 @@ mod tests {
         ];
 
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        let exchange = StablecoinExchange::new(&mut storage);
+        let exchange = StablecoinExchange::new();
 
         for price in test_prices {
             let tick = exchange.price_to_tick(price).unwrap();
@@ -1619,7 +1612,7 @@ mod tests {
     fn test_price_to_tick_post_moderato() -> eyre::Result<()> {
         // Post-Moderato: price validation should be enforced
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let exchange = StablecoinExchange::new(&mut storage);
+        let exchange = StablecoinExchange::new();
 
         // Valid prices should succeed
         assert_eq!(exchange.price_to_tick(orderbook::PRICE_SCALE)?, 0);
@@ -1654,7 +1647,7 @@ mod tests {
     fn test_price_to_tick_pre_moderato() -> eyre::Result<()> {
         // Pre-Moderato: no price validation (legacy behavior)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        let exchange = StablecoinExchange::new(&mut storage);
+        let exchange = StablecoinExchange::new();
 
         // Valid prices should succeed
         assert_eq!(exchange.price_to_tick(orderbook::PRICE_SCALE)?, 0);
@@ -1741,7 +1734,7 @@ mod tests {
     fn test_place_order_pair_does_not_exist_post_moderato() -> eyre::Result<()> {
         // Test with Moderato hardfork (validation should be enforced)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -1773,7 +1766,7 @@ mod tests {
     fn test_place_order_pair_does_not_exist_pre_moderato() -> eyre::Result<()> {
         // Test with Adagio (pre-Moderato) - validation is enforced in all hardforks
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -1808,7 +1801,7 @@ mod tests {
     #[test]
     fn test_place_order_below_minimum_amount() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -1846,7 +1839,7 @@ mod tests {
     #[test]
     fn test_place_bid_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -1918,7 +1911,7 @@ mod tests {
     #[test]
     fn test_place_ask_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -1984,7 +1977,7 @@ mod tests {
     #[test]
     fn test_place_flip_order_below_minimum_amount() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -2024,7 +2017,7 @@ mod tests {
     fn test_place_flip_order_pair_does_not_exist_post_moderato() -> eyre::Result<()> {
         // Test with Moderato hardfork (validation should be enforced)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -2059,7 +2052,7 @@ mod tests {
     fn test_place_flip_order_pair_does_not_exist_pre_moderato() -> eyre::Result<()> {
         // Test with Adagio (pre-Moderato) - validation should not be enforced
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -2094,7 +2087,7 @@ mod tests {
     #[test]
     fn test_place_flip_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2166,7 +2159,7 @@ mod tests {
     #[test]
     fn test_cancel_pending_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2231,7 +2224,7 @@ mod tests {
     #[test]
     fn test_execute_block() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2315,7 +2308,7 @@ mod tests {
     #[test]
     fn test_execute_block_unauthorized() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let result = exchange.execute_block(Address::random());
@@ -2325,7 +2318,7 @@ mod tests {
     #[test]
     fn test_withdraw() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2384,7 +2377,7 @@ mod tests {
     #[test]
     fn test_withdraw_insufficient_balance() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2416,7 +2409,7 @@ mod tests {
     #[test]
     fn test_quote_swap_exact_amount_out() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2457,7 +2450,7 @@ mod tests {
     #[test]
     fn test_quote_swap_exact_amount_in() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2499,7 +2492,7 @@ mod tests {
     #[test]
     fn test_quote_swap_exact_amount_out_base_for_quote() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2543,7 +2536,7 @@ mod tests {
     #[test]
     fn test_swap_exact_amount_out() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2597,7 +2590,7 @@ mod tests {
     #[test]
     fn test_swap_exact_amount_in() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2651,7 +2644,7 @@ mod tests {
     #[test]
     fn test_flip_order_execution() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let alice = Address::random();
@@ -2714,7 +2707,7 @@ mod tests {
     #[test]
     fn test_pair_created() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let admin = Address::random();
@@ -2745,14 +2738,13 @@ mod tests {
                 base: base_token,
                 quote: quote_token,
             })
-            .into_log_data()
         );
     }
 
     #[test]
     fn test_pair_already_created() {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize().expect("Could not init exchange");
 
         let admin = Address::random();
@@ -2791,7 +2783,7 @@ mod tests {
         let expected_book_key = compute_book_key(token_in, token_out);
         assert_eq!(book_key, expected_book_key, "Book key should match");
 
-        let mut exchange = StablecoinExchange::_new(exchange_addr, storage);
+        let mut exchange = StablecoinExchange::__new(exchange_addr, storage);
         let orderbook = exchange.sload_books(book_key)?;
         let expected_direction = token_in == orderbook.base;
         assert_eq!(
@@ -2806,7 +2798,7 @@ mod tests {
     #[test]
     fn test_find_path_to_root() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -2852,7 +2844,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_same_token_errors() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -2881,7 +2873,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_direct_pair() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -2921,7 +2913,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_reverse_pair() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -2961,7 +2953,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_two_hop_siblings() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -3027,7 +3019,7 @@ mod tests {
     #[test]
     fn test_quote_exact_in_multi_hop() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -3184,7 +3176,7 @@ mod tests {
     #[test]
     fn test_quote_exact_out_multi_hop() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -3320,7 +3312,7 @@ mod tests {
     #[test]
     fn test_swap_exact_in_multi_hop_transitory_balances() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -3519,7 +3511,7 @@ mod tests {
     #[test]
     fn test_swap_exact_out_multi_hop_transitory_balances() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let admin = Address::random();
@@ -3757,7 +3749,7 @@ mod tests {
     #[test]
     fn test_max_in_check_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -3830,7 +3822,7 @@ mod tests {
     #[test]
     fn test_max_in_check_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -3911,7 +3903,7 @@ mod tests {
     fn test_exact_out_bid_side_pre_moderato() -> eyre::Result<()> {
         // Pre-Moderato: old behavior with unit mismatch causes MaxInputExceeded
         let mut storage = HashMapStorageProvider::new(1); // Default is Adagio
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -3966,7 +3958,7 @@ mod tests {
     fn test_exact_out_bid_side_post_moderato() -> eyre::Result<()> {
         // Post-Moderato: new behavior with correct unit conversion
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -4015,7 +4007,7 @@ mod tests {
     fn test_exact_in_ask_side_pre_moderato() -> eyre::Result<()> {
         // Pre-Moderato: old behavior treats quote amount as base amount
         let mut storage = HashMapStorageProvider::new(1); // Default is Adagio
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();
@@ -4066,7 +4058,7 @@ mod tests {
     fn test_exact_in_ask_side_post_moderato() -> eyre::Result<()> {
         // Post-Moderato: new behavior with correct unit conversion
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        let mut exchange = StablecoinExchange::new(&mut storage);
+        let mut exchange = StablecoinExchange::new();
         exchange.initialize()?;
 
         let alice = Address::random();

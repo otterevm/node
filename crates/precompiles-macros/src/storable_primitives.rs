@@ -82,7 +82,7 @@ fn gen_storable_impl(
             quote! {
                 impl Storable<1> for #type_path {
                     #[inline]
-                    fn load<S: StorageOps>(storage: &S, base_slot: U256, ctx: LayoutCtx) -> Result<Self> {
+                    fn load<S: StorageOps>(storage: &S, base_slot: ::alloy::primitives::U256, ctx: LayoutCtx) -> Result<Self> {
                         match ctx.packed_offset() {
                             None => {
                                 let value = storage.sload(base_slot)?;
@@ -96,15 +96,15 @@ fn gen_storable_impl(
                     }
 
                     #[inline]
-                    fn store<S: StorageOps>(&self, storage: &mut S, base_slot: U256, ctx: LayoutCtx) -> Result<()> {
+                    fn store<S: StorageOps>(&self, storage: &mut S, base_slot: ::alloy::primitives::U256, ctx: LayoutCtx) -> Result<()> {
                         match ctx.packed_offset() {
                             None => {
-                                storage.sstore(base_slot, U256::from(*self))?;
+                                storage.sstore(base_slot, ::alloy::primitives::U256::from(*self))?;
                                 Ok(())
                             }
                             Some(offset) => {
                                 let current = storage.sload(base_slot)?;
-                                let value = U256::from(*self);
+                                let value = ::alloy::primitives::U256::from(*self);
                                 let updated = crate::storage::packing::insert_packed_value(current, &value, offset, #byte_count)?;
                                 storage.sstore(base_slot, updated)?;
                                 Ok(())
@@ -114,11 +114,11 @@ fn gen_storable_impl(
 
                     #[inline]
                     fn to_evm_words(&self) -> Result<[U256; 1]> {
-                        Ok([U256::from(*self)])
+                        Ok([::alloy::primitives::U256::from(*self)])
                     }
 
                     #[inline]
-                    fn from_evm_words(words: [U256; 1]) -> Result<Self> {
+                    fn from_evm_words(words: [::alloy::primitives::U256; 1]) -> Result<Self> {
                         Ok(words[0].to::<Self>())
                     }
                 }
@@ -156,7 +156,7 @@ fn gen_storable_impl(
             quote! {
                 impl Storable<1> for #type_path {
                     #[inline]
-                    fn load<S: StorageOps>(storage: &S, base_slot: U256, ctx: LayoutCtx) -> Result<Self> {
+                    fn load<S: StorageOps>(storage: &S, base_slot: ::alloy::primitives::U256, ctx: LayoutCtx) -> Result<Self> {
                         match ctx.packed_offset() {
                             None => {
                                 let value = storage.sload(base_slot)?;
@@ -171,16 +171,16 @@ fn gen_storable_impl(
                     }
 
                     #[inline]
-                    fn store<S: StorageOps>(&self, storage: &mut S, base_slot: U256, ctx: LayoutCtx) -> Result<()> {
+                    fn store<S: StorageOps>(&self, storage: &mut S, base_slot: ::alloy::primitives::U256, ctx: LayoutCtx) -> Result<()> {
                         match ctx.packed_offset() {
                             None => {
                                 // Cast to unsigned to preserve bit pattern, then extend to U256
-                                storage.sstore(base_slot, U256::from(*self as #unsigned_type))?;
+                                storage.sstore(base_slot, ::alloy::primitives::U256::from(*self as #unsigned_type))?;
                                 Ok(())
                             }
                             Some(offset) => {
                                 let current = storage.sload(base_slot)?;
-                                let value = U256::from(*self as #unsigned_type);
+                                let value = ::alloy::primitives::U256::from(*self as #unsigned_type);
                                 let updated = crate::storage::packing::insert_packed_value(current, &value, offset, #byte_count)?;
                                 storage.sstore(base_slot, updated)?;
                                 Ok(())
@@ -189,12 +189,12 @@ fn gen_storable_impl(
                     }
 
                     #[inline]
-                    fn to_evm_words(&self) -> Result<[U256; 1]> {
-                        Ok([U256::from(*self as #unsigned_type)])
+                    fn to_evm_words(&self) -> Result<[::alloy::primitives::U256; 1]> {
+                        Ok([::alloy::primitives::U256::from(*self as #unsigned_type)])
                     }
 
                     #[inline]
-                    fn from_evm_words(words: [U256; 1]) -> Result<Self> {
+                    fn from_evm_words(words: [::alloy::primitives::U256; 1]) -> Result<Self> {
                         Ok(words[0].to::<#unsigned_type>() as Self)
                     }
                 }
@@ -587,8 +587,8 @@ fn gen_packed_array_store(array_size: &usize, elem_byte_count: &usize) -> TokenS
 
         // Build slots by packing elements
         for slot_idx in 0..slot_count {
-            let slot_addr = base_slot + U256::from(slot_idx);
-            let mut slot_value = U256::ZERO;
+            let slot_addr = base_slot + ::alloy::primitives::U256::from(slot_idx);
+            let mut slot_value = ::alloy::primitives::U256::ZERO;
 
             // Pack all elements that belong to this slot
             for i in 0..#array_size {

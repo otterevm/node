@@ -41,7 +41,7 @@ pub struct ValidatorConfig {
 
 impl<'a, S: PrecompileStorageProvider> ValidatorConfig<'a, S> {
     pub fn new(storage: &'a mut S) -> Self {
-        Self::_new(VALIDATOR_CONFIG_ADDRESS, storage)
+        Self::__new(VALIDATOR_CONFIG_ADDRESS, storage)
     }
 
     /// Initialize the precompile with an owner
@@ -316,7 +316,7 @@ mod tests {
         let owner1 = Address::from([0x11; 20]);
         let owner2 = Address::from([0x22; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
 
         // Initialize with owner1
         validator_config.initialize(owner1).unwrap();
@@ -348,7 +348,7 @@ mod tests {
         let owner2 = Address::from([0x22; 20]);
         let validator1 = Address::from([0x33; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
 
         // Initialize with owner1
         validator_config.initialize(owner1).unwrap();
@@ -441,7 +441,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let owner = Address::from([0x01; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         validator_config.initialize(owner).unwrap();
 
         // Add first validator with long inbound address (100+ bytes)
@@ -692,7 +692,7 @@ mod tests {
         let owner = Address::from([0x01; 20]);
         let validator = Address::from([0x11; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         validator_config.initialize(owner).unwrap();
 
         // Owner adds a validator
@@ -738,7 +738,7 @@ mod tests {
         let owner = Address::from([0x01; 20]);
         let validator = Address::from([0x11; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         validator_config.initialize(owner).unwrap();
 
         // Create a 253-character hostname (max valid DNS length) for inbound
@@ -781,7 +781,7 @@ mod tests {
         let owner = Address::from([0x01; 20]);
         let validator = Address::from([0x11; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         validator_config.initialize(owner).unwrap();
 
         // Create a 254-character hostname (exceeds max DNS length)
@@ -814,7 +814,7 @@ mod tests {
         let validator1 = Address::from([0x11; 20]);
         let validator2 = Address::from([0x22; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         validator_config.initialize(owner).unwrap();
 
         // Add validator with long inbound address that uses multiple slots
@@ -885,7 +885,7 @@ mod tests {
         let owner = Address::from([0x01; 20]);
         let validator = Address::from([0x11; 20]);
 
-        let mut validator_config = ValidatorConfig::new(&mut storage);
+        let mut validator_config = ValidatorConfig::new();
         validator_config.initialize(owner).unwrap();
 
         // Start with a long address

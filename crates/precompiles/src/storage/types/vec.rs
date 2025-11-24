@@ -259,7 +259,7 @@ where
     ///
     /// Automatically increments the length and handles packing for small types.
     #[inline]
-    pub fn push(&self, value: T) -> Result<()> {
+    pub fn push(&mut self, value: T) -> Result<()> {
         // Read current length
         let length = self.len()?;
 
@@ -277,7 +277,7 @@ where
     /// Returns `None` if the vector is empty. Automatically decrements the length
     /// and zeros out the popped element's storage slot.
     #[inline]
-    pub fn pop(&self) -> Result<Option<T>> {
+    pub fn pop(&mut self) -> Result<Option<T>> {
         // Read current length
         let length = self.len()?;
         if length == 0 {
@@ -440,7 +440,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        storage::{PrecompileStorageProvider, StorageOps, packing::gen_word_from},
+        storage::{PrecompileStorageContext, StorageOps, packing::gen_word_from},
         test_util::setup_storage,
     };
     use alloy::primitives::Address;
@@ -1472,7 +1472,7 @@ mod tests {
         let _guard = storage.enter().unwrap();
 
         let len_slot = U256::random();
-        let handler = VecHandler::<U256>::new(len_slot, address);
+        let mut handler = VecHandler::<U256>::new(len_slot, address);
 
         let val1 = U256::random();
         let val2 = U256::random();
@@ -1500,7 +1500,7 @@ mod tests {
         let _guard = storage.enter().unwrap();
 
         let len_slot = U256::random();
-        let handler = VecHandler::<Address>::new(len_slot, address);
+        let mut handler = VecHandler::<Address>::new(len_slot, address);
 
         // Initial length should be 0
         assert_eq!(handler.len().unwrap(), 0);
@@ -1526,7 +1526,7 @@ mod tests {
         let _guard = storage.enter().unwrap();
 
         let len_slot = U256::random();
-        let handler = VecHandler::<u8>::new(len_slot, address);
+        let mut handler = VecHandler::<u8>::new(len_slot, address);
 
         // Push 35 elements (crosses slot boundary: 32 in slot 0, 3 in slot 1)
         for i in 0..35 {

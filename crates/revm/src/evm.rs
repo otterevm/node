@@ -210,10 +210,10 @@ mod tests {
             EvmInternals::new(&mut ctx.journaled_state, &ctx.block),
             &ctx.cfg,
         );
-        TIP20Token::new(0, &mut storage)
+        TIP20Token::new(0)
             .initialize("USD", "USD", "USD", Address::ZERO, Address::ZERO)
             .unwrap();
-        TIP20Token::new(1, &mut storage)
+        TIP20Token::new(1)
             .initialize("USD", "USD", "USD", LINKING_USD_ADDRESS, Address::ZERO)
             .unwrap();
         drop(storage);
@@ -247,10 +247,10 @@ mod tests {
             EvmInternals::new(&mut ctx.journaled_state, &ctx.block),
             &ctx.cfg,
         );
-        TIP20Token::new(0, &mut storage)
+        TIP20Token::new(0)
             .initialize("USD", "USD", "USD", Address::ZERO, Address::ZERO)
             .unwrap();
-        TIP20Token::new(1, &mut storage)
+        TIP20Token::new(1)
             .initialize("USD", "USD", "USD", LINKING_USD_ADDRESS, Address::ZERO)
             .unwrap();
         drop(storage);

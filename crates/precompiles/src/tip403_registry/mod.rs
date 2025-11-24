@@ -8,7 +8,7 @@ use crate::{
     error::{Result, TempoPrecompileError},
     storage::{Mapping, PrecompileStorageProvider},
 };
-use alloy::primitives::{Address, Bytes, IntoLogData};
+use alloy::primitives::{Address, Bytes};
 use revm::state::Bytecode;
 
 #[contract]
@@ -35,7 +35,7 @@ impl TIP403Registry {
 
     /// Initializes the registry contract.
     pub fn initialize(&mut self) -> Result<()> {
-        Self::__initialize()
+        self.__initialize()
     }
 
     // View functions
@@ -85,25 +85,21 @@ impl TIP403Registry {
         })?;
 
         // Emit events
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::PolicyCreated(ITIP403Registry::PolicyCreated {
+        self.emit_event(TIP403RegistryEvent::PolicyCreated(
+            ITIP403Registry::PolicyCreated {
                 policyId: new_policy_id,
                 updater: msg_sender,
                 policyType: call.policyType,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::PolicyAdminUpdated(ITIP403Registry::PolicyAdminUpdated {
+        self.emit_event(TIP403RegistryEvent::PolicyAdminUpdated(
+            ITIP403Registry::PolicyAdminUpdated {
                 policyId: new_policy_id,
                 updater: msg_sender,
                 admin: call.admin,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         Ok(new_policy_id)
     }
@@ -138,28 +134,24 @@ impl TIP403Registry {
 
             match policy_type {
                 ITIP403Registry::PolicyType::WHITELIST => {
-                    self.storage.emit_event(
-                        TIP403_REGISTRY_ADDRESS,
-                        TIP403RegistryEvent::WhitelistUpdated(ITIP403Registry::WhitelistUpdated {
+                    self.emit_event(TIP403RegistryEvent::WhitelistUpdated(
+                        ITIP403Registry::WhitelistUpdated {
                             policyId: new_policy_id,
                             updater: msg_sender,
                             account: *account,
                             allowed: true,
-                        })
-                        .into_log_data(),
-                    )?;
+                        },
+                    ))?;
                 }
                 ITIP403Registry::PolicyType::BLACKLIST => {
-                    self.storage.emit_event(
-                        TIP403_REGISTRY_ADDRESS,
-                        TIP403RegistryEvent::BlacklistUpdated(ITIP403Registry::BlacklistUpdated {
+                    self.emit_event(TIP403RegistryEvent::BlacklistUpdated(
+                        ITIP403Registry::BlacklistUpdated {
                             policyId: new_policy_id,
                             updater: msg_sender,
                             account: *account,
                             restricted: true,
-                        })
-                        .into_log_data(),
-                    )?;
+                        },
+                    ))?;
                 }
                 ITIP403Registry::PolicyType::__Invalid => {
                     return Err(TIP403RegistryError::incompatible_policy_type().into());
@@ -168,25 +160,21 @@ impl TIP403Registry {
         }
 
         // Emit policy creation events
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::PolicyCreated(ITIP403Registry::PolicyCreated {
+        self.emit_event(TIP403RegistryEvent::PolicyCreated(
+            ITIP403Registry::PolicyCreated {
                 policyId: new_policy_id,
                 updater: msg_sender,
                 policyType: call.policyType,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::PolicyAdminUpdated(ITIP403Registry::PolicyAdminUpdated {
+        self.emit_event(TIP403RegistryEvent::PolicyAdminUpdated(
+            ITIP403Registry::PolicyAdminUpdated {
                 policyId: new_policy_id,
                 updater: msg_sender,
                 admin,
-            })
-            .into_log_data(),
-        )?;
+            },
+        ))?;
 
         Ok(new_policy_id)
     }
@@ -212,15 +200,13 @@ impl TIP403Registry {
             },
         )?;
 
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::PolicyAdminUpdated(ITIP403Registry::PolicyAdminUpdated {
+        self.emit_event(TIP403RegistryEvent::PolicyAdminUpdated(
+            ITIP403Registry::PolicyAdminUpdated {
                 policyId: call.policyId,
                 updater: msg_sender,
                 admin: call.admin,
-            })
-            .into_log_data(),
-        )
+            },
+        ))
     }
 
     pub fn modify_policy_whitelist(
@@ -242,16 +228,14 @@ impl TIP403Registry {
 
         self.set_policy_set(call.policyId, call.account, call.allowed)?;
 
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::WhitelistUpdated(ITIP403Registry::WhitelistUpdated {
+        self.emit_event(TIP403RegistryEvent::WhitelistUpdated(
+            ITIP403Registry::WhitelistUpdated {
                 policyId: call.policyId,
                 updater: msg_sender,
                 account: call.account,
                 allowed: call.allowed,
-            })
-            .into_log_data(),
-        )
+            },
+        ))
     }
 
     pub fn modify_policy_blacklist(
@@ -273,16 +257,14 @@ impl TIP403Registry {
 
         self.set_policy_set(call.policyId, call.account, call.restricted)?;
 
-        self.storage.emit_event(
-            TIP403_REGISTRY_ADDRESS,
-            TIP403RegistryEvent::BlacklistUpdated(ITIP403Registry::BlacklistUpdated {
+        self.emit_event(TIP403RegistryEvent::BlacklistUpdated(
+            ITIP403Registry::BlacklistUpdated {
                 policyId: call.policyId,
                 updater: msg_sender,
                 account: call.account,
                 restricted: call.restricted,
-            })
-            .into_log_data(),
-        )
+            },
+        ))
     }
 
     // Internal helper functions
@@ -325,13 +307,14 @@ impl TIP403Registry {
 
 #[cfg(test)]
 mod tests {
-    use crate::storage::hashmap::HashMapStorageProvider;
+    use crate::storage::{hashmap::HashMapStorageProvider, PrecompileStorageContext};
 
     use super::*;
 
     #[test]
     fn test_create_policy() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut registry = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
 
@@ -362,6 +345,7 @@ mod tests {
     #[test]
     fn test_is_authorized_special_policies() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut registry = TIP403Registry::new();
         let user = Address::from([1u8; 20]);
 
@@ -376,6 +360,7 @@ mod tests {
     #[test]
     fn test_whitelist_policy() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut registry = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
         let user = Address::from([2u8; 20]);
@@ -417,6 +402,7 @@ mod tests {
     #[test]
     fn test_blacklist_policy() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut registry = TIP403Registry::new();
         let admin = Address::from([1u8; 20]);
         let user = Address::from([2u8; 20]);

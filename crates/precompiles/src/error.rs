@@ -1,4 +1,4 @@
-// use crate::tip20::TIP20Error;
+use crate::tip20::TIP20Error;
 use alloy::{
     primitives::U256,
     sol_types::{Panic, PanicKind, SolError, SolInterface},
@@ -18,10 +18,10 @@ pub enum TempoPrecompileError {
     #[error("Stablecoin exchange error: {0:?}")]
     StablecoinExchange(StablecoinExchangeError),
 
-    // /// Error from TIP20 token
-    // #[error("TIP20 token error: {0:?}")]
-    // TIP20(TIP20Error),
-    //
+    /// Error from TIP20 token
+    #[error("TIP20 token error: {0:?}")]
+    TIP20(TIP20Error),
+
     /// Error from TIP20RewardsRegistry
     #[error("TIP20 rewards registry error: {0:?}")]
     TIP20RewardsRegistry(TIP20RewardsRegistryError),
@@ -99,7 +99,7 @@ impl<T> IntoPrecompileResult<T> for Result<T> {
             Err(err) => {
                 let bytes = match err {
                     TPErr::StablecoinExchange(e) => e.abi_encode().into(),
-                    // TPErr::TIP20(e) => e.abi_encode().into(),
+                    TPErr::TIP20(e) => e.abi_encode().into(),
                     TPErr::TIP20RewardsRegistry(e) => e.abi_encode().into(),
                     TPErr::RolesAuthError(e) => e.abi_encode().into(),
                     TPErr::TIP403RegistryError(e) => e.abi_encode().into(),
@@ -141,7 +141,7 @@ impl<T> IntoPrecompileResult<T> for TempoPrecompileError {
     ) -> PrecompileResult {
         let bytes = match self {
             Self::StablecoinExchange(e) => e.abi_encode().into(),
-            // Self::TIP20(e) => e.abi_encode().into(),
+            Self::TIP20(e) => e.abi_encode().into(),
             Self::TIP20RewardsRegistry(e) => e.abi_encode().into(),
             Self::RolesAuthError(e) => e.abi_encode().into(),
             Self::TIP403RegistryError(e) => e.abi_encode().into(),
@@ -172,4 +172,3 @@ impl<T> IntoPrecompileResult<T> for TempoPrecompileError {
         Ok(PrecompileOutput::new_reverted(gas, bytes))
     }
 }
-

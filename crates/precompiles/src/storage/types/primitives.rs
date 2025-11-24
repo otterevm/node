@@ -123,7 +123,7 @@ impl StorageKey for Address {
 mod tests {
     use super::*;
     use crate::{
-        storage::{PrecompileStorageProvider, packing::gen_word_from},
+        storage::{PrecompileStorageContext, PrecompileStorageProvider, packing::gen_word_from},
         test_util::setup_storage,
     };
     use proptest::prelude::*;

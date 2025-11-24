@@ -3,7 +3,6 @@ use alloy::{primitives::Address, sol_types::SolCall};
 use revm::precompile::{PrecompileError, PrecompileResult};
 
 use crate::{
-    storage::PrecompileStorageProvider,
     tip20_factory::{ITIP20Factory, TIP20Factory},
 };
 
@@ -47,7 +46,7 @@ impl Precompile for TIP20Factory {
 mod tests {
     use super::*;
     use crate::{
-        storage::hashmap::HashMapStorageProvider,
+        storage::{PrecompileStorageContext, hashmap::HashMapStorageProvider},
         test_util::{assert_full_coverage, check_selector_coverage},
     };
     use tempo_contracts::precompiles::ITIP20Factory::ITIP20FactoryCalls;
@@ -55,6 +54,7 @@ mod tests {
     #[test]
     fn tip20_factory_test_selector_coverage() {
         let mut storage = HashMapStorageProvider::new(1);
+        let _guard = storage.enter().unwrap();
         let mut factory = TIP20Factory::new();
 
         let unsupported = check_selector_coverage(

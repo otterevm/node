@@ -3,7 +3,7 @@ use std::{marker::PhantomData, rc::Rc};
 
 use crate::{
     error::Result,
-    storage::{FieldLocation, LayoutCtx, Storable, StorageOps, thread_local::with_storage},
+    storage::{FieldLocation, LayoutCtx, Storable, StorageOps, thread_local::StorageAccessor},
 };
 
 /// Type-safe wrapper for a single EVM storage slot.
@@ -189,11 +189,13 @@ impl<T> Slot<T> {
 
 impl<T> StorageOps for Slot<T> {
     fn sload(&self, slot: U256) -> Result<U256> {
-        with_storage(|storage| storage.sload(*self.address, slot))
+        let storage = StorageAccessor;
+        storage.sload(*self.address, slot)
     }
 
     fn sstore(&mut self, slot: U256, value: U256) -> Result<()> {
-        with_storage(|storage| storage.sstore(*self.address, slot, value))
+        let mut storage = StorageAccessor;
+        storage.sstore(*self.address, slot, value)
     }
 }
 
@@ -201,7 +203,7 @@ impl<T> StorageOps for Slot<T> {
 mod tests {
     use super::*;
     use crate::{
-        storage::{PrecompileStorageProvider, mapping_slot},
+        storage::{PrecompileStorageContext, PrecompileStorageProvider, mapping_slot},
         test_util::setup_storage,
     };
     use alloy::primitives::{Address, B256};

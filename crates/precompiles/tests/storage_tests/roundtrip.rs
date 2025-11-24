@@ -3,6 +3,7 @@
 //! This module tests the full lifecycle of storage operations: store, load, delete, and re-store.
 
 use super::*;
+use tempo_precompiles::storage::PrecompileStorageContext;
 
 #[test]
 fn test_round_trip_operations_in_contract() {
@@ -15,7 +16,7 @@ fn test_round_trip_operations_in_contract() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::_new(*address);
+    let mut layout = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     let original_block = TestBlock {
@@ -89,7 +90,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::_new(*address);
+        let mut layout = Layout::__new(*address);
         let _guard = storage.enter().unwrap();
 
         // Round 1: Store and load
