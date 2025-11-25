@@ -209,9 +209,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<Rule1Test, 2>(&address, base_slot, &value1)?;
-        test_update::<Rule1Test, 2>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<Rule1Test, 2>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<Rule1Test>(&address, base_slot, &value1)?;
+        test_update::<Rule1Test>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<Rule1Test>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -226,9 +226,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<Rule2Test, 1>(&address, base_slot, &value1)?;
-        test_update::<Rule2Test, 1>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<Rule2Test, 1>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<Rule2Test>(&address, base_slot, &value1)?;
+        test_update::<Rule2Test>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<Rule2Test>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -243,9 +243,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<Rule3TestFull, 2>(&address, base_slot, &value1)?;
-        test_update::<Rule3TestFull, 2>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<Rule3TestFull, 2>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<Rule3TestFull>(&address, base_slot, &value1)?;
+        test_update::<Rule3TestFull>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<Rule3TestFull>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -260,9 +260,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<Rule3TestPartial, 2>(&address, base_slot, &value1)?;
-        test_update::<Rule3TestPartial, 2>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<Rule3TestPartial, 2>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<Rule3TestPartial>(&address, base_slot, &value1)?;
+        test_update::<Rule3TestPartial>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<Rule3TestPartial>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -277,9 +277,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<Rule4Test, 3>(&address, base_slot, &value1)?;
-        test_update::<Rule4Test, 3>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<Rule4Test, 3>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<Rule4Test>(&address, base_slot, &value1)?;
+        test_update::<Rule4Test>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<Rule4Test>(&address, base_slot + U256::from(2000), &value1)?;
     }
 }
 
@@ -298,9 +298,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<PackedTwo, 1>(&address, base_slot, &value1)?;
-        test_update::<PackedTwo, 1>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<PackedTwo, 1>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<PackedTwo>(&address, base_slot, &value1)?;
+        test_update::<PackedTwo>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<PackedTwo>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -315,9 +315,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<PackedThree, 1>(&address, base_slot, &value1)?;
-        test_update::<PackedThree, 1>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<PackedThree, 1>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<PackedThree>(&address, base_slot, &value1)?;
+        test_update::<PackedThree>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<PackedThree>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -332,9 +332,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<PartiallyPacked, 3>(&address, base_slot, &value1)?;
-        test_update::<PartiallyPacked, 3>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<PartiallyPacked, 3>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<PartiallyPacked>(&address, base_slot, &value1)?;
+        test_update::<PartiallyPacked>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<PartiallyPacked>(&address, base_slot + U256::from(2000), &value1)?;
     }
 }
 
@@ -353,9 +353,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<WithNestedStruct, 4>(&address, base_slot, &value1)?;
-        test_update::<WithNestedStruct, 4>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<WithNestedStruct, 4>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<WithNestedStruct>(&address, base_slot, &value1)?;
+        test_update::<WithNestedStruct>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<WithNestedStruct>(&address, base_slot + U256::from(2000), &value1)?;
     }
 
     #[test]
@@ -370,9 +370,9 @@ proptest! {
         let (mut storage, address) = setup_storage();
         let _guard = storage.enter().unwrap();
 
-        test_store_load::<DeepNested, 6>(&address, base_slot, &value1)?;
-        test_update::<DeepNested, 6>(&address, base_slot + U256::from(1000), &value1, &value2)?;
-        test_delete::<DeepNested, 6>(&address, base_slot + U256::from(2000), &value1)?;
+        test_store_load::<DeepNested>(&address, base_slot, &value1)?;
+        test_update::<DeepNested>(&address, base_slot + U256::from(1000), &value1, &value2)?;
+        test_delete::<DeepNested>(&address, base_slot + U256::from(2000), &value1)?;
     }
 }
 

@@ -105,6 +105,42 @@ impl Storable<1> for String {
     }
 }
 
+// -- STORABLE OPS IMPLEMENTATIONS ---------------------------------------------
+
+impl StorableOps for Bytes {
+    #[inline]
+    fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self> {
+        <Self as Storable<1>>::load(storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::store(self, storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::delete(storage, slot, ctx)
+    }
+}
+
+impl StorableOps for String {
+    #[inline]
+    fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self> {
+        <Self as Storable<1>>::load(storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::store(self, storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::delete(storage, slot, ctx)
+    }
+}
+
 // -- HELPER FUNCTIONS ---------------------------------------------------------
 
 /// Generic load implementation for string-like types (String, Bytes) using Solidity's encoding.
@@ -302,7 +338,7 @@ fn encode_long_string_length(byte_length: usize) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{PrecompileStorageProvider, hashmap::HashMapStorageProvider};
+    use crate::storage::{Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider};
     use proptest::prelude::*;
 
     fn setup_storage() -> (HashMapStorageProvider, Rc<Address>) {

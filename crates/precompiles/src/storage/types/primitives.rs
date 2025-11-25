@@ -119,11 +119,47 @@ impl StorageKey for Address {
     }
 }
 
+// -- STORABLE OPS IMPLEMENTATIONS FOR PRIMITIVES --------------------------------
+
+impl StorableOps for bool {
+    #[inline]
+    fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self> {
+        <Self as Storable<1>>::load(storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::store(self, storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::delete(storage, slot, ctx)
+    }
+}
+
+impl StorableOps for Address {
+    #[inline]
+    fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self> {
+        <Self as Storable<1>>::load(storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::store(self, storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::delete(storage, slot, ctx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::{
-        PrecompileStorageProvider, hashmap::HashMapStorageProvider, packing::gen_word_from,
+        Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider, packing::gen_word_from,
     };
     use proptest::prelude::*;
 

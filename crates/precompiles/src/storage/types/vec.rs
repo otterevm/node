@@ -17,7 +17,7 @@ use std::{marker::PhantomData, rc::Rc};
 use crate::{
     error::{Result, TempoPrecompileError},
     storage::{
-        Layout, LayoutCtx, Storable, StorableType, StorageOps,
+        Handler, Layout, LayoutCtx, Storable, StorableOps, StorableType, StorageOps,
         packing::{
             calc_element_loc, calc_packed_slot_count, extract_packed_value, insert_packed_value,
         },
@@ -135,6 +135,26 @@ where
     }
 }
 
+impl<T> StorableOps for Vec<T>
+where
+    T: Storable<1> + StorableType,
+{
+    #[inline]
+    fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self> {
+        <Self as Storable<1>>::load(storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::store(self, storage, slot, ctx)
+    }
+
+    #[inline]
+    fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+        <Self as Storable<1>>::delete(storage, slot, ctx)
+    }
+}
+
 /// Type-safe handler for accessing `Vec<T>` in storage.
 ///
 /// Provides both full-vector operations (read/write/delete) and individual element access.
@@ -168,6 +188,30 @@ where
     len_slot: U256,
     address: Rc<Address>,
     _ty: PhantomData<T>,
+}
+
+impl<T> Handler<Vec<T>> for VecHandler<T>
+where
+    T: Storable<1> + StorableType,
+    Vec<T>: StorableOps,
+{
+    /// Reads the entire vector from storage.
+    #[inline]
+    fn read(&self) -> Result<Vec<T>> {
+        self.as_slot().read()
+    }
+
+    /// Writes the entire vector to storage.
+    #[inline]
+    fn write(&mut self, value: Vec<T>) -> Result<()> {
+        self.as_slot().write(value)
+    }
+
+    /// Deletes the entire vector from storage (clears length and all elements).
+    #[inline]
+    fn delete(&mut self) -> Result<()> {
+        self.as_slot().delete()
+    }
 }
 
 impl<T> VecHandler<T>
@@ -205,24 +249,6 @@ where
         Slot::new(self.len_slot, Rc::clone(&self.address))
     }
 
-    /// Reads the entire vector from storage.
-    #[inline]
-    pub fn read(&self) -> Result<Vec<T>> {
-        self.as_slot().read()
-    }
-
-    /// Writes the entire vector to storage.
-    #[inline]
-    pub fn write(&mut self, value: Vec<T>) -> Result<()> {
-        self.as_slot().write(value)
-    }
-
-    /// Deletes the entire vector from storage (clears length and all elements).
-    #[inline]
-    pub fn delete(&mut self) -> Result<()> {
-        self.as_slot().delete()
-    }
-
     /// Returns the length of the vector.
     #[inline]
     pub fn len(&self) -> Result<usize> {
@@ -240,26 +266,32 @@ where
     ///
     /// The returned `Slot` automatically handles packing based on `T::BYTES`:
     #[inline]
-    pub fn at(&self, index: usize) -> Slot<T> {
+    pub fn at(&self, index: usize) -> T::Handler {
         let data_start = self.data_slot();
 
         // Pack elements if necessary. Vec elements can't be split across slots.
-        if T::BYTES <= 16 {
-            Slot::<T>::new_at_loc(
-                data_start,
-                calc_element_loc(index, T::BYTES),
-                Rc::clone(&self.address),
+        let (base_slot, layout_ctx) = if T::BYTES <= 16 {
+            let location = calc_element_loc(index, T::BYTES);
+            (
+                data_start + U256::from(location.offset_slots),
+                LayoutCtx::packed(location.offset_bytes),
             )
         } else {
-            Slot::<T>::new(data_start + U256::from(index), Rc::clone(&self.address))
-        }
+            (data_start + U256::from(index), LayoutCtx::FULL)
+        };
+
+        T::handle(base_slot, layout_ctx, Rc::clone(&self.address))
     }
 
     /// Pushes a new element to the end of the vector.
     ///
     /// Automatically increments the length and handles packing for small types.
     #[inline]
-    pub fn push(&self, value: T) -> Result<()> {
+    pub fn push(&self, value: T) -> Result<()>
+    where
+        T: StorableOps,
+        T::Handler: Handler<T>,
+    {
         // Read current length
         let length = self.len()?;
 
@@ -277,7 +309,11 @@ where
     /// Returns `None` if the vector is empty. Automatically decrements the length
     /// and zeros out the popped element's storage slot.
     #[inline]
-    pub fn pop(&self) -> Result<Option<T>> {
+    pub fn pop(&self) -> Result<Option<T>>
+    where
+        T: StorableOps,
+        T::Handler: Handler<T>,
+    {
         // Read current length
         let length = self.len()?;
         if length == 0 {
@@ -440,7 +476,7 @@ where
 mod tests {
     use super::*;
     use crate::storage::{
-        PrecompileStorageProvider, StorageOps, hashmap::HashMapStorageProvider,
+        Handler, PrecompileStorageProvider, StorageOps, hashmap::HashMapStorageProvider,
         packing::gen_word_from,
     };
     use alloy::primitives::Address;

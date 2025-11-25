@@ -149,6 +149,37 @@ pub trait StorableType {
     fn handle(slot: U256, ctx: LayoutCtx, address: Rc<Address>) -> Self::Handler;
 }
 
+/// Abstracts reading, writing, and deleting values for [`StorableOps`] types.
+pub trait Handler<T: StorableOps> {
+    /// Reads the value from storage.
+    fn read(&self) -> Result<T>;
+
+    /// Writes the value to storage.
+    fn write(&mut self, value: T) -> Result<()>;
+
+    /// Deletes the value from storage (sets to zero).
+    fn delete(&mut self) -> Result<()>;
+}
+
+/// High-level storage operations that hide the const generic `N` internally.
+///
+/// This trait bridges the gap between [`Storable<N>`], which requires a const generic
+/// for compile-time array sizing, and [`Handler<T>`], which needs to work uniformly
+/// across all types without knowing `N`.
+///
+/// Each type implementing `StorableOps` knows its own slot count internally and
+/// delegates to the appropriate `Storable<N>` methods.
+pub trait StorableOps: StorableType + Sized {
+    /// Load this type from storage at the given slot.
+    fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self>;
+
+    /// Store this type to storage at the given slot.
+    fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()>;
+
+    /// Delete this type from storage (set to zero).
+    fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()>;
+}
+
 /// Trait for types that can be stored/loaded from EVM storage.
 ///
 /// This trait provides a flexible abstraction for reading and writing Rust types

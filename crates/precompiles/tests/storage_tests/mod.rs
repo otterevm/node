@@ -1,8 +1,8 @@
 //! Shared test utilities for storage testing.
 
 use crate::storage::{
-    LayoutCtx, PrecompileStorageProvider, Slot, Storable, hashmap::HashMapStorageProvider,
-    packing::extract_field,
+    Handler, LayoutCtx, PrecompileStorageProvider, Slot, Storable, StorableOps,
+    hashmap::HashMapStorageProvider, packing::extract_field,
 };
 use alloy::primitives::{Address, U256, keccak256};
 use proptest::prelude::*;
@@ -49,13 +49,13 @@ pub(crate) fn test_address(byte: u8) -> Address {
 }
 
 /// Helper to test store + load roundtrip
-pub(crate) fn test_store_load<T, const N: usize>(
+pub(crate) fn test_store_load<T>(
     address: &Rc<Address>,
     base_slot: U256,
     original: &T,
 ) -> error::Result<()>
 where
-    T: Storable<N> + Clone + PartialEq + std::fmt::Debug,
+    T: StorableOps + Clone + PartialEq + std::fmt::Debug,
 {
     // Create a slot and use it for storage operations
     let mut slot = Slot::<T>::new(base_slot, address.clone());
@@ -68,14 +68,14 @@ where
 }
 
 /// Helper to test update operation
-pub(crate) fn test_update<T, const N: usize>(
+pub(crate) fn test_update<T>(
     address: &Rc<Address>,
     base_slot: U256,
     initial: &T,
     updated: &T,
 ) -> error::Result<()>
 where
-    T: Storable<N> + Clone + PartialEq + std::fmt::Debug,
+    T: StorableOps + Clone + PartialEq + std::fmt::Debug,
 {
     // Create a slot and use it for storage operations
     let mut slot = Slot::<T>::new(base_slot, address.clone());
@@ -93,13 +93,13 @@ where
 }
 
 /// Helper to test delete operation
-pub(crate) fn test_delete<T, const N: usize>(
+pub(crate) fn test_delete<T>(
     address: &Rc<Address>,
     base_slot: U256,
     data: &T,
 ) -> error::Result<()>
 where
-    T: Storable<N> + Clone + PartialEq + Default + std::fmt::Debug,
+    T: StorableOps + Clone + PartialEq + Default + std::fmt::Debug,
 {
     // Create a slot and use it for storage operations
     let mut slot = Slot::<T>::new(base_slot, address.clone());

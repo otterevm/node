@@ -3,7 +3,10 @@ use std::{marker::PhantomData, rc::Rc};
 
 use crate::{
     error::Result,
-    storage::{FieldLocation, LayoutCtx, Storable, StorageOps, thread_local::with_storage_context},
+    storage::{
+        FieldLocation, Handler, LayoutCtx, Storable, StorableOps, StorageOps,
+        thread_local::with_storage_context,
+    },
 };
 
 /// Type-safe wrapper for a single EVM storage slot.
@@ -122,11 +125,13 @@ impl<T> Slot<T> {
     pub const fn offset(&self) -> Option<usize> {
         self.ctx.packed_offset()
     }
+}
 
+impl<T: StorableOps> Handler<T> for Slot<T> {
     /// Reads a value from storage at this slot.
     ///
-    /// This method delegates to the `Storable::load` implementation,
-    /// which may read one or more consecutive slots depending on `N`.
+    /// This method delegates to the `StorableOps::s_load` implementation,
+    /// which may read one or more consecutive slots depending on the type.
     ///
     /// Uses thread-local storage context initialized by [`StorageGuard`].
     ///
@@ -137,17 +142,14 @@ impl<T> Slot<T> {
     /// let name = name_slot.read().unwrap();
     /// ```
     #[inline]
-    pub fn read<const N: usize>(&self) -> Result<T>
-    where
-        T: Storable<N>,
-    {
-        T::load(self, self.slot, self.ctx)
+    fn read(&self) -> Result<T> {
+        T::s_load(self, self.slot, self.ctx)
     }
 
     /// Writes a value to storage at this slot.
     ///
-    /// This method delegates to the `Storable::store` implementation,
-    /// which may write one or more consecutive slots depending on `N`.
+    /// This method delegates to the `StorableOps::s_store` implementation,
+    /// which may write one or more consecutive slots depending on the type.
     ///
     /// Uses thread-local storage context initialized by [`StorageGuard`].
     ///
@@ -158,17 +160,14 @@ impl<T> Slot<T> {
     /// name_slot.write("MyToken".to_string()).unwrap();
     /// ```
     #[inline]
-    pub fn write<const N: usize>(&mut self, value: T) -> Result<()>
-    where
-        T: Storable<N>,
-    {
-        value.store(self, self.slot, self.ctx)
+    fn write(&mut self, value: T) -> Result<()> {
+        value.s_store(self, self.slot, self.ctx)
     }
 
     /// Deletes the value at this slot (sets all slots to zero).
     ///
-    /// This method delegates to the `Storable::delete` implementation,
-    /// which sets `N` consecutive slots to zero.
+    /// This method delegates to the `StorableOps::s_delete` implementation,
+    /// which sets the appropriate slots to zero.
     ///
     /// Uses thread-local storage context initialized by [`StorageGuard`].
     ///
@@ -179,11 +178,8 @@ impl<T> Slot<T> {
     /// name_slot.delete().unwrap();
     /// ```
     #[inline]
-    pub fn delete<const N: usize>(&mut self) -> Result<()>
-    where
-        T: Storable<N>,
-    {
-        T::delete(self, self.slot, self.ctx)
+    fn delete(&mut self) -> Result<()> {
+        T::s_delete(self, self.slot, self.ctx)
     }
 }
 
@@ -201,7 +197,7 @@ impl<T> StorageOps for Slot<T> {
 mod tests {
     use super::*;
     use crate::storage::{
-        PrecompileStorageProvider, hashmap::HashMapStorageProvider, mapping_slot,
+        Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider, mapping_slot,
     };
     use alloy::primitives::{Address, B256};
     use proptest::prelude::*;

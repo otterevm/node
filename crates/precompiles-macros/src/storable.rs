@@ -157,6 +157,37 @@ pub(crate) fn derive_impl(input: DeriveInput) -> syn::Result<TokenStream> {
                 })
             }
         }
+
+        // impl `StorableOps` to enable `Storable<N>` for `Handler<T>`
+        impl #impl_generics crate::storage::StorableOps for #strukt #ty_generics #where_clause {
+            #[inline]
+            fn s_load<S: crate::storage::StorageOps>(
+                storage: &S,
+                slot: ::alloy::primitives::U256,
+                ctx: crate::storage::LayoutCtx
+            ) -> crate::error::Result<Self> {
+                <Self as crate::storage::Storable<{ #mod_ident::SLOT_COUNT }>>::load(storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_store<S: crate::storage::StorageOps>(
+                &self,
+                storage: &mut S,
+                slot: ::alloy::primitives::U256,
+                ctx: crate::storage::LayoutCtx
+            ) -> crate::error::Result<()> {
+                <Self as crate::storage::Storable<{ #mod_ident::SLOT_COUNT }>>::store(self, storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_delete<S: crate::storage::StorageOps>(
+                storage: &mut S,
+                slot: ::alloy::primitives::U256,
+                ctx: crate::storage::LayoutCtx
+            ) -> crate::error::Result<()> {
+                <Self as crate::storage::Storable<{ #mod_ident::SLOT_COUNT }>>::delete(storage, slot, ctx)
+            }
+        }
     };
 
     // Generate array implementations if requested

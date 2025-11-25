@@ -71,6 +71,28 @@ fn gen_storage_key_impl(type_path: &TokenStream, strategy: &StorageKeyStrategy) 
     }
 }
 
+/// Generate a `StorableOps` implementation for primitives (always Storable<1> types).
+fn gen_storable_ops_impl(type_path: &TokenStream) -> TokenStream {
+    quote! {
+        impl StorableOps for #type_path {
+            #[inline]
+            fn s_load<S: StorageOps>(storage: &S, slot: U256, ctx: LayoutCtx) -> Result<Self> {
+                <Self as Storable<1>>::load(storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_store<S: StorageOps>(&self, storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+                <Self as Storable<1>>::store(self, storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_delete<S: StorageOps>(storage: &mut S, slot: U256, ctx: LayoutCtx) -> Result<()> {
+                <Self as Storable<1>>::delete(storage, slot, ctx)
+            }
+        }
+    }
+}
+
 /// Generate a `Storable<1>` implementation based on the conversion strategy
 fn gen_storable_impl(
     type_path: &TokenStream,
@@ -329,11 +351,13 @@ fn gen_complete_impl_set(config: &TypeConfig) -> TokenStream {
         config.byte_count,
         &config.storable_strategy,
     );
+    let storable_ops_impl = gen_storable_ops_impl(&config.type_path);
     let storage_key_impl = gen_storage_key_impl(&config.type_path, &config.storage_key_strategy);
 
     quote! {
         #storable_type_impl
         #storable_impl
+        #storable_ops_impl
         #storage_key_impl
     }
 }
@@ -545,6 +569,24 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
             fn from_evm_words(words: [::alloy::primitives::U256; { #slot_count }]) -> crate::error::Result<Self> {
                 use crate::storage::packing::{calc_element_slot, calc_element_offset, extract_packed_value};
                 #from_evm_words_impl
+            }
+        }
+
+        // impl `StorableOps` to enable `Storable<N>` for `Handler<T>`
+        impl crate::storage::StorableOps for [#elem_type; #array_size] {
+            #[inline]
+            fn s_load<S: crate::storage::StorageOps>(storage: &S, slot: ::alloy::primitives::U256, ctx: crate::storage::LayoutCtx) -> crate::error::Result<Self> {
+                <Self as crate::storage::Storable<{ #slot_count }>>::load(storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_store<S: crate::storage::StorageOps>(&self, storage: &mut S, slot: ::alloy::primitives::U256, ctx: crate::storage::LayoutCtx) -> crate::error::Result<()> {
+                <Self as crate::storage::Storable<{ #slot_count }>>::store(self, storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_delete<S: crate::storage::StorageOps>(storage: &mut S, slot: ::alloy::primitives::U256, ctx: crate::storage::LayoutCtx) -> crate::error::Result<()> {
+                <Self as crate::storage::Storable<{ #slot_count }>>::delete(storage, slot, ctx)
             }
         }
 
@@ -906,6 +948,24 @@ fn gen_struct_array_impl(struct_type: &TokenStream, array_size: usize) -> TokenS
                 words: [::alloy::primitives::U256; { #mod_ident::SLOT_COUNT }]
             ) -> crate::error::Result<Self> {
                 #from_evm_words_impl
+            }
+        }
+
+        // impl `StorableOps` to enable `Storable<N>` for `Handler<T>`
+        impl crate::storage::StorableOps for [#struct_type; #array_size] {
+            #[inline]
+            fn s_load<S: crate::storage::StorageOps>(storage: &S, slot: ::alloy::primitives::U256, ctx: crate::storage::LayoutCtx) -> crate::error::Result<Self> {
+                <Self as crate::storage::Storable<{ #mod_ident::SLOT_COUNT }>>::load(storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_store<S: crate::storage::StorageOps>(&self, storage: &mut S, slot: ::alloy::primitives::U256, ctx: crate::storage::LayoutCtx) -> crate::error::Result<()> {
+                <Self as crate::storage::Storable<{ #mod_ident::SLOT_COUNT }>>::store(self, storage, slot, ctx)
+            }
+
+            #[inline]
+            fn s_delete<S: crate::storage::StorageOps>(storage: &mut S, slot: ::alloy::primitives::U256, ctx: crate::storage::LayoutCtx) -> crate::error::Result<()> {
+                <Self as crate::storage::Storable<{ #mod_ident::SLOT_COUNT }>>::delete(storage, slot, ctx)
             }
         }
 

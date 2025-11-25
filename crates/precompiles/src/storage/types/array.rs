@@ -17,7 +17,7 @@ use tempo_precompiles_macros;
 
 use crate::{
     error::Result,
-    storage::{Storable, StorableType, packing, types::Slot},
+    storage::{Handler, LayoutCtx, Storable, StorableOps, StorableType, packing, types::Slot},
 };
 
 // fixed-size arrays: [T; N] for primitive types T and sizes 1-32
@@ -91,37 +91,28 @@ where
     }
 
     /// Reads the entire array from storage.
-    ///
-    /// The `SLOTS` parameter must match the array's actual slot count.
     #[inline]
-    pub fn read<const SLOTS: usize>(&self) -> Result<[T; N]>
+    pub fn read(&self) -> Result<[T; N]>
     where
-        T: Storable<1> + StorableType,
-        [T; N]: Storable<SLOTS>,
+        [T; N]: StorableOps,
     {
         self.as_slot().read()
     }
 
     /// Writes the entire array to storage.
-    ///
-    /// The `SLOTS` parameter must match the array's actual slot count.
     #[inline]
-    pub fn write<const SLOTS: usize>(&mut self, value: [T; N]) -> Result<()>
+    pub fn write(&mut self, value: [T; N]) -> Result<()>
     where
-        T: Storable<1>,
-        [T; N]: Storable<SLOTS>,
+        [T; N]: StorableOps,
     {
         self.as_slot().write(value)
     }
 
     /// Deletes the entire array from storage (clears all elements).
-    ///
-    /// The `SLOTS` parameter must match the array's actual slot count.
     #[inline]
-    pub fn delete<const SLOTS: usize>(&mut self) -> Result<()>
+    pub fn delete(&mut self) -> Result<()>
     where
-        T: Storable<1>,
-        [T; N]: Storable<SLOTS>,
+        [T; N]: StorableOps,
     {
         self.as_slot().delete()
     }
@@ -144,27 +135,50 @@ where
     ///
     /// Returns `None` if the index is out of bounds (>= N).
     #[inline]
-    pub fn at(&self, index: usize) -> Option<Slot<T>>
+    pub fn at(&self, index: usize) -> Option<T::Handler>
     where
-        T: Storable<1>,
+        T: StorableType,
     {
         if index >= N {
             return None;
         }
 
-        // Pack elements if they fit efficiently
-        if T::BYTES <= 16 {
-            Some(Slot::<T>::new_at_loc(
-                self.base_slot,
-                packing::calc_element_loc(index, T::BYTES),
-                Rc::clone(&self.address),
-            ))
+        // Pack elements if they fit
+        let (base_slot, layout_ctx) = if T::BYTES <= 16 {
+            let location = packing::calc_element_loc(index, T::BYTES);
+            (
+                self.base_slot + U256::from(location.offset_slots),
+                LayoutCtx::packed(location.offset_bytes),
+            )
         } else {
-            Some(Slot::<T>::new(
-                self.base_slot + U256::from(index),
-                Rc::clone(&self.address),
-            ))
-        }
+            (self.base_slot + U256::from(index), LayoutCtx::FULL)
+        };
+
+        Some(T::handle(base_slot, layout_ctx, Rc::clone(&self.address)))
+    }
+}
+
+impl<T, const N: usize> Handler<[T; N]> for ArrayHandler<T, N>
+where
+    T: StorableType,
+    [T; N]: StorableOps,
+{
+    /// Reads the entire array from storage.
+    #[inline]
+    fn read(&self) -> Result<[T; N]> {
+        self.as_slot().read()
+    }
+
+    /// Writes the entire array to storage.
+    #[inline]
+    fn write(&mut self, value: [T; N]) -> Result<()> {
+        self.as_slot().write(value)
+    }
+
+    /// Deletes the entire array from storage (clears all elements).
+    #[inline]
+    fn delete(&mut self) -> Result<()> {
+        self.as_slot().delete()
     }
 }
 

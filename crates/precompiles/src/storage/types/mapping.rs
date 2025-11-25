@@ -3,7 +3,7 @@
 use alloy::primitives::{Address, U256, keccak256};
 use std::{marker::PhantomData, rc::Rc};
 
-use crate::storage::{Layout, LayoutCtx, Slot, Storable, StorableType, StorageKey};
+use crate::storage::{Layout, LayoutCtx, StorableType, StorageKey};
 
 /// Type-safe access wrapper for EVM storage mappings (hash-based key-value storage).
 ///
@@ -14,7 +14,11 @@ use crate::storage::{Layout, LayoutCtx, Slot, Storable, StorableType, StorageKey
 /// # Type Parameters
 ///
 /// - `K`: Key type (must implement `StorageKey`)
-/// - `V`: Value type (must implement `Storable<N>`)
+/// - `V`: Value type (must implement `StorableType`)
+///
+/// `Mapping<K, V>` is essentially a slot computation helper. The `.at(key)` method
+/// performs the keccak256 hash to compute the actual storage slot and returns a
+/// `Handler` that can be used for read/write operations.
 ///
 /// # Storage Layout
 ///
@@ -26,19 +30,13 @@ use crate::storage::{Layout, LayoutCtx, Slot, Storable, StorableType, StorageKey
 ///
 /// The typical usage follows a composable pattern:
 /// 1. Create a `Mapping<K, V>` with a base slot (usually from generated constants)
-/// 2. Call `.at(key)` to compute and obtain a `Slot<V>` for that key
+/// 2. Call `.at(key)` to compute and obtain a `Handler` for that key
 /// 3. Use `.read()`, `.write()`, or `.delete()` on the resulting slot
 ///
 /// # Accessing Mapping Fields Within Structs
 ///
 /// When a mapping is a field within a struct stored in another mapping, use the static
 /// `at_offset` method to compute the slot without creating a `Mapping` instance:
-///
-/// # Relationship with `Slot<V>`
-///
-/// `Mapping<K, V>` is essentially a slot computation helper. The `.at(key)` method
-/// performs the keccak256 hash to compute the actual storage slot and returns a
-/// `Slot<V>` that can be used for read/write operations.
 #[derive(Debug, Clone)]
 pub struct Mapping<K, V> {
     base_slot: U256,
@@ -65,39 +63,44 @@ impl<K, V> Mapping<K, V> {
         self.base_slot
     }
 
-    /// Returns a `Slot<V>` for the given key.
+    /// Returns a `Handler` for the given key.
     ///
     /// This enables the composable pattern: `mapping.at(key).read()`
     /// where the mapping slot computation happens once, and the resulting slot
     /// can be used for multiple operations.
-    pub fn at<const N: usize>(&self, key: K) -> Slot<V>
+    pub fn at(&self, key: K) -> V::Handler
     where
         K: StorageKey,
-        V: Storable<N>,
+        V: StorableType,
     {
-        Slot::new(
+        V::handle(
             mapping_slot(key.as_storage_bytes(), self.base_slot),
+            LayoutCtx::FULL,
             Rc::clone(&self.address),
         )
     }
 
-    /// Returns a `Slot<V>` for a mapping field within a struct at a given base slot.
+    /// Returns a `Handler` for a mapping field within a struct at a given base slot.
     ///
     /// This method enables accessing mapping fields within structs when you have
     /// the struct's base slot at runtime and know the field's offset.
     #[inline]
-    pub fn at_offset<const N: usize>(
+    pub fn at_offset(
         struct_base_slot: U256,
         field_offset_slots: usize,
         address: Rc<Address>,
         key: K,
-    ) -> Slot<V>
+    ) -> V::Handler
     where
         K: StorageKey,
-        V: Storable<N>,
+        V: StorableType,
     {
         let field_slot = struct_base_slot + U256::from(field_offset_slots);
-        Slot::new(mapping_slot(key.as_storage_bytes(), field_slot), address)
+        V::handle(
+            mapping_slot(key.as_storage_bytes(), field_slot),
+            LayoutCtx::FULL,
+            address,
+        )
     }
 }
 
@@ -111,7 +114,7 @@ impl<K, V> Mapping<K, V> {
 ///
 /// - `K1`: First-level key type (must implement `StorageKey`)
 /// - `K2`: Second-level key type (must implement `StorageKey`)
-/// - `V`: Value type (must implement `Storable<N>`)
+/// - `V`: Value type (must implement `StorableType`)
 ///
 /// # Storage Layout
 ///
@@ -132,13 +135,6 @@ impl<K, V> Mapping<K, V> {
 ///
 /// When a nested mapping is a field within a struct, you can manually compute the field's
 /// slot by adding the offset to the struct's base slot, then create a new `NestedMapping`:
-///
-/// # Relationship with `Mapping<K, V>` and `Slot<V>`
-///
-/// `NestedMapping<K1, K2, V>` internally wraps `Mapping<K1, Mapping<K2, V>>`. The first
-/// `.at(k1)` call performs the first hash to compute an intermediate slot and returns a
-/// `Mapping<K2, V>`. The second `.at(k2)` call on that mapping performs the second hash
-/// and returns a `Slot<V>` for read/write operations.
 #[derive(Debug, Clone)]
 pub struct NestedMapping<K1, K2, V> {
     _inner: Mapping<K1, Mapping<K2, V>>,
@@ -283,8 +279,8 @@ mod tests {
 
         // Property 1: Determinism - same key always produces same slot
         let key = Address::random();
-        let slot1 = mapping.at::<1>(key);
-        let slot2 = mapping.at::<1>(key);
+        let slot1 = mapping.at(key);
+        let slot2 = mapping.at(key);
         assert_eq!(
             slot1.slot(),
             slot2.slot(),
@@ -294,8 +290,8 @@ mod tests {
         // Property 2: Different keys produce different slots
         let key1 = Address::random();
         let key2 = Address::random();
-        let slot_a = mapping.at::<1>(key1);
-        let slot_b = mapping.at::<1>(key2);
+        let slot_a = mapping.at(key1);
+        let slot_b = mapping.at(key2);
         assert_ne!(
             slot_a.slot(),
             slot_b.slot(),
@@ -304,7 +300,7 @@ mod tests {
 
         // Property 3: Derived slot matches manual computation
         let test_key = Address::random();
-        let derived_slot = mapping.at::<1>(test_key);
+        let derived_slot = mapping.at(test_key);
         let expected_slot = mapping_slot(test_key, base_slot);
         assert_eq!(
             derived_slot.slot(),
@@ -332,7 +328,7 @@ mod tests {
         );
 
         // Property 2: Double-hash - second .at() returns final Slot with correct double-derived slot
-        let final_slot = intermediate.at::<1>(key2);
+        let final_slot = intermediate.at(key2);
         let expected_final_slot = mapping_slot(key2, expected_intermediate_slot);
         assert_eq!(
             final_slot.slot(),
@@ -341,8 +337,8 @@ mod tests {
         );
 
         // Property 3: Determinism - same keys always produce same slot
-        let slot_a = nested.at(key1).at::<1>(key2);
-        let slot_b = nested.at(key1).at::<1>(key2);
+        let slot_a = nested.at(key1).at(key2);
+        let slot_b = nested.at(key1).at(key2);
         assert_eq!(
             slot_a.slot(),
             slot_b.slot(),
@@ -351,7 +347,7 @@ mod tests {
 
         // Property 4: Different first-level keys produce different final slots
         let different_key1 = Address::random();
-        let different_slot = nested.at(different_key1).at::<1>(key2);
+        let different_slot = nested.at(different_key1).at(key2);
         assert_ne!(
             final_slot.slot(),
             different_slot.slot(),
@@ -360,7 +356,7 @@ mod tests {
 
         // Property 5: Different second-level keys produce different final slots
         let different_key2 = B256::random();
-        let another_slot = nested.at(key1).at::<1>(different_key2);
+        let another_slot = nested.at(key1).at(different_key2);
         assert_ne!(
             final_slot.slot(),
             another_slot.slot(),
@@ -376,14 +372,14 @@ mod tests {
         let zero_mapping = Mapping::<Address, U256>::new(U256::ZERO, Rc::clone(&address));
         assert_eq!(zero_mapping.slot(), U256::ZERO);
         let user = Address::random();
-        let slot = zero_mapping.at::<1>(user);
+        let slot = zero_mapping.at(user);
         assert_eq!(slot.slot(), mapping_slot(user, U256::ZERO));
 
         // Test .slot() getter with MAX boundary
         let max_mapping = Mapping::<Address, U256>::new(U256::MAX, Rc::clone(&address));
         assert_eq!(max_mapping.slot(), U256::MAX);
         let user2 = Address::random();
-        let slot2 = max_mapping.at::<1>(user2);
+        let slot2 = max_mapping.at(user2);
         assert_eq!(slot2.slot(), mapping_slot(user2, U256::MAX));
 
         // Test .slot() getter with arbitrary values
