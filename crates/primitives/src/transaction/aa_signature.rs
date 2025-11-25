@@ -315,47 +315,6 @@ fn verify_p256_signature_internal(
         .map_err(|_| "P256 signature verification failed")
 }
 
-/// Parse authenticatorData length when AT flag is set.
-/// ref: <https://www.w3.org/TR/webauthn-2/#attested-credential-data>
-///
-/// When the AT (Attested Credential) flag is set, authenticatorData contains:
-/// - 37 bytes base (rpIdHash + flags + signCount)
-/// - 16 bytes aaguid
-/// - 2 bytes credentialIdLength (big-endian u16)
-/// - credentialId (variable, up to credentialIdLength bytes)
-/// - credentialPublicKey (CBOR-encoded COSE_Key, variable)
-fn parse_auth_data_length_with_at(webauthn_data: &[u8]) -> Result<usize, &'static str> {
-    // Minimum with AT flag: 37 base + 16 aaguid + 2 credIdLen = 55 bytes
-    const MIN_AT_LEN: usize = 55;
-
-    if webauthn_data.len() < MIN_AT_LEN {
-        return Err("AuthenticatorData too short for AT flag");
-    }
-
-    // Read `credentialIdLength`
-    let cred_id_len = u16::from_be_bytes([webauthn_data[53], webauthn_data[54]]) as usize;
-
-    if cred_id_len > 1024 {
-        return Err("credentialIdLength exceeds maximum");
-    }
-
-    // Position where `credentialPublicKey` (CBOR) starts
-    let cose_key_start = MIN_AT_LEN + cred_id_len;
-    if cose_key_start >= webauthn_data.len() {
-        return Err("AuthenticatorData too short for credentialId");
-    }
-
-    // Parse CBOR public key length
-    let mut decoder = minicbor::Decoder::new(&webauthn_data[cose_key_start..]);
-    decoder
-        .skip()
-        .map_err(|_| "Invalid CBOR data in credentialPublicKey")?;
-    let cose_key_len = decoder.position();
-
-    // Total length
-    Ok(cose_key_start + cose_key_len)
-}
-
 /// Parses and validates WebAuthn data, returning the message hash for P256 verification
 /// ref: <https://www.w3.org/TR/webauthn-2/#sctn-authenticator-data>
 ///
@@ -381,10 +340,10 @@ fn verify_webauthn_data_internal(
 
     // Determine authenticatorData length
     let auth_data_len = if at_flag_set {
-        // Complex case: AT flag is set, need to parse CBOR data
+        // AT flag is set, need to parse CBOR data
         parse_auth_data_length_with_at(webauthn_data)?
     } else {
-        // Simple case: authenticatorData is exactly 37 bytes
+        // authenticatorData is exactly 37 bytes
         MIN_AUTH_DATA_LEN
     };
 
@@ -432,6 +391,47 @@ fn verify_webauthn_data_internal(
     let message_hash = final_hasher.finalize();
 
     Ok(B256::from_slice(&message_hash))
+}
+
+/// Parse authenticatorData length when AT flag is set.
+/// ref: <https://www.w3.org/TR/webauthn-2/#attested-credential-data>
+///
+/// When the AT (Attested Credential) flag is set, authenticatorData contains:
+/// - 37 bytes base (rpIdHash + flags + signCount)
+/// - 16 bytes aaguid
+/// - 2 bytes credentialIdLength (big-endian u16)
+/// - credentialId (variable, up to credentialIdLength bytes)
+/// - credentialPublicKey (CBOR-encoded COSE_Key, variable)
+fn parse_auth_data_length_with_at(webauthn_data: &[u8]) -> Result<usize, &'static str> {
+    // Minimum with AT flag: 37 base + 16 aaguid + 2 credIdLen = 55 bytes
+    const MIN_AT_LEN: usize = 55;
+
+    if webauthn_data.len() < MIN_AT_LEN {
+        return Err("AuthenticatorData too short for AT flag");
+    }
+
+    // Read `credentialIdLength`
+    let cred_id_len = u16::from_be_bytes([webauthn_data[53], webauthn_data[54]]) as usize;
+
+    if cred_id_len > 1024 {
+        return Err("credentialIdLength exceeds maximum");
+    }
+
+    // Position where `credentialPublicKey` (CBOR) starts
+    let cose_key_start = MIN_AT_LEN + cred_id_len;
+    if cose_key_start >= webauthn_data.len() {
+        return Err("AuthenticatorData too short for credentialId");
+    }
+
+    // Parse CBOR public key length
+    let mut decoder = minicbor::Decoder::new(&webauthn_data[cose_key_start..]);
+    decoder
+        .skip()
+        .map_err(|_| "Invalid CBOR data in credentialPublicKey")?;
+    let cose_key_len = decoder.position();
+
+    // Total length
+    Ok(cose_key_start + cose_key_len)
 }
 
 #[cfg(test)]
