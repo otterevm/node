@@ -454,10 +454,12 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         self.check_role(msg_sender, *BURN_BLOCKED_ROLE)?;
 
         // Prevent burning from `FeeManager` and `StablecoinExchanfe` to protect accounting invariants
-        if matches!(
-            call.from,
-            TIP_FEE_MANAGER_ADDRESS | STABLECOIN_EXCHANGE_ADDRESS
-        ) {
+        if self.storage.spec().is_allegretto()
+            && matches!(
+                call.from,
+                TIP_FEE_MANAGER_ADDRESS | STABLECOIN_EXCHANGE_ADDRESS
+            )
+        {
             return Err(TIP20Error::protected_address().into());
         }
 
@@ -2448,13 +2450,15 @@ pub(crate) mod tests {
 
     #[test]
     fn test_unable_to_burn_blocked_from_protected_address() -> eyre::Result<()> {
-        let mut storage = HashMapStorageProvider::new(1);
+        let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
         let admin = Address::random();
         let burner = Address::random();
 
         // Initialize token
-        let token_id = setup_factory_with_token(&mut storage, admin, "Test", "TST");
+        initialize_path_usd(&mut storage, admin)?;
+        let token_id = 1;
         let mut token = TIP20Token::new(token_id, &mut storage);
+        token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin)?;
 
         // Grant BURN_BLOCKED_ROLE to burner
         token.grant_role_internal(burner, *BURN_BLOCKED_ROLE)?;
