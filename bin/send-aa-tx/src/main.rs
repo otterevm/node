@@ -15,7 +15,7 @@ use tempo_primitives::{
     TempoTxEnvelope,
 };
 
-const RPC_URL: &str = "http://<RPC_URL>";
+const RPC_URL: &str = "<RPC_URL>";
 const CHAIN_ID: u64 = 42427; // 0xa5bb - devnet chain ID
 const BASE_FEE: u128 = 10_000_000_000; // 10 gwei
 
@@ -112,36 +112,16 @@ async fn main() -> eyre::Result<()> {
     println!("  Transaction hash: {}", tx_hash);
 
     // Wait for the transaction to be mined
-    // Note: Standard alloy provider can't deserialize AA tx type (0x76) in receipts,
-    // so we use a raw RPC call and parse the response manually
     println!("\n⏳ Waiting for confirmation...");
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    let receipt = pending_tx.get_receipt().await?;
 
-    let receipt: serde_json::Value = provider
-        .raw_request(
-            "eth_getTransactionReceipt".into(),
-            [format!("{:#x}", tx_hash)],
-        )
-        .await?;
-
-    if receipt.is_null() {
-        println!("⚠️  Transaction not yet confirmed (check later)");
-    } else {
-        let status = receipt["status"].as_str().unwrap_or("0x0");
-        let block_number = receipt["blockNumber"].as_str().unwrap_or("0x0");
-        let gas_used = receipt["gasUsed"].as_str().unwrap_or("0x0");
-
-        let block_num = u64::from_str_radix(block_number.trim_start_matches("0x"), 16).unwrap_or(0);
-        let gas = u64::from_str_radix(gas_used.trim_start_matches("0x"), 16).unwrap_or(0);
-
-        println!("✓ Transaction confirmed!");
-        println!("  Block number: {}", block_num);
-        println!("  Gas used: {}", gas);
-        println!(
-            "  Status: {}",
-            if status == "0x1" { "Success" } else { "Failed" }
-        );
-    }
+    println!("✓ Transaction confirmed!");
+    println!("  Block number: {:?}", receipt.block_number);
+    println!("  Gas used: {}", receipt.gas_used);
+    println!(
+        "  Status: {}",
+        if receipt.status() { "Success" } else { "Failed" }
+    );
 
     println!("\nDone!");
 
