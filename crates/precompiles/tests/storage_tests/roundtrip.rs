@@ -15,7 +15,7 @@ fn test_round_trip_operations_in_contract() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::_new(*address);
+    let mut layout = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     let original_block = TestBlock {
@@ -89,7 +89,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::_new(*address);
+        let mut layout = Layout::__new(*address);
         let _guard = storage.enter().unwrap();
 
         // Round 1: Store and load
@@ -150,7 +150,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::_new(*address);
+        let mut layout = Layout::__new(*address);
         let _guard = storage.enter().unwrap();
 
         // Round 1: Write proptest values

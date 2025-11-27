@@ -23,6 +23,7 @@ impl<'a, S: PrecompileStorageProvider> TipAccountRegistrar<'a, S> {
     /// Caution: This does not initialize the account, see [`Self::initialize`].
     pub fn new(storage: &'a mut S) -> Self {
         Self::_new(TIP_ACCOUNT_REGISTRAR, storage)
+
     }
 
     /// Initializes the TIP Account Registrar contract

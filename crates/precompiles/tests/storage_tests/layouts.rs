@@ -21,7 +21,7 @@ fn test_mixed_slot_allocation() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut mixed = Layout::_new(*address);
+    let mut mixed = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     // Set all fields
@@ -65,7 +65,7 @@ fn test_default_values() {
     }
 
     let (mut storage, address) = setup_storage();
-    let defaults = Layout::_new(*address);
+    let defaults = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     // Reading uninitialized storage returns zero/default
@@ -100,7 +100,7 @@ fn test_base_slots() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::_new(*address);
+    let mut layout = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     // Set values to verify slot assignments
@@ -154,7 +154,7 @@ fn test_base_slot_with_regular_slot() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::_new(*address);
+    let mut layout = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     layout.field_a.write(U256::ONE).unwrap();
@@ -194,7 +194,7 @@ fn test_string_literal_slots() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::_new(*address);
+    let mut layout = Layout::__new(*address);
     let _guard = storage.enter().unwrap();
 
     // Set value
@@ -222,7 +222,7 @@ fn test_collision_same_slot() {
     }
 
     let (_, address) = setup_storage();
-    let _layout = Layout::_new(*address);
+    let _layout = Layout::__new(*address);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_collision_overlapping_slots_manual() {
     }
 
     let (_, address) = setup_storage();
-    let _layout = Layout::_new(*address);
+    let _layout = Layout::__new(*address);
 }
 
 #[test]
@@ -253,5 +253,5 @@ fn test_collision_overlapping_slots_auto() {
     }
 
     let (_, address) = setup_storage();
-    let _layout = Layout::_new(*address);
+    let _layout = Layout::__new(*address);
 }

@@ -11636,6 +11636,7 @@ dependencies = [
  "serde_json",
  "tempo-chainspec",
  "tempo-contracts",
+ "tempo-precompiles",
  "tempo-precompiles-macros",
  "thiserror 2.0.17",
  "tracing",

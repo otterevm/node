@@ -114,6 +114,7 @@ pub(crate) fn gen_struct(
         #vis struct #name {
             #(#handler_fields,)*
             address: ::std::rc::Rc<::alloy::primitives::Address>,
+            storage: crate::storage::StorageAccessor,
         }
     }
 }
@@ -132,7 +133,7 @@ pub(crate) fn gen_constructor(
     quote! {
         impl #name {
             #[inline(always)]
-            fn _new(address: ::alloy::primitives::Address) -> Self {
+            fn __new(address: ::alloy::primitives::Address) -> Self {
                 // Run collision detection checks in debug builds
                 #[cfg(debug_assertions)]
                 {
@@ -144,7 +145,26 @@ pub(crate) fn gen_constructor(
                 Self {
                     #(#field_inits,)*
                     address: address_rc,
+                    storage: crate::storage::StorageAccessor::default(),
                 }
+            }
+
+            #[inline(always)]
+            fn __initialize(&mut self) -> crate::error::Result<()> {
+                let bytecode = ::revm::state::Bytecode::new_legacy(::alloy::primitives::Bytes::from_static(&[0xef]));
+                self.storage.set_code(*self.address, bytecode)?;
+
+                Ok(())
+            }
+
+            #[inline(always)]
+            fn emit_event(&mut self, event: impl ::alloy::primitives::IntoLogData) -> crate::error::Result<()> {
+                self.storage.emit_event(*self.address, event.into_log_data())
+            }
+
+            #[cfg(any(test, feature = "test-utils"))]
+            fn emited_events(&self) -> &Vec<::alloy::primitives::LogData> {
+                self.storage.get_events(*self.address)
             }
         }
     }
@@ -157,6 +177,11 @@ pub(crate) fn gen_contract_storage_impl(name: &Ident) -> proc_macro2::TokenStrea
             #[inline(always)]
             fn address(&self) -> ::alloy::primitives::Address {
                 *self.address
+            }
+
+            #[inline(always)]
+            fn storage(&mut self) -> &mut crate::storage::StorageAccessor {
+                &mut self.storage
             }
         }
     }

@@ -157,7 +157,8 @@ impl MaybePackable for Address {
 mod tests {
     use super::*;
     use crate::storage::{
-        Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider, packing::gen_word_from,
+        Handler, PrecompileStorageContext, PrecompileStorageProvider,
+        hashmap::HashMapStorageProvider, packing::gen_word_from,
     };
     use proptest::prelude::*;
 

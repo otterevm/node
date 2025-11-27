@@ -251,8 +251,13 @@ pub fn gen_word_from(values: &[&str]) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::Handler;
+    use crate::storage::{
+        Handler, PrecompileStorageContext,
+        hashmap::HashMapStorageProvider,
+        types::{LayoutCtx, Slot},
+    };
     use alloy::primitives::Address;
+    use std::rc::Rc;
 
     // -- HELPER FUNCTION TESTS ----------------------------------------------------
 
@@ -803,13 +808,6 @@ mod tests {
     }
 
     // -- SLOT PACKED FIELD TESTS ------------------------------------------
-
-    use crate::storage::{
-        PrecompileStorageProvider,
-        hashmap::HashMapStorageProvider,
-        types::{LayoutCtx, Slot},
-    };
-    use std::rc::Rc;
 
     /// Helper to create a test storage provider with a random address
     fn setup_storage() -> (HashMapStorageProvider, Rc<Address>) {

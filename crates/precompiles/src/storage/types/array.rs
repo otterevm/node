@@ -189,7 +189,8 @@ where
 mod tests {
     use super::*;
     use crate::storage::{
-        Encodable, Layout, LayoutCtx, PrecompileStorageProvider, hashmap::HashMapStorageProvider,
+        Encodable, Layout, LayoutCtx, PrecompileStorageContext, PrecompileStorageProvider,
+        hashmap::HashMapStorageProvider,
     };
     use proptest::prelude::*;
 

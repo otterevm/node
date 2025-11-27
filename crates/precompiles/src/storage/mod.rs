@@ -2,7 +2,7 @@
 pub mod hashmap;
 
 pub mod thread_local;
-pub use thread_local::StorageGuard;
+pub use thread_local::{StorageAccessor, StorageGuard};
 
 mod types;
 pub use types::*;
@@ -17,38 +17,87 @@ use tempo_chainspec::hardfork::TempoHardfork;
 
 use crate::error::Result;
 
-/// Low-level storage provider for interacting with the EVM.
-pub trait PrecompileStorageProvider {
+/// Trait for types that can enter a thread-local storage context.
+///
+/// Only one `StorageGuard` can exist at a time, in the same thread.
+/// If multiple providers are instantiated in parallel threads, they CANNOT point to the same storage addresses.
+pub trait PrecompileStorageContext: PrecompileStorageProvider {
     /// Enters this storage provider's context, enabling thread-local access.
-    ///
-    /// Only one `StorageGuard` can exist at a time, in the same thread.
-    /// If multiple storage providers are instantiated in parallel threads, they CANNOT point to the same storage addresses.
-    fn enter(&mut self) -> Result<StorageGuard<'_>>
-    where
-        Self: Sized,
-    {
-        StorageGuard::new(self)
-    }
+    fn enter(&mut self) -> Result<StorageGuard<'_>>;
+}
 
+/// Low-level storage provider for interacting with the EVM.
+///
+/// # Implementations
+///
+/// - `EvmPrecompileStorageProvider` - Production EVM storage
+/// - `HashMapStorageProvider` - Test storage
+///
+/// # Sync with `[StorageAccessor]`
+///
+/// `StorageAccessor` mirrors these methods with split mutability for read (staticcall) vs write (call).
+/// When adding new methods here, remember to add corresponding methods to `StorageAccessor`.
+pub trait PrecompileStorageProvider {
+    /// Returns the chain ID.
     fn chain_id(&self) -> u64;
+
+    /// Returns the current block timestamp.
     fn timestamp(&self) -> U256;
+
+    /// Returns the current block beneficiary (coinbase).
     fn beneficiary(&self) -> Address;
+
+    /// Sets the bytecode at the given address.
     fn set_code(&mut self, address: Address, code: Bytecode) -> Result<()>;
+
+    /// Returns the account info for the given address.
     fn get_account_info(&mut self, address: Address) -> Result<&'_ AccountInfo>;
+
+    /// Performs an SLOAD operation (persistent storage read).
     fn sload(&mut self, address: Address, key: U256) -> Result<U256>;
+
+    /// Performs a TLOAD operation (transient storage read).
     fn tload(&mut self, address: Address, key: U256) -> Result<U256>;
+
+    /// Performs an SSTORE operation (persistent storage write).
     fn sstore(&mut self, address: Address, key: U256, value: U256) -> Result<()>;
+
+    /// Performs a TSTORE operation (transient storage write).
     fn tstore(&mut self, address: Address, key: U256, value: U256) -> Result<()>;
+
+    /// Emits an event from the given contract address.
     fn emit_event(&mut self, address: Address, event: LogData) -> Result<()>;
 
-    /// Deducts gas from the remaining gas and return an error if the gas is insufficient.
+    /// Deducts gas from the remaining gas and returns an error if insufficient.
     fn deduct_gas(&mut self, gas: u64) -> Result<()>;
 
     /// Returns the gas used so far.
     fn gas_used(&self) -> u64;
 
-    /// Currently active hardfork.
+    /// Returns the currently active hardfork.
     fn spec(&self) -> TempoHardfork;
+
+    // Test-only methods, only implemented by test providers like `HashMapStorageProvider`.
+    #[cfg(any(test, feature = "test-utils"))]
+    fn get_events(&self, _address: Address) -> &Vec<LogData> {
+        unimplemented!("get_events only available for test storage providers")
+    }
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_nonce(&mut self, _address: Address, _nonce: u64) {
+        unimplemented!("set_nonce only available for test storage providers")
+    }
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_timestamp(&mut self, _timestamp: U256) {
+        unimplemented!("set_timestamp only available for test storage providers")
+    }
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_beneficiary(&mut self, _beneficiary: Address) {
+        unimplemented!("set_beneficiary only available for test storage providers")
+    }
+    #[cfg(any(test, feature = "test-utils"))]
+    fn set_spec(&mut self, _spec: TempoHardfork) {
+        unimplemented!("set_spec only available for test storage providers")
+    }
 }
 
 /// Storage operations for a given (contract) address.
@@ -65,4 +114,7 @@ pub trait StorageOps {
 pub trait ContractStorage {
     /// Contract address.
     fn address(&self) -> Address;
+
+    /// Contract storage accessor.
+    fn storage(&mut self) -> &mut StorageAccessor;
 }

@@ -316,7 +316,7 @@ fn encode_long_string_length(byte_length: usize) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider};
+    use crate::storage::{Handler, PrecompileStorageContext, hashmap::HashMapStorageProvider};
     use proptest::prelude::*;
 
     fn setup_storage() -> (HashMapStorageProvider, Rc<Address>) {

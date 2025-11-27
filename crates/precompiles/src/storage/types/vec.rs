@@ -469,7 +469,7 @@ where
 mod tests {
     use super::*;
     use crate::storage::{
-        Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider, packing::gen_word_from,
+        Handler, PrecompileStorageContext, hashmap::HashMapStorageProvider, packing::gen_word_from,
     };
     use alloy::primitives::Address;
     use proptest::prelude::*;

@@ -4,8 +4,7 @@ use std::{marker::PhantomData, rc::Rc};
 use crate::{
     error::Result,
     storage::{
-        FieldLocation, Handler, LayoutCtx, Storable, StorableType, StorageOps,
-        thread_local::with_storage_context,
+        FieldLocation, Handler, LayoutCtx, Storable, StorableType, StorageAccessor, StorageOps,
     },
 };
 
@@ -181,11 +180,13 @@ impl<T: Storable> Handler<T> for Slot<T> {
 
 impl<T> StorageOps for Slot<T> {
     fn sload(&self, slot: U256) -> Result<U256> {
-        with_storage_context(|storage| storage.sload(*self.address, slot))
+        let storage = StorageAccessor;
+        storage.sload(*self.address, slot)
     }
 
     fn sstore(&mut self, slot: U256, value: U256) -> Result<()> {
-        with_storage_context(|storage| storage.sstore(*self.address, slot, value))
+        let mut storage = StorageAccessor;
+        storage.sstore(*self.address, slot, value)
     }
 }
 
@@ -193,7 +194,8 @@ impl<T> StorageOps for Slot<T> {
 mod tests {
     use super::*;
     use crate::storage::{
-        Handler, PrecompileStorageProvider, hashmap::HashMapStorageProvider, mapping_slot,
+        Handler, PrecompileStorageContext, PrecompileStorageProvider,
+        hashmap::HashMapStorageProvider, mapping_slot,
     };
     use alloy::primitives::{Address, B256};
     use proptest::prelude::*;
