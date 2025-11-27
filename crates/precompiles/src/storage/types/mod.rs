@@ -264,6 +264,14 @@ pub trait MaybePackable: StorableType + Sized {
 /// - `WORDS` accurately reflects the number of words produced/consumed
 /// - `to_evm_words` and `from_evm_words` produce/consume exactly `WORDS` words
 pub trait Encodable<const WORDS: usize>: Sized + StorableType {
+    /// Compile-time validation that `SLOTS == WORDS`.
+    ///
+    /// Implementors must provide:
+    /// ```ignore
+    /// const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == WORDS);
+    /// ```
+    const VALIDATE_LAYOUT: ();
+
     /// Encode this type to an array of U256 words.
     ///
     /// Returns exactly `WORDS` words, where each word represents one storage slot.
@@ -288,11 +296,6 @@ pub trait Encodable<const WORDS: usize>: Sized + StorableType {
     /// extracted from the appropriate word using bit shifts and masks.
     /// The derive macro handles this automatically.
     fn from_evm_words(words: [U256; WORDS]) -> Result<Self>;
-
-    /// Test helper to ensure `LAYOUT` and `WORDS` are in sync.
-    fn validate_layout() {
-        debug_assert_eq!(<Self as StorableType>::SLOTS, WORDS)
-    }
 }
 
 /// Trait for types that can be used as storage mapping keys.

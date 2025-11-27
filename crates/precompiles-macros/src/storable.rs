@@ -110,6 +110,11 @@ pub(crate) fn derive_impl(input: DeriveInput) -> syn::Result<TokenStream> {
 
         // `Encodable` implementation: pure EVM word encoding/decoding, no I/O
         impl #impl_generics crate::storage::Encodable<{ #mod_ident::SLOT_COUNT }> for #strukt #ty_generics #where_clause {
+            const VALIDATE_LAYOUT: () = assert!(
+                <#strukt #ty_generics as crate::storage::StorableType>::SLOTS == #mod_ident::SLOT_COUNT,
+                "StorableType::SLOTS must equal Encodable WORDS parameter"
+            );
+
             fn to_evm_words(&self) -> crate::error::Result<[::alloy::primitives::U256; { #mod_ident::SLOT_COUNT }]> {
                 use crate::storage::Encodable;
 

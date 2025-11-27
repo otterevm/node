@@ -42,6 +42,8 @@ impl<T> Encodable<1> for Vec<T>
 where
     T: Storable + MaybePackable,
 {
+    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
     fn to_evm_words(&self) -> Result<[U256; 1]> {
         // Vec base slot representation: just the length
         Ok([U256::from(self.len())])

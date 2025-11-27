@@ -81,6 +81,8 @@ fn gen_encodable_impl(
         StorableConversionStrategy::Unsigned | StorableConversionStrategy::U256 => {
             quote! {
                 impl Encodable<1> for #type_path {
+                    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
                     #[inline]
                     fn to_evm_words(&self) -> Result<[U256; 1]> {
                         Ok([U256::from(*self)])
@@ -96,6 +98,8 @@ fn gen_encodable_impl(
         StorableConversionStrategy::SignedRust(unsigned_type) => {
             quote! {
                 impl Encodable<1> for #type_path {
+                    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
                     #[inline]
                     fn to_evm_words(&self) -> Result<[U256; 1]> {
                         Ok([U256::from(*self as #unsigned_type)])
@@ -111,6 +115,8 @@ fn gen_encodable_impl(
         StorableConversionStrategy::SignedAlloy(unsigned_type) => {
             quote! {
                 impl Encodable<1> for #type_path {
+                    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
                     #[inline]
                     fn to_evm_words(&self) -> Result<[::alloy::primitives::U256; 1]> {
                         let unsigned_val = self.into_raw();
@@ -128,6 +134,8 @@ fn gen_encodable_impl(
         StorableConversionStrategy::FixedBytes(size) => {
             quote! {
                 impl Encodable<1> for #type_path {
+                    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
                     #[inline]
                     fn to_evm_words(&self) -> Result<[::alloy::primitives::U256; 1]> {
                         let mut bytes = [0u8; 32];
@@ -568,6 +576,8 @@ fn gen_array_impl(config: &ArrayConfig) -> TokenStream {
 
         // Implement Encodable (pure word conversion)
         impl crate::storage::Encodable<{ #slot_count }> for [#elem_type; #array_size] {
+            const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == #slot_count, "SLOTS must equal WORDS");
+
             fn to_evm_words(&self) -> crate::error::Result<[::alloy::primitives::U256; { #slot_count }]> {
                 use crate::storage::packing::{calc_element_slot, calc_element_offset, insert_packed_value};
                 #to_evm_words_impl

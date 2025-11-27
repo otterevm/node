@@ -29,6 +29,8 @@ impl StorableType for Bytes {
 }
 
 impl Encodable<1> for Bytes {
+    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
     #[inline]
     fn to_evm_words(&self) -> Result<[U256; 1]> {
         to_evm_words_bytes_like(self.as_ref())
@@ -50,6 +52,8 @@ impl StorableType for String {
 }
 
 impl Encodable<1> for String {
+    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
     #[inline]
     fn to_evm_words(&self) -> Result<[U256; 1]> {
         to_evm_words_bytes_like(self.as_bytes())

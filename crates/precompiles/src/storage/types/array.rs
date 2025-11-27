@@ -218,7 +218,6 @@ mod tests {
         ];
 
         // Verify LAYOUT
-        <[u8; 32] as Encodable<1>>::validate_layout();
         assert_eq!(<[u8; 32] as StorableType>::LAYOUT, Layout::Slots(1));
 
         // Store and load
@@ -250,7 +249,6 @@ mod tests {
         let data: [u64; 5] = [1, 2, 3, 4, 5];
 
         // Verify slot count
-        <[u64; 5] as Encodable<2>>::validate_layout();
         assert_eq!(<[u64; 5] as StorableType>::LAYOUT, Layout::Slots(2));
 
         // Store and load
@@ -286,7 +284,6 @@ mod tests {
         let data: [u16; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Verify slot count
-        <[u16; 16] as Encodable<1>>::validate_layout();
         assert_eq!(<[u16; 16] as StorableType>::LAYOUT, Layout::Slots(1));
 
         // Store and load
@@ -306,7 +303,6 @@ mod tests {
         let data: [U256; 3] = [U256::from(12345), U256::from(67890), U256::from(111111)];
 
         // Verify slot count
-        <[U256; 3] as Encodable<3>>::validate_layout();
         assert_eq!(<[U256; 3] as StorableType>::LAYOUT, Layout::Slots(3));
 
         // Store and load
@@ -337,7 +333,6 @@ mod tests {
         ];
 
         // Verify slot count
-        <[Address; 3] as Encodable<3>>::validate_layout();
         assert_eq!(<[Address; 3] as StorableType>::LAYOUT, Layout::Slots(3));
 
         // Store and load
@@ -357,7 +352,6 @@ mod tests {
         let data: [u8; 1] = [42];
 
         // Verify slot count
-        <[u8; 1] as Encodable<1>>::validate_layout();
         assert_eq!(<[u8; 1] as StorableType>::LAYOUT, Layout::Slots(1));
 
         // Store and load
@@ -388,7 +382,6 @@ mod tests {
         ];
 
         // Verify LAYOUT: 8 slots (one per inner array)
-        <[[u8; 4]; 8] as Encodable<8>>::validate_layout();
         assert_eq!(<[[u8; 4]; 8] as StorableType>::LAYOUT, Layout::Slots(8));
 
         // Store and load
@@ -434,7 +427,6 @@ mod tests {
         ];
 
         // Verify LAYOUT: 8 slots (one per inner array)
-        <[[u16; 2]; 8] as Encodable<8>>::validate_layout();
         assert_eq!(<[[u16; 2]; 8] as StorableType>::LAYOUT, Layout::Slots(8));
 
         // Store and load

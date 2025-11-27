@@ -30,6 +30,8 @@ impl StorableType for bool {
 }
 
 impl Encodable<1> for bool {
+    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
     #[inline]
     fn to_evm_words(&self) -> Result<[U256; 1]> {
         Ok([if *self { U256::ONE } else { U256::ZERO }])
@@ -51,6 +53,8 @@ impl StorableType for Address {
 }
 
 impl Encodable<1> for Address {
+    const VALIDATE_LAYOUT: () = assert!(Self::SLOTS == 1, "SLOTS must equal WORDS");
+
     #[inline]
     fn to_evm_words(&self) -> Result<[U256; 1]> {
         Ok([self.into_u256()])

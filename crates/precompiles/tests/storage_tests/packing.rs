@@ -162,35 +162,26 @@ struct ExactFit {
 #[test]
 fn test_slot_and_byte_counts() {
     // Rule verification
-    Rule1Test::validate_layout();
     assert_eq!(Rule1Test::LAYOUT, Layout::Slots(2));
 
-    Rule2Test::validate_layout();
     assert_eq!(Rule2Test::LAYOUT, Layout::Slots(1));
 
-    Rule3TestFull::validate_layout();
     assert_eq!(Rule3TestFull::LAYOUT, Layout::Slots(2));
 
-    Rule3TestPartial::validate_layout();
     assert_eq!(Rule3TestPartial::LAYOUT, Layout::Slots(2));
 
-    Rule4Test::validate_layout();
     assert_eq!(Rule4Test::LAYOUT, Layout::Slots(3));
 
     // Basic packed types
-    PackedTwo::validate_layout();
     assert_eq!(PackedTwo::LAYOUT, Layout::Slots(1));
 
     // Partially packed types
-    PartiallyPacked::validate_layout();
     assert_eq!(PartiallyPacked::LAYOUT, Layout::Slots(3));
 
     // Nested structs
-    WithNestedStruct::validate_layout();
     assert_eq!(WithNestedStruct::LAYOUT, Layout::Slots(4));
 
     // Multi-level nesting
-    DeepNested::validate_layout();
     assert_eq!(DeepNested::LAYOUT, Layout::Slots(6));
 }
 
