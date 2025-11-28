@@ -17,7 +17,7 @@ use tempo_precompiles_macros;
 
 use crate::{
     error::Result,
-    storage::{Handler, LayoutCtx, Storable, StorableType, packing, types::Slot},
+    storage::{LayoutCtx, Storable, StorableType, packing, types::Slot},
 };
 
 // fixed-size arrays: [T; N] for primitive types T and sizes 1-32
@@ -158,30 +158,6 @@ where
         };
 
         Some(T::handle(base_slot, layout_ctx, Rc::clone(&self.address)))
-    }
-}
-
-impl<T, const N: usize> Handler<[T; N]> for ArrayHandler<T, N>
-where
-    T: StorableType,
-    [T; N]: Storable,
-{
-    /// Reads the entire array from storage.
-    #[inline]
-    fn read(&self) -> Result<[T; N]> {
-        self.as_slot().read()
-    }
-
-    /// Writes the entire array to storage.
-    #[inline]
-    fn write(&mut self, value: [T; N]) -> Result<()> {
-        self.as_slot().write(value)
-    }
-
-    /// Deletes the entire array from storage (clears all elements).
-    #[inline]
-    fn delete(&mut self) -> Result<()> {
-        self.as_slot().delete()
     }
 }
 

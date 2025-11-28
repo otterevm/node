@@ -3,9 +3,7 @@ use std::{marker::PhantomData, rc::Rc};
 
 use crate::{
     error::Result,
-    storage::{
-        FieldLocation, Handler, LayoutCtx, Storable, StorableType, StorageAccessor, StorageOps,
-    },
+    storage::{FieldLocation, LayoutCtx, Storable, StorableType, StorageAccessor, StorageOps},
 };
 
 /// Type-safe wrapper for a single EVM storage slot.
@@ -122,7 +120,7 @@ impl<T> Slot<T> {
     }
 }
 
-impl<T: Storable> Handler<T> for Slot<T> {
+impl<T: Storable> Slot<T> {
     /// Reads a value from storage at this slot.
     ///
     /// This method delegates to the `Storable::load` implementation,
@@ -137,7 +135,7 @@ impl<T: Storable> Handler<T> for Slot<T> {
     /// let name = name_slot.read().unwrap();
     /// ```
     #[inline]
-    fn read(&self) -> Result<T> {
+    pub fn read(&self) -> Result<T> {
         T::load(self, self.slot, self.ctx)
     }
 
@@ -155,7 +153,7 @@ impl<T: Storable> Handler<T> for Slot<T> {
     /// name_slot.write("MyToken".to_string()).unwrap();
     /// ```
     #[inline]
-    fn write(&mut self, value: T) -> Result<()> {
+    pub fn write(&mut self, value: T) -> Result<()> {
         value.store(self, self.slot, self.ctx)
     }
 
@@ -173,7 +171,7 @@ impl<T: Storable> Handler<T> for Slot<T> {
     /// name_slot.delete().unwrap();
     /// ```
     #[inline]
-    fn delete(&mut self) -> Result<()> {
+    pub fn delete(&mut self) -> Result<()> {
         T::delete(self, self.slot, self.ctx)
     }
 }

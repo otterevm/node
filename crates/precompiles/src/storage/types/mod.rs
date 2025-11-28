@@ -152,18 +152,6 @@ pub trait StorableType {
     fn handle(slot: U256, ctx: LayoutCtx, address: Rc<Address>) -> Self::Handler;
 }
 
-/// Abstracts reading, writing, and deleting values for [`Storable`] types.
-pub trait Handler<T: Storable> {
-    /// Reads the value from storage.
-    fn read(&self) -> Result<T>;
-
-    /// Writes the value to storage.
-    fn write(&mut self, value: T) -> Result<()>;
-
-    /// Deletes the value from storage (sets to zero).
-    fn delete(&mut self) -> Result<()>;
-}
-
 /// High-level storage operations for storable types.
 ///
 /// This trait provides storage I/O operations: load, store, delete.

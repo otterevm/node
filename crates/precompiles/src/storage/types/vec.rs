@@ -17,7 +17,7 @@ use std::{marker::PhantomData, rc::Rc};
 use crate::{
     error::{Result, TempoPrecompileError},
     storage::{
-        Encodable, Handler, Layout, LayoutCtx, Storable, StorableType, StorageOps,
+        Encodable, Layout, LayoutCtx, Storable, StorableType, StorageOps,
         packing::{calc_element_loc, calc_packed_slot_count},
         types::Slot,
     },
@@ -157,42 +157,13 @@ where
 /// handler.at(1).write(&mut storage, 42)?;
 /// handler.at(2).delete(&mut storage)?;
 /// ```
-pub struct VecHandler<T>
-where
-    T: Storable,
-{
+pub struct VecHandler<T> {
     len_slot: U256,
     address: Rc<Address>,
     _ty: PhantomData<T>,
 }
 
-impl<T> Handler<Vec<T>> for VecHandler<T>
-where
-    T: Storable,
-{
-    /// Reads the entire vector from storage.
-    #[inline]
-    fn read(&self) -> Result<Vec<T>> {
-        self.as_slot().read()
-    }
-
-    /// Writes the entire vector to storage.
-    #[inline]
-    fn write(&mut self, value: Vec<T>) -> Result<()> {
-        self.as_slot().write(value)
-    }
-
-    /// Deletes the entire vector from storage (clears length and all elements).
-    #[inline]
-    fn delete(&mut self) -> Result<()> {
-        self.as_slot().delete()
-    }
-}
-
-impl<T> VecHandler<T>
-where
-    T: Storable,
-{
+impl<T: StorableType> VecHandler<T> {
     /// Creates a new handler for the vector at the given base slot and address.
     #[inline]
     pub fn new(len_slot: U256, address: Rc<Address>) -> Self {
@@ -218,12 +189,6 @@ where
         calc_data_slot(self.len_slot)
     }
 
-    /// Returns a `Slot` accessor for full-vector operations.
-    #[inline]
-    fn as_slot(&self) -> Slot<Vec<T>> {
-        Slot::new(self.len_slot, Rc::clone(&self.address))
-    }
-
     /// Returns the length of the vector.
     #[inline]
     pub fn len(&self) -> Result<usize> {
@@ -237,15 +202,11 @@ where
         Ok(self.len()? == 0)
     }
 
-    /// Returns a `Slot<T>` accessor for the element at the given index.
-    ///
-    /// The returned `Slot` automatically handles packing based on `T::BYTES`:
-    #[inline]
-    pub fn at(&self, index: usize) -> T::Handler {
+    /// Returns the base slot and layout context for the element at the given index.
+    pub fn location_of(&self, index: usize) -> (U256, LayoutCtx) {
         let data_start = self.data_slot();
 
-        // Pack small elements into shared slots, use T::SLOTS for multi-slot types
-        let (base_slot, layout_ctx) = if T::BYTES <= 16 {
+        if T::BYTES <= 16 {
             let location = calc_element_loc(index, T::BYTES);
             (
                 data_start + U256::from(location.offset_slots),
@@ -253,8 +214,15 @@ where
             )
         } else {
             (data_start + U256::from(index * T::SLOTS), LayoutCtx::FULL)
-        };
+        }
+    }
 
+    /// Returns a `Slot<T>` accessor for the element at the given index.
+    ///
+    /// The returned `Slot` automatically handles packing based on `T::BYTES`:
+    #[inline]
+    pub fn at(&self, index: usize) -> T::Handler {
+        let (base_slot, layout_ctx) = self.location_of(index);
         T::handle(base_slot, layout_ctx, Rc::clone(&self.address))
     }
 
@@ -265,18 +233,19 @@ where
     pub fn push(&self, value: T) -> Result<()>
     where
         T: Storable,
-        T::Handler: Handler<T>,
     {
         // Read current length
         let length = self.len()?;
 
         // Write element at the end
-        let mut elem_slot = self.at(length);
-        elem_slot.write(value)?;
+        let (slot, ctx) = self.location_of(length);
+        Slot::new_with_ctx(slot, ctx, Rc::clone(&self.address)).write(value)?;
 
         // Increment length
         let mut length_slot = Slot::<U256>::new(self.len_slot, Rc::clone(&self.address));
-        length_slot.write(U256::from(length + 1))
+        length_slot.write(U256::from(length + 1))?;
+
+        Ok(())
     }
 
     /// Pops the last element from the vector.
@@ -287,7 +256,6 @@ where
     pub fn pop(&self) -> Result<Option<T>>
     where
         T: Storable,
-        T::Handler: Handler<T>,
     {
         // Read current length
         let length = self.len()?;
@@ -297,7 +265,8 @@ where
         let last_index = length - 1;
 
         // Read the last element
-        let mut elem_slot = self.at(last_index);
+        let (slot, ctx) = self.location_of(last_index);
+        let mut elem_slot = Slot::<T>::new_with_ctx(slot, ctx, Rc::clone(&self.address));
         let element = elem_slot.read()?;
 
         // Zero out the element's storage
