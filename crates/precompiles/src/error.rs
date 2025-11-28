@@ -256,3 +256,14 @@ impl<T> IntoPrecompileResult<T> for TempoPrecompileError {
         Ok(PrecompileOutput::new_reverted(gas, bytes))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::error::error_decoder_registry;
+
+    // Test that initializes the error decoder registry and fails if there are any duplicates.
+    #[test]
+    fn test_error_decoder_registry_init() {
+        error_decoder_registry();
+    }
+}
