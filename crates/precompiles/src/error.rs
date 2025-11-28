@@ -95,7 +95,8 @@ pub fn add_errors_to_registry<T: SolInterface>(
     let converter = Arc::new(converter);
     for selector in T::selectors() {
         let converter = Arc::clone(&converter);
-        registry.insert(
+
+        let old_selector = registry.insert(
             selector.into(),
             Box::new(move |data: &[u8]| {
                 T::abi_decode(data)
@@ -106,6 +107,7 @@ pub fn add_errors_to_registry<T: SolInterface>(
                     })
             }),
         );
+        assert!(old_selector.is_none(), "Duplicate selector {selector:?}");
     }
 }
 
