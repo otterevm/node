@@ -99,6 +99,7 @@ pub static PAUSE_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"PAUSE_ROLE"
 pub static UNPAUSE_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"UNPAUSE_ROLE"));
 pub static ISSUER_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"ISSUER_ROLE"));
 pub static BURN_BLOCKED_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"BURN_BLOCKED_ROLE"));
+pub static BURN_FROM_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"BURN_FROM_ROLE"));
 
 /// Validates that a token has USD currency
 pub fn validate_usd_currency<S: PrecompileStorageProvider>(
@@ -188,6 +189,14 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
     /// The role is computed as `keccak256("BURN_BLOCKED_ROLE")`.
     pub fn burn_blocked_role() -> B256 {
         *BURN_BLOCKED_ROLE
+    }
+
+    /// Returns the BURN_FROM_ROLE constant
+    ///
+    /// This role identifier grants permission to burn tokens from any account.
+    /// The role is computed as `keccak256("BURN_FROM_ROLE")`.
+    pub fn burn_from_role() -> B256 {
+        *BURN_FROM_ROLE
     }
 
     // View functions
@@ -511,6 +520,47 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         self.storage.emit_event(
             self.address,
             TIP20Event::BurnBlocked(ITIP20::BurnBlocked {
+                from: call.from,
+                amount: call.amount,
+            })
+            .into_log_data(),
+        )
+    }
+
+    /// Burns tokens from any address (requires BURN_FROM_ROLE)
+    pub fn burn_from(
+        &mut self,
+        msg_sender: Address,
+        call: ITIP20::burnFromCall,
+    ) -> Result<()> {
+        self.check_role(msg_sender, *BURN_FROM_ROLE)?;
+
+        // Prevent burning from `FeeManager` and `StablecoinExchange` to protect accounting invariants
+        if self.storage.spec().is_allegretto()
+            && matches!(
+                call.from,
+                TIP_FEE_MANAGER_ADDRESS | STABLECOIN_EXCHANGE_ADDRESS
+            )
+        {
+            return Err(TIP20Error::protected_address().into());
+        }
+
+        self._transfer(call.from, Address::ZERO, call.amount)?;
+
+        let total_supply = self.total_supply()?;
+        let new_supply =
+            total_supply
+                .checked_sub(call.amount)
+                .ok_or(TIP20Error::insufficient_balance(
+                    total_supply,
+                    call.amount,
+                    self.address,
+                ))?;
+        self.set_total_supply(new_supply)?;
+
+        self.storage.emit_event(
+            self.address,
+            TIP20Event::BurnFrom(ITIP20::BurnFrom {
                 from: call.from,
                 amount: call.amount,
             })
@@ -2627,6 +2677,287 @@ pub(crate) mod tests {
         let result = token.burn_blocked(
             burner,
             ITIP20::burnBlockedCall {
+                from: STABLECOIN_EXCHANGE_ADDRESS,
+                amount: U256::from(500),
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::ProtectedAddress(_)))
+        ));
+
+        // Verify StablecoinExchange balance is unchanged
+        let balance = token.balance_of(ITIP20::balanceOfCall {
+            account: STABLECOIN_EXCHANGE_ADDRESS,
+        })?;
+        assert_eq!(balance, U256::from(1000));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_burn_from_successful_from_authorized_address() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        let burner = Address::random();
+        let target = Address::random();
+
+        // Initialize token
+        initialize_path_usd(&mut storage, admin)?;
+        let token_id = 1;
+
+        // Create a blacklist policy (so we can test authorized vs blocked addresses)
+        let policy_id = {
+            let mut registry = TIP403Registry::new(&mut storage);
+            registry.create_policy(
+                admin,
+                ITIP403Registry::createPolicyCall {
+                    admin,
+                    policyType: ITIP403Registry::PolicyType::BLACKLIST,
+                },
+            )?
+        };
+
+        // Verify target address is NOT in blacklist, so it's authorized
+        {
+            let mut registry = TIP403Registry::new(&mut storage);
+            assert!(registry.is_authorized(ITIP403Registry::isAuthorizedCall {
+                policyId: policy_id,
+                user: target,
+            })?);
+        }
+
+        let mut token = TIP20Token::new(token_id, &mut storage);
+        token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
+        token.change_transfer_policy_id(admin, ITIP20::changeTransferPolicyIdCall {
+            newPolicyId: policy_id,
+        })?;
+
+        // Grant BURN_FROM_ROLE to burner
+        token.grant_role_internal(burner, *BURN_FROM_ROLE)?;
+
+        // Grant ISSUER_ROLE to admin and mint tokens to target
+        token.grant_role_internal(admin, *ISSUER_ROLE)?;
+        token.mint(
+            admin,
+            ITIP20::mintCall {
+                to: target,
+                amount: U256::from(1000),
+            },
+        )?;
+
+        let initial_balance = token.balance_of(ITIP20::balanceOfCall { account: target })?;
+        let initial_supply = token.total_supply()?;
+        assert_eq!(initial_balance, U256::from(1000));
+        assert_eq!(initial_supply, U256::from(1000));
+
+        // burnFrom should work even though target is authorized (unlike burnBlocked)
+        let burn_amount = U256::from(300);
+        token.burn_from(
+            burner,
+            ITIP20::burnFromCall {
+                from: target,
+                amount: burn_amount,
+            },
+        )?;
+
+        // Verify balances and total supply were updated
+        let final_balance = token.balance_of(ITIP20::balanceOfCall { account: target })?;
+        let final_supply = token.total_supply()?;
+        assert_eq!(final_balance, U256::from(700));
+        assert_eq!(final_supply, U256::from(700));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_burn_from_successful_from_blocked_address() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        let burner = Address::random();
+        let target = Address::random();
+
+        // Initialize token
+        initialize_path_usd(&mut storage, admin)?;
+        let token_id = 1;
+
+        // Create a blacklist policy and add target to blacklist
+        let policy_id = {
+            let mut registry = TIP403Registry::new(&mut storage);
+            let policy_id = registry.create_policy(
+                admin,
+                ITIP403Registry::createPolicyCall {
+                    admin,
+                    policyType: ITIP403Registry::PolicyType::BLACKLIST,
+                },
+            )?;
+            // Add target to blacklist (making it blocked/unauthorized)
+            registry.modify_policy_blacklist(
+                admin,
+                ITIP403Registry::modifyPolicyBlacklistCall {
+                    policyId: policy_id,
+                    account: target,
+                    restricted: true,
+                },
+            )?;
+            policy_id
+        };
+
+        // Verify target address is now in blacklist, so it's NOT authorized (blocked)
+        {
+            let mut registry = TIP403Registry::new(&mut storage);
+            assert!(!registry.is_authorized(ITIP403Registry::isAuthorizedCall {
+                policyId: policy_id,
+                user: target,
+            })?);
+        }
+
+        let mut token = TIP20Token::new(token_id, &mut storage);
+        token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
+        token.change_transfer_policy_id(admin, ITIP20::changeTransferPolicyIdCall {
+            newPolicyId: policy_id,
+        })?;
+
+        // Grant BURN_FROM_ROLE to burner
+        token.grant_role_internal(burner, *BURN_FROM_ROLE)?;
+
+        // Grant ISSUER_ROLE to admin and mint tokens to target
+        token.grant_role_internal(admin, *ISSUER_ROLE)?;
+        token.mint(
+            admin,
+            ITIP20::mintCall {
+                to: target,
+                amount: U256::from(1000),
+            },
+        )?;
+
+        let initial_balance = token.balance_of(ITIP20::balanceOfCall { account: target })?;
+        let initial_supply = token.total_supply()?;
+        assert_eq!(initial_balance, U256::from(1000));
+        assert_eq!(initial_supply, U256::from(1000));
+
+        // burnFrom should work on blocked addresses too
+        let burn_amount = U256::from(300);
+        token.burn_from(
+            burner,
+            ITIP20::burnFromCall {
+                from: target,
+                amount: burn_amount,
+            },
+        )?;
+
+        // Verify balances and total supply were updated
+        let final_balance = token.balance_of(ITIP20::balanceOfCall { account: target })?;
+        let final_supply = token.total_supply()?;
+        assert_eq!(final_balance, U256::from(700));
+        assert_eq!(final_supply, U256::from(700));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_burn_from_requires_role() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        let unauthorized = Address::random();
+        let target = Address::random();
+
+        // Initialize token
+        initialize_path_usd(&mut storage, admin)?;
+        let token_id = 1;
+        let mut token = TIP20Token::new(token_id, &mut storage);
+        token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
+
+        // Grant ISSUER_ROLE to admin and mint tokens to target
+        token.grant_role_internal(admin, *ISSUER_ROLE)?;
+        token.mint(
+            admin,
+            ITIP20::mintCall {
+                to: target,
+                amount: U256::from(1000),
+            },
+        )?;
+
+        // Attempt to burnFrom without BURN_FROM_ROLE
+        let result = token.burn_from(
+            unauthorized,
+            ITIP20::burnFromCall {
+                from: target,
+                amount: U256::from(500),
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::RolesAuthError(RolesAuthError::Unauthorized(_)))
+        ));
+
+        // Verify balance is unchanged
+        let balance = token.balance_of(ITIP20::balanceOfCall { account: target })?;
+        assert_eq!(balance, U256::from(1000));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_unable_to_burn_from_protected_address() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
+        let admin = Address::random();
+        let burner = Address::random();
+
+        // Initialize token
+        initialize_path_usd(&mut storage, admin)?;
+        let token_id = 1;
+        let mut token = TIP20Token::new(token_id, &mut storage);
+        token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
+
+        // Grant BURN_FROM_ROLE to burner
+        token.grant_role_internal(burner, *BURN_FROM_ROLE)?;
+
+        // Simulate collected fees
+        token.grant_role_internal(admin, *ISSUER_ROLE)?;
+        token.mint(
+            admin,
+            ITIP20::mintCall {
+                to: TIP_FEE_MANAGER_ADDRESS,
+                amount: U256::from(1000),
+            },
+        )?;
+
+        // Attempt to burn from FeeManager
+        let result = token.burn_from(
+            burner,
+            ITIP20::burnFromCall {
+                from: TIP_FEE_MANAGER_ADDRESS,
+                amount: U256::from(500),
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(TempoPrecompileError::TIP20(TIP20Error::ProtectedAddress(_)))
+        ));
+
+        // Verify FeeManager balance is unchanged
+        let balance = token.balance_of(ITIP20::balanceOfCall {
+            account: TIP_FEE_MANAGER_ADDRESS,
+        })?;
+        assert_eq!(balance, U256::from(1000));
+
+        // Mint tokens to StablecoinExchange
+        token.mint(
+            admin,
+            ITIP20::mintCall {
+                to: STABLECOIN_EXCHANGE_ADDRESS,
+                amount: U256::from(1000),
+            },
+        )?;
+
+        // Attempt to burn from StablecoinExchange
+        let result = token.burn_from(
+            burner,
+            ITIP20::burnFromCall {
                 from: STABLECOIN_EXCHANGE_ADDRESS,
                 amount: U256::from(500),
             },

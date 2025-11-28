@@ -245,6 +245,14 @@ impl<'a, S: PrecompileStorageProvider> PathUSD<'a, S> {
         TIP20Token::<S>::burn_blocked_role()
     }
 
+    /// Returns the BURN_FROM_ROLE constant
+    ///
+    /// This role identifier grants permission to burn tokens from any account.
+    /// The role is computed as `keccak256("BURN_FROM_ROLE")`.
+    pub fn burn_from_role() -> B256 {
+        TIP20Token::<S>::burn_from_role()
+    }
+
     /// Returns the TRANSFER_ROLE constant
     ///
     /// This role identifier grants permission to transfer pathUSD tokens.

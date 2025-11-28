@@ -79,6 +79,9 @@ impl<S: PrecompileStorageProvider> Precompile for PathUSD<'_, S> {
             ITIP20::BURN_BLOCKED_ROLECall::SELECTOR => {
                 view::<ITIP20::BURN_BLOCKED_ROLECall>(calldata, |_| Ok(Self::burn_blocked_role()))
             }
+            ITIP20::BURN_FROM_ROLECall::SELECTOR => {
+                view::<ITIP20::BURN_FROM_ROLECall>(calldata, |_| Ok(Self::burn_from_role()))
+            }
             IPathUSD::TRANSFER_ROLECall::SELECTOR => {
                 view::<IPathUSD::TRANSFER_ROLECall>(calldata, |_| Ok(Self::transfer_role()))
             }
@@ -117,6 +120,11 @@ impl<S: PrecompileStorageProvider> Precompile for PathUSD<'_, S> {
             ITIP20::burnBlockedCall::SELECTOR => {
                 mutate_void::<ITIP20::burnBlockedCall>(calldata, msg_sender, |sender, call| {
                     self.token.burn_blocked(sender, call)
+                })
+            }
+            ITIP20::burnFromCall::SELECTOR => {
+                mutate_void::<ITIP20::burnFromCall>(calldata, msg_sender, |sender, call| {
+                    self.token.burn_from(sender, call)
                 })
             }
             ITIP20::pauseCall::SELECTOR => {
