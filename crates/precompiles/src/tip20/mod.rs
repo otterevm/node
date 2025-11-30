@@ -2756,6 +2756,25 @@ pub(crate) mod tests {
         assert_eq!(final_balance, amount - burn_amount);
         assert_eq!(final_supply, amount - burn_amount);
 
+        assert_eq!(storage.events[&token_id_to_address(token_id)].len(), 5);
+        assert_eq!(
+            storage.events[&token_id_to_address(token_id)][3],
+            TIP20Event::Transfer(ITIP20::Transfer {
+                from: target,
+                to: Address::ZERO,
+                amount: burn_amount
+            })
+            .into_log_data()
+        );
+        assert_eq!(
+            storage.events[&token_id_to_address(token_id)][4],
+            TIP20Event::BurnFrom(ITIP20::BurnFrom {
+                from: target,
+                amount: burn_amount
+            })
+            .into_log_data()
+        );
+
         Ok(())
     }
 
@@ -2832,6 +2851,26 @@ pub(crate) mod tests {
         let final_supply = token.total_supply()?;
         assert_eq!(final_balance, amount - burn_amount);
         assert_eq!(final_supply, amount - burn_amount);
+
+        // Verify event emission
+        assert_eq!(storage.events[&token_id_to_address(token_id)].len(), 5);
+        assert_eq!(
+            storage.events[&token_id_to_address(token_id)][3],
+            TIP20Event::Transfer(ITIP20::Transfer {
+                from: target,
+                to: Address::ZERO,
+                amount: burn_amount
+            })
+            .into_log_data()
+        );
+        assert_eq!(
+            storage.events[&token_id_to_address(token_id)][4],
+            TIP20Event::BurnFrom(ITIP20::BurnFrom {
+                from: target,
+                amount: burn_amount
+            })
+            .into_log_data()
+        );
 
         Ok(())
     }
