@@ -532,12 +532,10 @@ impl<'a, S: PrecompileStorageProvider> TIP20Token<'a, S> {
         self.check_role(msg_sender, *BURN_FROM_ROLE)?;
 
         // Prevent burning from `FeeManager` and `StablecoinExchange` to protect accounting invariants
-        if self.storage.spec().is_allegretto()
-            && matches!(
-                call.from,
-                TIP_FEE_MANAGER_ADDRESS | STABLECOIN_EXCHANGE_ADDRESS
-            )
-        {
+        if matches!(
+            call.from,
+            TIP_FEE_MANAGER_ADDRESS | STABLECOIN_EXCHANGE_ADDRESS
+        ) {
             return Err(TIP20Error::protected_address().into());
         }
 
