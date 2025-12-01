@@ -1,6 +1,6 @@
 //! Test utilities for precompile dispatch testing
 
-use crate::Precompile;
+use crate::{Precompile, storage::hashmap::HashMapStorageProvider};
 use alloy::{
     primitives::{Address, Bytes},
     sol_types::SolError,
@@ -73,4 +73,9 @@ pub fn assert_full_coverage(results: impl IntoIterator<Item = Vec<([u8; 4], &'st
         all_unsupported.len(),
         all_unsupported
     );
+}
+
+/// Helper to create a test storage provider with a random address
+pub fn setup_storage() -> (HashMapStorageProvider, Address) {
+    (HashMapStorageProvider::new(1), Address::random())
 }

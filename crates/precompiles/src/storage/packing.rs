@@ -224,10 +224,12 @@ pub fn gen_word_from(values: &[&str]) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{
-        Handler, StorageContext,
-        hashmap::HashMapStorageProvider,
-        types::{LayoutCtx, Slot},
+    use crate::{
+        storage::{
+            Handler, StorageContext,
+            types::{LayoutCtx, Slot},
+        },
+        test_util::setup_storage,
     };
     use alloy::primitives::Address;
 
@@ -766,11 +768,6 @@ mod tests {
     }
 
     // -- SLOT PACKED FIELD TESTS ------------------------------------------
-
-    /// Helper to create a test storage provider with a random address
-    fn setup_storage() -> (HashMapStorageProvider, Address) {
-        (HashMapStorageProvider::new(1), Address::random())
-    }
 
     #[test]
     fn test_packed_at_multiple_types() -> Result<()> {

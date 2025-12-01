@@ -469,16 +469,13 @@ impl StorageOps for PackedSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{
-        Handler, StorageContext, hashmap::HashMapStorageProvider, packing::gen_word_from,
+    use crate::{
+        storage::{Handler, StorageContext, packing::gen_word_from},
+        test_util::setup_storage,
     };
     use alloy::primitives::Address;
     use proptest::prelude::*;
     use tempo_precompiles_macros::Storable;
-
-    fn setup_storage() -> (HashMapStorageProvider, Address) {
-        (HashMapStorageProvider::new(1), Address::random())
-    }
 
     // -- TEST HELPERS -------------------------------------------------------------
 

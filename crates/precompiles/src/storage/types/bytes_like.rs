@@ -244,12 +244,11 @@ fn encode_long_string_length(byte_length: usize) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{Handler, StorageContext, hashmap::HashMapStorageProvider};
+    use crate::{
+        storage::{Handler, StorageContext},
+        test_util::setup_storage,
+    };
     use proptest::prelude::*;
-
-    fn setup_storage() -> (HashMapStorageProvider, Address) {
-        (HashMapStorageProvider::new(1), Address::random())
-    }
 
     // Strategy for generating random U256 slot values that won't overflow
     fn arb_safe_slot() -> impl Strategy<Value = U256> {

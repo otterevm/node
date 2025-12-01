@@ -188,9 +188,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{
-        Layout, LayoutCtx, PrecompileStorageProvider, StorageContext,
-        hashmap::HashMapStorageProvider,
+    use crate::{
+        storage::{Layout, LayoutCtx, PrecompileStorageProvider, StorageContext},
+        test_util::setup_storage,
     };
     use proptest::prelude::*;
 
@@ -200,10 +200,6 @@ mod tests {
             // Ensure we don't overflow by limiting to a reasonable range
             U256::from_limbs(limbs) % (U256::MAX - U256::from(10000))
         })
-    }
-
-    fn setup_storage() -> (HashMapStorageProvider, Address) {
-        (HashMapStorageProvider::new(1), Address::random())
     }
 
     #[test]

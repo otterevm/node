@@ -77,9 +77,9 @@ impl StorageKey for Address {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{
-        Handler, PrecompileStorageProvider, StorageContext, hashmap::HashMapStorageProvider,
-        packing::gen_word_from,
+    use crate::{
+        storage::{Handler, PrecompileStorageProvider, StorageContext, packing::gen_word_from},
+        test_util::setup_storage,
     };
     use proptest::prelude::*;
 
@@ -94,10 +94,6 @@ mod tests {
     // Strategy for generating arbitrary addresses
     fn arb_address() -> impl Strategy<Value = Address> {
         any::<[u8; 20]>().prop_map(Address::from)
-    }
-
-    fn setup_storage() -> (HashMapStorageProvider, Address) {
-        (HashMapStorageProvider::new(1), Address::random())
     }
 
     // -- STORAGE TESTS --------------------------------------------------------

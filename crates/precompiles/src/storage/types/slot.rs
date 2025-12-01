@@ -193,8 +193,9 @@ impl<T> StorageOps for Slot<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{
-        Handler, PrecompileStorageProvider, StorageKey, hashmap::HashMapStorageProvider,
+    use crate::{
+        storage::{Handler, PrecompileStorageProvider, StorageKey},
+        test_util::setup_storage,
     };
     use alloy::primitives::{Address, B256};
     use proptest::prelude::*;
@@ -206,10 +207,6 @@ mod tests {
 
     fn arb_u256() -> impl Strategy<Value = U256> {
         any::<[u64; 4]>().prop_map(U256::from_limbs)
-    }
-
-    fn setup_storage() -> (HashMapStorageProvider, Address) {
-        (HashMapStorageProvider::new(1), Address::random())
     }
 
     // -- BASIC TESTS -----------------------------------------------------------
