@@ -11,19 +11,17 @@
 //! - Base slot: stores `length * 2 + 1` (bit 0 = 1 indicates long string)
 //! - Data slots: stored at `keccak256(main_slot) + i` for each 32-byte chunk
 
-use alloy::primitives::{Address, Bytes, U256, keccak256};
-use std::rc::Rc;
-
 use crate::{
     error::{Result, TempoPrecompileError},
     storage::{StorageOps, types::*},
 };
+use alloy::primitives::{Address, Bytes, U256, keccak256};
 
 impl StorableType for Bytes {
     const LAYOUT: Layout = Layout::Slots(1);
     type Handler = Slot<Self>;
 
-    fn handle(slot: U256, ctx: LayoutCtx, address: Rc<Address>) -> Self::Handler {
+    fn handle(slot: U256, ctx: LayoutCtx, address: Address) -> Self::Handler {
         Slot::new_with_ctx(slot, ctx, address)
     }
 }
@@ -46,7 +44,7 @@ impl StorableType for String {
     const LAYOUT: Layout = Layout::Slots(1);
     type Handler = Slot<Self>;
 
-    fn handle(slot: U256, ctx: LayoutCtx, address: Rc<Address>) -> Self::Handler {
+    fn handle(slot: U256, ctx: LayoutCtx, address: Address) -> Self::Handler {
         Slot::new_with_ctx(slot, ctx, address)
     }
 }
@@ -317,8 +315,8 @@ mod tests {
     use crate::storage::{Handler, PrecompileStorageContext, hashmap::HashMapStorageProvider};
     use proptest::prelude::*;
 
-    fn setup_storage() -> (HashMapStorageProvider, Rc<Address>) {
-        (HashMapStorageProvider::new(1), Rc::new(Address::random()))
+    fn setup_storage() -> (HashMapStorageProvider, Address) {
+        (HashMapStorageProvider::new(1), Address::random())
     }
 
     // Strategy for generating random U256 slot values that won't overflow

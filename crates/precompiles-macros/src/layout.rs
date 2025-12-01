@@ -87,14 +87,14 @@ pub(crate) fn gen_handler_field_init(
 
             quote! {
                 #field_name: <#ty as crate::storage::StorableType>::handle(
-                    #slot_expr, #layout_ctx, ::std::rc::Rc::clone(&address_rc)
+                    #slot_expr, #layout_ctx, address
                 )
             }
         }
         FieldKind::Mapping { key, value } => {
             quote! {
                 #field_name: <crate::storage::Mapping<#key, #value> as crate::storage::StorableType>::handle(
-                    #slot_expr, crate::storage::LayoutCtx::FULL, ::std::rc::Rc::clone(&address_rc)
+                    #slot_expr, crate::storage::LayoutCtx::FULL, address
                 )
             }
         }
@@ -113,7 +113,7 @@ pub(crate) fn gen_struct(
     quote! {
         #vis struct #name {
             #(#handler_fields,)*
-            address: ::std::rc::Rc<::alloy::primitives::Address>,
+            address: ::alloy::primitives::Address,
             storage: crate::storage::StorageAccessor,
         }
     }
@@ -140,11 +140,9 @@ pub(crate) fn gen_constructor(
                     slots::__check_all_collisions();
                 }
 
-                let address_rc = ::std::rc::Rc::new(address);
-
                 Self {
                     #(#field_inits,)*
-                    address: address_rc,
+                    address,
                     storage: crate::storage::StorageAccessor::default(),
                 }
             }
@@ -152,19 +150,19 @@ pub(crate) fn gen_constructor(
             #[inline(always)]
             fn __initialize(&mut self) -> crate::error::Result<()> {
                 let bytecode = ::revm::state::Bytecode::new_legacy(::alloy::primitives::Bytes::from_static(&[0xef]));
-                self.storage.set_code(*self.address, bytecode)?;
+                self.storage.set_code(self.address, bytecode)?;
 
                 Ok(())
             }
 
             #[inline(always)]
             fn emit_event(&mut self, event: impl ::alloy::primitives::IntoLogData) -> crate::error::Result<()> {
-                self.storage.emit_event(*self.address, event.into_log_data())
+                self.storage.emit_event(self.address, event.into_log_data())
             }
 
             #[cfg(any(test, feature = "test-utils"))]
             fn emited_events(&self) -> &Vec<::alloy::primitives::LogData> {
-                self.storage.get_events(*self.address)
+                self.storage.get_events(self.address)
             }
         }
     }
@@ -176,7 +174,7 @@ pub(crate) fn gen_contract_storage_impl(name: &Ident) -> proc_macro2::TokenStrea
         impl crate::storage::ContractStorage for #name {
             #[inline(always)]
             fn address(&self) -> ::alloy::primitives::Address {
-                *self.address
+                self.address
             }
 
             #[inline(always)]

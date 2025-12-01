@@ -152,7 +152,7 @@ fn gen_rust_unsigned_tests() -> TokenStream {
                 fn #test_name(value in any::<#type_name>(), base_slot in arb_safe_slot()) {
                     let (mut storage, address) = setup_storage();
                     let _guard = storage.enter().unwrap();
-                    let mut slot = Slot::<#type_name>::new(base_slot, ::std::rc::Rc::clone(&address));
+                    let mut slot = Slot::<#type_name>::new(base_slot, address);
 
                     // Verify store → load roundtrip
                     slot.write(value).unwrap();
@@ -199,7 +199,7 @@ fn gen_rust_signed_tests() -> TokenStream {
                     fn #pos_test_name(value in 0 as #type_name..=#type_name::MAX, base_slot in arb_safe_slot()) {
                         let (mut storage, address) = setup_storage();
                         let _guard = storage.enter().unwrap();
-                        let mut slot = Slot::<#type_name>::new(base_slot, ::std::rc::Rc::clone(&address));
+                        let mut slot = Slot::<#type_name>::new(base_slot, address);
 
                         // Verify store → load roundtrip
                         slot.write(value).unwrap();
@@ -223,7 +223,7 @@ fn gen_rust_signed_tests() -> TokenStream {
                     fn #neg_test_name(value in #type_name::MIN..0 as #type_name, base_slot in arb_safe_slot()) {
                         let (mut storage, address) = setup_storage();
                         let _guard = storage.enter().unwrap();
-                        let mut slot = Slot::<#type_name>::new(base_slot, ::std::rc::Rc::clone(&address));
+                        let mut slot = Slot::<#type_name>::new(base_slot, address);
 
                         // Verify store → load roundtrip
                         slot.write(value).unwrap();
@@ -269,7 +269,7 @@ fn gen_alloy_unsigned_tests() -> TokenStream {
                 fn #test_name(value in #arb_fn(), base_slot in arb_safe_slot()) {
                     let (mut storage, address) = setup_storage();
                     let _guard = storage.enter().unwrap();
-                    let mut slot = Slot::<::alloy::primitives::#type_name>::new(base_slot, ::std::rc::Rc::clone(&address));
+                    let mut slot = Slot::<::alloy::primitives::#type_name>::new(base_slot, address);
 
                     // Verify store → load roundtrip
                     slot.write(value).unwrap();
@@ -322,7 +322,7 @@ fn gen_alloy_signed_tests() -> TokenStream {
                     fn #pos_test_name(value in #arb_pos_fn(), base_slot in arb_safe_slot()) {
                         let (mut storage, address) = setup_storage();
                         let _guard = storage.enter().unwrap();
-                        let mut slot = Slot::<::alloy::primitives::#type_name>::new(base_slot, ::std::rc::Rc::clone(&address));
+                        let mut slot = Slot::<::alloy::primitives::#type_name>::new(base_slot, address);
 
                         // Verify store → load roundtrip
                         slot.write(value).unwrap();
@@ -350,7 +350,7 @@ fn gen_alloy_signed_tests() -> TokenStream {
                     fn #neg_test_name(value in #arb_neg_fn(), base_slot in arb_safe_slot()) {
                         let (mut storage, address) = setup_storage();
                         let _guard = storage.enter().unwrap();
-                        let mut slot = Slot::<::alloy::primitives::#type_name>::new(base_slot, ::std::rc::Rc::clone(&address));
+                        let mut slot = Slot::<::alloy::primitives::#type_name>::new(base_slot, address);
 
                         // Verify store → load roundtrip
                         slot.write(value).unwrap();
@@ -398,7 +398,7 @@ fn gen_fixed_bytes_tests() -> TokenStream {
                 fn #test_name(value in #arb_fn(), base_slot in arb_safe_slot()) {
                     let (mut storage, address) = setup_storage();
                     let _guard = storage.enter().unwrap();
-                    let mut slot = Slot::<::alloy::primitives::FixedBytes<#size>>::new(base_slot, ::std::rc::Rc::clone(&address));
+                    let mut slot = Slot::<::alloy::primitives::FixedBytes<#size>>::new(base_slot, address);
 
                     // Verify store → load roundtrip
                     slot.write(value).unwrap();

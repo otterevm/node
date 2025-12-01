@@ -6,7 +6,6 @@ use crate::storage::{
 };
 use alloy::primitives::{Address, U256, keccak256};
 use proptest::prelude::*;
-use std::rc::Rc;
 use tempo_precompiles::error;
 use tempo_precompiles_macros::{Storable, contract};
 
@@ -21,8 +20,8 @@ mod structs;
 
 // -- TEST HELPERS ---------------------------------------------------------------------------------
 
-fn setup_storage() -> (HashMapStorageProvider, Rc<Address>) {
-    (HashMapStorageProvider::new(1), Rc::new(Address::random()))
+fn setup_storage() -> (HashMapStorageProvider, Address) {
+    (HashMapStorageProvider::new(1), Address::random())
 }
 
 /// Test struct with 3 slots: U256, U256, u64
@@ -73,7 +72,7 @@ pub(crate) fn test_address(byte: u8) -> Address {
 
 /// Helper to test store + load roundtrip
 pub(crate) fn test_store_load<T>(
-    address: &Rc<Address>,
+    address: &Address,
     base_slot: U256,
     original: &T,
 ) -> error::Result<()>
@@ -92,7 +91,7 @@ where
 
 /// Helper to test update operation
 pub(crate) fn test_update<T>(
-    address: &Rc<Address>,
+    address: &Address,
     base_slot: U256,
     initial: &T,
     updated: &T,
@@ -116,7 +115,7 @@ where
 }
 
 /// Helper to test delete operation
-pub(crate) fn test_delete<T>(address: &Rc<Address>, base_slot: U256, data: &T) -> error::Result<()>
+pub(crate) fn test_delete<T>(address: &Address, base_slot: U256, data: &T) -> error::Result<()>
 where
     T: Storable + Clone + PartialEq + Default + std::fmt::Debug,
 {

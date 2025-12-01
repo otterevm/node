@@ -12,7 +12,7 @@
 //! - Element at index `i` starts at slot `data_start + i * T::SLOTS`
 
 use alloy::primitives::{Address, U256};
-use std::{marker::PhantomData, rc::Rc};
+use std::marker::PhantomData;
 
 use crate::{
     error::{Result, TempoPrecompileError},
@@ -31,7 +31,7 @@ where
     const LAYOUT: Layout = Layout::Slots(1);
     type Handler = VecHandler<T>;
 
-    fn handle(slot: U256, _ctx: LayoutCtx, address: Rc<Address>) -> Self::Handler {
+    fn handle(slot: U256, _ctx: LayoutCtx, address: Address) -> Self::Handler {
         VecHandler::new(slot, address)
     }
 }
@@ -162,7 +162,7 @@ where
     T: Storable,
 {
     len_slot: U256,
-    address: Rc<Address>,
+    address: Address,
     _ty: PhantomData<T>,
 }
 
@@ -195,7 +195,7 @@ where
 {
     /// Creates a new handler for the vector at the given base slot and address.
     #[inline]
-    pub fn new(len_slot: U256, address: Rc<Address>) -> Self {
+    pub fn new(len_slot: U256, address: Address) -> Self {
         Self {
             len_slot,
             address,
@@ -221,13 +221,13 @@ where
     /// Returns a `Slot` accessor for full-vector operations.
     #[inline]
     fn as_slot(&self) -> Slot<Vec<T>> {
-        Slot::new(self.len_slot, Rc::clone(&self.address))
+        Slot::new(self.len_slot, self.address)
     }
 
     /// Returns the length of the vector.
     #[inline]
     pub fn len(&self) -> Result<usize> {
-        let slot = Slot::<U256>::new(self.len_slot, Rc::clone(&self.address));
+        let slot = Slot::<U256>::new(self.len_slot, self.address);
         Ok(slot.read()?.to::<usize>())
     }
 
@@ -255,7 +255,7 @@ where
             (data_start + U256::from(index * T::SLOTS), LayoutCtx::FULL)
         };
 
-        T::handle(base_slot, layout_ctx, Rc::clone(&self.address))
+        T::handle(base_slot, layout_ctx, self.address)
     }
 
     /// Pushes a new element to the end of the vector.
@@ -275,7 +275,7 @@ where
         elem_slot.write(value)?;
 
         // Increment length
-        let mut length_slot = Slot::<U256>::new(self.len_slot, Rc::clone(&self.address));
+        let mut length_slot = Slot::<U256>::new(self.len_slot, self.address);
         length_slot.write(U256::from(length + 1))
     }
 
@@ -304,7 +304,7 @@ where
         elem_slot.delete()?;
 
         // Decrement length
-        let mut length_slot = Slot::<U256>::new(self.len_slot, Rc::clone(&self.address));
+        let mut length_slot = Slot::<U256>::new(self.len_slot, self.address);
         length_slot.write(U256::from(last_index))?;
 
         Ok(Some(element))
@@ -492,11 +492,10 @@ mod tests {
     };
     use alloy::primitives::Address;
     use proptest::prelude::*;
-    use std::rc::Rc;
     use tempo_precompiles_macros::Storable;
 
-    fn setup_storage() -> (HashMapStorageProvider, Rc<Address>) {
-        (HashMapStorageProvider::new(1), Rc::new(Address::random()))
+    fn setup_storage() -> (HashMapStorageProvider, Address) {
+        (HashMapStorageProvider::new(1), Address::random())
     }
 
     // -- TEST HELPERS -------------------------------------------------------------
@@ -522,8 +521,8 @@ mod tests {
     #[test]
     fn test_vec_handler_slot_computation() {
         let len_slot = U256::random();
-        let address = Rc::new(Address::random());
-        let handler = VecHandler::<u8>::new(len_slot, Rc::clone(&address));
+        let address = Address::random();
+        let handler = VecHandler::<u8>::new(len_slot, address);
 
         // Verify base slot is stored correctly
         assert_eq!(handler.len_slot, len_slot);
@@ -550,8 +549,8 @@ mod tests {
     #[test]
     fn test_vec_at_element_slot_packed() {
         let len_slot = U256::random();
-        let address = Rc::new(Address::random());
-        let handler = VecHandler::<u8>::new(len_slot, Rc::clone(&address));
+        let address = Address::random();
+        let handler = VecHandler::<u8>::new(len_slot, address);
 
         let data_start = calc_data_slot(len_slot);
 
@@ -578,8 +577,8 @@ mod tests {
     #[test]
     fn test_vec_at_element_slot_unpacked() {
         let len_slot = U256::random();
-        let address = Rc::new(Address::random());
-        let handler = VecHandler::<U256>::new(len_slot, Rc::clone(&address));
+        let address = Address::random();
+        let handler = VecHandler::<U256>::new(len_slot, address);
 
         let data_start = calc_data_slot(len_slot);
 
@@ -598,8 +597,8 @@ mod tests {
     #[test]
     fn test_vec_at_determinism() {
         let len_slot = U256::random();
-        let address = Rc::new(Address::random());
-        let handler = VecHandler::<u16>::new(len_slot, Rc::clone(&address));
+        let address = Address::random();
+        let handler = VecHandler::<u16>::new(len_slot, address);
 
         // Same index should always produce same slot
         let slot1 = handler.at(10);
@@ -620,8 +619,8 @@ mod tests {
     #[test]
     fn test_vec_at_different_indices() {
         let len_slot = U256::random();
-        let address = Rc::new(Address::random());
-        let handler = VecHandler::<u16>::new(len_slot, Rc::clone(&address));
+        let address = Address::random();
+        let handler = VecHandler::<u16>::new(len_slot, address);
 
         // Different indices should produce different slot/offset combinations
         let slot5 = handler.at(5);

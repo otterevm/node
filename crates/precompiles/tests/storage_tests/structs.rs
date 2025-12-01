@@ -19,7 +19,7 @@ fn test_struct_storage() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::__new(*address);
+    let mut layout = Layout::__new(address);
     let _guard = storage.enter().unwrap();
 
     // Verify actual slot assignments
@@ -105,7 +105,7 @@ fn test_delete_struct_field_in_contract() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::__new(*address);
+    let mut layout = Layout::__new(address);
     let _guard = storage.enter().unwrap();
 
     let block = TestBlock {
@@ -152,7 +152,7 @@ fn test_user_profile_struct_in_contract() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::__new(*address);
+    let mut layout = Layout::__new(address);
     let _guard = storage.enter().unwrap();
 
     let profile = UserProfile {
@@ -207,7 +207,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::__new(*address);
+        let mut layout = Layout::__new(address);
         let _guard = storage.enter().unwrap();
 
         // Store random values
@@ -250,7 +250,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::__new(*address);
+        let mut layout = Layout::__new(address);
         let _guard = storage.enter().unwrap();
 
         // Store random values

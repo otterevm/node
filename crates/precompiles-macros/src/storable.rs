@@ -103,7 +103,7 @@ pub(crate) fn derive_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             const LAYOUT: crate::storage::Layout = crate::storage::Layout::Slots(#mod_ident::SLOT_COUNT);
             type Handler = #handler_name;
 
-            fn handle(slot: ::alloy::primitives::U256, _ctx: crate::storage::LayoutCtx, address: ::std::rc::Rc<::alloy::primitives::Address>) -> Self::Handler {
+            fn handle(slot: ::alloy::primitives::U256, _ctx: crate::storage::LayoutCtx, address: ::alloy::primitives::Address) -> Self::Handler {
                 #handler_name::new(slot, address)
             }
         }
@@ -228,7 +228,7 @@ fn gen_handler_struct(
         ///
         /// Provides individual field access via public fields and whole-struct operations.
         pub struct #handler_name {
-            address: ::std::rc::Rc<::alloy::primitives::Address>,
+            address: ::alloy::primitives::Address,
             base_slot: ::alloy::primitives::U256,
             #(#handler_fields,)*
         }
@@ -236,13 +236,11 @@ fn gen_handler_struct(
         impl #handler_name {
             /// Creates a new handler for the struct at the given base slot.
             #[inline]
-            pub fn new(base_slot: ::alloy::primitives::U256, address: ::std::rc::Rc<::alloy::primitives::Address>) -> Self {
-                let address_rc = address;
-
+            pub fn new(base_slot: ::alloy::primitives::U256, address: ::alloy::primitives::Address) -> Self {
                 Self {
                     base_slot,
                     #(#field_inits,)*
-                    address: address_rc,
+                    address,
                 }
             }
 
@@ -260,7 +258,7 @@ fn gen_handler_struct(
             fn as_slot(&self) -> crate::storage::Slot<#struct_name> {
                 crate::storage::Slot::<#struct_name>::new(
                     self.base_slot,
-                    ::std::rc::Rc::clone(&self.address)
+                    self.address
                 )
             }
         }

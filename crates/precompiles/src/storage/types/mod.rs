@@ -12,7 +12,6 @@ mod primitives;
 
 use crate::{error::Result, storage::StorageOps};
 use alloy::primitives::{Address, U256};
-use std::rc::Rc;
 
 /// Describes how a type is laid out in EVM storage.
 ///
@@ -149,7 +148,7 @@ pub trait StorableType {
     type Handler;
 
     /// Creates a handler for this type at the given storage location.
-    fn handle(slot: U256, ctx: LayoutCtx, address: Rc<Address>) -> Self::Handler;
+    fn handle(slot: U256, ctx: LayoutCtx, address: Address) -> Self::Handler;
 }
 
 /// Abstracts reading, writing, and deleting values for [`Storable`] types.

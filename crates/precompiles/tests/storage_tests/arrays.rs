@@ -20,7 +20,7 @@ fn test_array_storage() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::__new(*address);
+    let mut layout = Layout::__new(address);
     let _guard = storage.enter().unwrap();
 
     // Verify actual slot assignments
@@ -120,7 +120,7 @@ fn test_array_element_access() {
     }
 
     let (mut storage, address) = setup_storage();
-    let mut layout = Layout::__new(*address);
+    let mut layout = Layout::__new(address);
     let _guard = storage.enter().unwrap();
 
     // Test packed array element access (u8 elements, T::BYTES = 1 <= 16)
@@ -220,7 +220,7 @@ proptest! {
         }
 
         let (mut storage, address) = setup_storage();
-        let mut layout = Layout::__new(*address);
+        let mut layout = Layout::__new(address);
         let _guard = storage.enter().unwrap();
 
         // Store random values
