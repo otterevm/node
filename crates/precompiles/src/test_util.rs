@@ -22,7 +22,30 @@ use tempo_contracts::precompiles::{TIP20_FACTORY_ADDRESS, UnknownFunctionSelecto
 /// The macro builds a `HashMapStorageProvider`, and wraps the body in `StorageContext::enter`.
 #[macro_export]
 macro_rules! test_precompile {
-    // Default hardfork (no spec)
+    // With hardfork spec and addresses
+    ($(#[$attr:meta])* $name:ident, $spec_head:ident $(:: $spec_tail:ident)+, |$($addr:ident),+| $body:block) => {
+        #[test]
+        $(#[$attr])*
+        fn $name() -> eyre::Result<()> {
+            let mut storage = $crate::storage::hashmap::HashMapStorageProvider::new(1)
+                .with_spec($spec_head $(:: $spec_tail)+);
+            $(let $addr = alloy::primitives::Address::random();)+
+            $crate::storage::StorageContext::enter(&mut storage, || $body)
+        }
+    };
+
+    // With hardfork spec, no addresses
+    ($(#[$attr:meta])* $name:ident, $spec_head:ident $(:: $spec_tail:ident)+, || $body:block) => {
+        #[test]
+        $(#[$attr])*
+        fn $name() -> eyre::Result<()> {
+            let mut storage = $crate::storage::hashmap::HashMapStorageProvider::new(1)
+                .with_spec($spec_head $(:: $spec_tail)+);
+            $crate::storage::StorageContext::enter(&mut storage, || $body)
+        }
+    };
+
+    // No spec, with addresses
     ($(#[$attr:meta])* $name:ident, |$($addr:ident),+| $body:block) => {
         #[test]
         $(#[$attr])*
@@ -33,14 +56,12 @@ macro_rules! test_precompile {
         }
     };
 
-    // With hardfork spec (detects paths containing ::)
-    ($(#[$attr:meta])* $name:ident, $spec_head:ident $(:: $spec_tail:ident)+, |$($addr:ident),+| $body:block) => {
+    // No spec, no addresses
+    ($(#[$attr:meta])* $name:ident, || $body:block) => {
         #[test]
         $(#[$attr])*
         fn $name() -> eyre::Result<()> {
-            let mut storage = $crate::storage::hashmap::HashMapStorageProvider::new(1)
-                .with_spec($spec_head $(:: $spec_tail)+);
-            $(let $addr = alloy::primitives::Address::random();)+
+            let mut storage = $crate::storage::hashmap::HashMapStorageProvider::new(1);
             $crate::storage::StorageContext::enter(&mut storage, || $body)
         }
     };

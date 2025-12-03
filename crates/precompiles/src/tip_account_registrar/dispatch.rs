@@ -56,20 +56,15 @@ impl Precompile for TipAccountRegistrar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        storage::{StorageContext, hashmap::HashMapStorageProvider},
-        test_util::check_selector_coverage,
-    };
+    use crate::{test_precompile, test_util::check_selector_coverage};
+    use tempo_chainspec::hardfork::TempoHardfork;
     use tempo_contracts::precompiles::ITipAccountRegistrar::ITipAccountRegistrarCalls;
 
-    #[test]
-    fn tip_account_registrar_test_selector_coverage() {
-        use tempo_chainspec::hardfork::TempoHardfork;
-
-        // Pre-Moderato: v1 signature should be supported, v2 should be unsupported
-        let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Adagio);
-
-        StorageContext::enter(&mut storage, || {
+    test_precompile!(
+        selector_coverage_pre_moderato,
+        TempoHardfork::Adagio,
+        || {
+            // Pre-Moderato: v1 signature should be supported, v2 should be unsupported
             let mut registrar = TipAccountRegistrar::new();
 
             let unsupported_pre = check_selector_coverage(
@@ -91,12 +86,16 @@ mod tests {
                 ITipAccountRegistrar::delegateToDefault_1Call::SELECTOR,
                 "Expected delegateToDefault v2 to be unsupported pre-Moderato"
             );
-        });
 
-        // Post-Moderato: v2 signature should be supported, v1 should be unsupported
-        let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::Moderato);
+            Ok(())
+        }
+    );
 
-        StorageContext::enter(&mut storage, || {
+    test_precompile!(
+        selector_coverage_post_moderato,
+        TempoHardfork::Moderato,
+        || {
+            // Post-Moderato: v2 signature should be supported, v1 should be unsupported
             let mut registrar = TipAccountRegistrar::new();
 
             let unsupported_post = check_selector_coverage(
@@ -118,6 +117,8 @@ mod tests {
                 ITipAccountRegistrar::delegateToDefault_0Call::SELECTOR,
                 "Expected delegateToDefault v1 to be unsupported post-Moderato"
             );
-        })
-    }
+
+            Ok(())
+        }
+    );
 }

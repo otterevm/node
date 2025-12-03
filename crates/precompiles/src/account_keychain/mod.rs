@@ -468,15 +468,14 @@ impl AccountKeychain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{StorageContext, hashmap::HashMapStorageProvider};
-    use crate::test_util::setup_storage;
+    use crate::{error::TempoPrecompileError, test_precompile};
     use alloy::primitives::{Address, U256};
     use tempo_contracts::precompiles::IAccountKeychain::SignatureType;
 
     // Helper function to assert unauthorized error
-    fn assert_unauthorized_error(error: crate::error::TempoPrecompileError) {
+    fn assert_unauthorized_error(error: TempoPrecompileError) {
         match error {
-            crate::error::TempoPrecompileError::AccountKeychainError(e) => {
+            TempoPrecompileError::AccountKeychainError(e) => {
                 assert!(
                     matches!(e, AccountKeychainError::UnauthorizedCaller(_)),
                     "Expected UnauthorizedCaller error, got: {e:?}"
@@ -486,58 +485,47 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_transaction_key_transient_storage() -> eyre::Result<()> {
-        let (mut storage, access_key_addr) = setup_storage();
+    test_precompile!(transaction_key_transient_storage, |access_key_addr| {
+        let mut keychain = AccountKeychain::new();
 
-        StorageContext::enter(&mut storage, || {
-            let mut keychain = AccountKeychain::new();
+        // Test 1: Initially transaction key should be zero
+        let initial_key = keychain.transaction_key.t_read()?;
+        assert_eq!(
+            initial_key,
+            Address::ZERO,
+            "Initial transaction key should be zero"
+        );
 
-            // Test 1: Initially transaction key should be zero
-            let initial_key = keychain.transaction_key.t_read()?;
-            assert_eq!(
-                initial_key,
-                Address::ZERO,
-                "Initial transaction key should be zero"
-            );
+        // Test 2: Set transaction key to an access key address
+        keychain.set_transaction_key(access_key_addr)?;
 
-            // Test 2: Set transaction key to an access key address
-            keychain.set_transaction_key(access_key_addr)?;
+        // Test 3: Verify it was stored
+        let loaded_key = keychain.transaction_key.t_read()?;
+        assert_eq!(loaded_key, access_key_addr, "Transaction key should be set");
 
-            // Test 3: Verify it was stored
-            let loaded_key = keychain.transaction_key.t_read()?;
-            assert_eq!(loaded_key, access_key_addr, "Transaction key should be set");
+        // Test 4: Verify getTransactionKey works
+        let get_tx_key_call = getTransactionKeyCall {};
+        let result = keychain.get_transaction_key(get_tx_key_call, Address::ZERO)?;
+        assert_eq!(
+            result, access_key_addr,
+            "getTransactionKey should return the set key"
+        );
 
-            // Test 4: Verify getTransactionKey works
-            let get_tx_key_call = getTransactionKeyCall {};
-            let result = keychain.get_transaction_key(get_tx_key_call, Address::ZERO)?;
-            assert_eq!(
-                result, access_key_addr,
-                "getTransactionKey should return the set key"
-            );
+        // Test 5: Clear transaction key
+        keychain.set_transaction_key(Address::ZERO)?;
+        let cleared_key = keychain.transaction_key.t_read()?;
+        assert_eq!(
+            cleared_key,
+            Address::ZERO,
+            "Transaction key should be cleared"
+        );
 
-            // Test 5: Clear transaction key
-            keychain.set_transaction_key(Address::ZERO)?;
-            let cleared_key = keychain.transaction_key.t_read()?;
-            assert_eq!(
-                cleared_key,
-                Address::ZERO,
-                "Transaction key should be cleared"
-            );
+        Ok(())
+    });
 
-            Ok(())
-        })
-    }
-
-    #[test]
-    fn test_admin_operations_blocked_with_access_key() -> eyre::Result<()> {
-        let (mut storage, _) = setup_storage();
-        let msg_sender = Address::from([0x01; 20]);
-        let existing_key = Address::from([0x02; 20]);
-        let access_key = Address::from([0x03; 20]);
-        let token = Address::from([0x04; 20]);
-
-        StorageContext::enter(&mut storage, || {
+    test_precompile!(
+        admin_operations_blocked_with_access_key,
+        |msg_sender, existing_key, access_key, token, other| {
             // Initialize the keychain
             let mut keychain = AccountKeychain::new();
             keychain.initialize()?;
@@ -558,7 +546,7 @@ mod tests {
 
             // Test 1: authorize_key should fail with access key
             let auth_call = authorizeKeyCall {
-                keyId: Address::from([0x05; 20]),
+                keyId: other,
                 signatureType: SignatureType::P256,
                 expiry: u64::MAX,
                 enforceLimits: true,
@@ -596,15 +584,12 @@ mod tests {
             assert_unauthorized_error(update_result.unwrap_err());
 
             Ok(())
-        })
-    }
+        }
+    );
 
-    #[test]
-    fn test_replay_protection_revoked_key_cannot_be_reauthorized() -> eyre::Result<()> {
-        let (mut storage, account) = setup_storage();
-        let key_id = Address::random();
-
-        StorageContext::enter(&mut storage, || {
+    test_precompile!(
+        replay_protection_revoked_key_cannot_be_reauthorized,
+        |account, key_id| {
             let mut keychain = AccountKeychain::new();
             keychain.initialize()?;
 
@@ -651,7 +636,7 @@ mod tests {
 
             // Verify it's the correct error
             match replay_result.unwrap_err() {
-                crate::error::TempoPrecompileError::AccountKeychainError(e) => {
+                TempoPrecompileError::AccountKeychainError(e) => {
                     assert!(
                         matches!(e, AccountKeychainError::KeyAlreadyRevoked(_)),
                         "Expected KeyAlreadyRevoked error, got: {e:?}"
@@ -660,16 +645,12 @@ mod tests {
                 e => panic!("Expected AccountKeychainError, got: {e:?}"),
             }
             Ok(())
-        })
-    }
+        }
+    );
 
-    #[test]
-    fn test_different_key_id_can_be_authorized_after_revocation() -> eyre::Result<()> {
-        let (mut storage, account) = setup_storage();
-        let key_id_1 = Address::random();
-        let key_id_2 = Address::random();
-
-        StorageContext::enter(&mut storage, || {
+    test_precompile!(
+        different_key_id_can_be_authorized_after_revocation,
+        |account, key_id_1, key_id_2| {
             let mut keychain = AccountKeychain::new();
             keychain.initialize()?;
 
@@ -708,6 +689,6 @@ mod tests {
             assert!(!key_info.isRevoked);
 
             Ok(())
-        })
-    }
+        }
+    );
 }
