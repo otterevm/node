@@ -26,11 +26,13 @@ struct Validator {
     outbound_address: String,
 }
 
-// QUESTION(rusowsky): should we delete `validator_count`, as that info is available via `validators_array`?
 /// Validator Config precompile for managing consensus validators
 #[contract]
 pub struct ValidatorConfig {
     owner: Address,
+    // NOTE(rusowsky): we delete `validator_count`, as that info is available via `validators_array.len()`
+    // However, such change will have to be coordinated in a hardfork. Additionally, we must ensure that
+    // `validators_array` and `validators` are kept in slots 2 and 3 to preserve the storage layout.
     validator_count: u64,
     validators_array: Vec<Address>,
     validators: Mapping<Address, Validator>,
@@ -91,7 +93,6 @@ impl ValidatorConfig {
         let count = self.validator_count()?;
         let mut validators = Vec::new();
 
-        // QUESTION(rusowsky): should we replace this with `self.validators_array.read()`?
         for i in 0..count {
             // Read validator address from the array at index i
             let validator_address = self.validators_array.at(i as usize).read()?;
