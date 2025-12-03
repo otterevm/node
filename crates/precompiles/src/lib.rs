@@ -17,24 +17,24 @@ pub mod tip20_rewards_registry;
 pub mod tip403_registry;
 pub mod tip_account_registrar;
 pub mod tip_fee_manager;
-// pub mod validator_config;
+pub mod validator_config;
 
 // #[cfg(any(test, feature = "test-utils"))]
 pub mod test_util;
 
 use crate::{
-    // account_keychain::AccountKeychain,
-    // nonce::NonceManager,
-    // path_usd::PathUSD,
+    account_keychain::AccountKeychain,
+    nonce::NonceManager,
+    path_usd::PathUSD,
     // stablecoin_exchange::StablecoinExchange,
     storage::{PrecompileStorageProvider, StorageContext, evm::EvmPrecompileStorageProvider},
-    // tip_account_registrar::TipAccountRegistrar,
-    // tip_fee_manager::TipFeeManager,
+    tip_account_registrar::TipAccountRegistrar,
+    tip_fee_manager::TipFeeManager,
     tip20::{TIP20Token, address_to_token_id_unchecked, is_tip20},
     tip20_factory::TIP20Factory,
     tip20_rewards_registry::TIP20RewardsRegistry,
     tip403_registry::TIP403Registry,
-    // validator_config::ValidatorConfig,
+    validator_config::ValidatorConfig,
 };
 use tempo_chainspec::hardfork::TempoHardfork;
 
@@ -137,37 +137,32 @@ macro_rules! tempo_precompile {
     };
 }
 
-// pub struct TipFeeManagerPrecompile;
-// impl TipFeeManagerPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("TipFeeManager", |input| TipFeeManager::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec)
-//         ))
-//     }
-// }
+pub struct TipFeeManagerPrecompile;
+impl TipFeeManagerPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TipFeeManager", chain_id, spec, |input| {
+            TipFeeManager::new()
+        })
+    }
+}
 
-// pub struct TipAccountRegistrarPrecompile;
-// impl TipAccountRegistrarPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("TipAccountRegistrar", |input| TipAccountRegistrar::new(
-//             &mut crate::storage::evm::EvmPrecompileStorageProvider::new(
-//                 input.internals,
-//                 input.gas,
-//                 chain_id,
-//                 spec
-//             ),
-//         ))
-//     }
-// }
+pub struct TipAccountRegistrarPrecompile;
+impl TipAccountRegistrarPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TipAccountRegistrar", chain_id, spec, |input| {
+            TipAccountRegistrar::new()
+        })
+    }
+}
 
-// pub struct TIP20RewardsRegistryPrecompile;
-// impl TIP20RewardsRegistryPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("TIP20RewardsRegistry", |input| TIP20RewardsRegistry::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec),
-//         ))
-//     }
-// }
+pub struct TIP20RewardsRegistryPrecompile;
+impl TIP20RewardsRegistryPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TIP20RewardsRegistry", chain_id, spec, |input| {
+            TIP20RewardsRegistry::new()
+        })
+    }
+}
 
 pub struct TIP403RegistryPrecompile;
 impl TIP403RegistryPrecompile {
@@ -178,25 +173,24 @@ impl TIP403RegistryPrecompile {
     }
 }
 
-// pub struct TIP20FactoryPrecompile;
-// impl TIP20FactoryPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("TIP20Factory", |input| TIP20Factory::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec)
-//         ))
-//     }
-// }
+pub struct TIP20FactoryPrecompile;
+impl TIP20FactoryPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TIP20Factory", chain_id, spec, |input| {
+            TIP20Factory::new()
+        })
+    }
+}
 
-// pub struct TIP20Precompile;
-// impl TIP20Precompile {
-//     pub fn create(address: Address, chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         let token_id = address_to_token_id_unchecked(address);
-//         tempo_precompile!("TIP20Token", |input| TIP20Token::new(
-//             token_id,
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec),
-//         ))
-//     }
-// }
+pub struct TIP20Precompile;
+impl TIP20Precompile {
+    pub fn create(address: Address, chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        let token_id = address_to_token_id_unchecked(address);
+        tempo_precompile!("TIP20Token", chain_id, spec, |input| {
+            TIP20Token::new(token_id)
+        })
+    }
+}
 
 // pub struct StablecoinExchangePrecompile;
 // impl StablecoinExchangePrecompile {
@@ -207,41 +201,39 @@ impl TIP403RegistryPrecompile {
 //     }
 // }
 
-// pub struct NoncePrecompile;
-// impl NoncePrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("NonceManager", |input| NonceManager::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec)
-//         ))
-//     }
-// }
+pub struct NoncePrecompile;
+impl NoncePrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("NonceManager", chain_id, spec, |input| {
+            NonceManager::new()
+        })
+    }
+}
 
-// pub struct AccountKeychainPrecompile;
-// impl AccountKeychainPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("AccountKeychain", |input| AccountKeychain::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec)
-//         ))
-//     }
-// }
+pub struct AccountKeychainPrecompile;
+impl AccountKeychainPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("AccountKeychain", chain_id, spec, |input| {
+            AccountKeychain::new()
+        })
+    }
+}
 
-// pub struct PathUSDPrecompile;
-// impl PathUSDPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("PathUSD", |input| PathUSD::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec),
-//         ))
-//     }
-// }
+pub struct PathUSDPrecompile;
+impl PathUSDPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("PathUSD", chain_id, spec, |input| { PathUSD::new() })
+    }
+}
 
-// pub struct ValidatorConfigPrecompile;
-// impl ValidatorConfigPrecompile {
-//     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-//         tempo_precompile!("ValidatorConfig", |input| ValidatorConfig::new(
-//             &mut EvmPrecompileStorageProvider::new(input.internals, input.gas, chain_id, spec),
-//         ))
-//     }
-// }
+pub struct ValidatorConfigPrecompile;
+impl ValidatorConfigPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("ValidatorConfig", chain_id, spec, |input| {
+            ValidatorConfig::new()
+        })
+    }
+}
 
 #[inline]
 fn metadata<T: SolCall>(f: impl FnOnce() -> Result<T::Return>) -> PrecompileResult {

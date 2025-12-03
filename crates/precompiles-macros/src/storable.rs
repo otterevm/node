@@ -140,18 +140,6 @@ pub(crate) fn derive_impl(input: DeriveInput) -> syn::Result<TokenStream> {
 
             // delete uses default implementation from trait
         }
-
-        // `StorageKey` implementation: byte encoding for mapping keys
-        impl #impl_generics crate::storage::StorageKey for #strukt #ty_generics #where_clause {
-            fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
-                use crate::storage::StorageKey;
-                let mut bytes = Vec::with_capacity(#mod_ident::SLOT_COUNT * 32);
-                #(
-                    bytes.extend_from_slice(self.#direct_names.as_storage_bytes().as_ref());
-                )*
-                bytes
-            }
-        }
     };
 
     // Generate array implementations if requested

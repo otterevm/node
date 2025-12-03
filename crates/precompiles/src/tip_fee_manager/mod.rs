@@ -10,7 +10,7 @@ pub use tempo_contracts::precompiles::{
 use crate::{
     DEFAULT_FEE_TOKEN_POST_ALLEGRETTO, DEFAULT_FEE_TOKEN_PRE_ALLEGRETTO, PATH_USD_ADDRESS,
     error::{Result, TempoPrecompileError},
-    storage::{Handler, Mapping},
+    storage::{Handler, Mapping, StorableType, StorageKey},
     tip_fee_manager::amm::{Pool, compute_amount_out},
     tip20::{
         ITIP20, TIP20Token, address_to_token_id_unchecked, is_tip20, token_id_to_address,
@@ -26,6 +26,15 @@ use tempo_precompiles_macros::{Storable, contract};
 pub struct TokenPair {
     pub user_token: u64,
     pub validator_token: u64,
+}
+
+impl StorageKey for TokenPair {
+    fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
+        let mut bytes = Vec::with_capacity(TokenPair::BYTES);
+        bytes.extend_from_slice(self.user_token.as_storage_bytes().as_ref());
+        bytes.extend_from_slice(self.validator_token.as_storage_bytes().as_ref());
+        bytes
+    }
 }
 
 #[contract]
