@@ -144,6 +144,7 @@ pub fn setup_storage() -> (HashMapStorageProvider, Address) {
 /// Handles PathUSD initialization, factory creation, role grants, minting,
 /// approvals, and reward configuration in a single chainable API.
 #[derive(Default)]
+#[cfg(any(test, feature = "test-utils"))]
 pub struct TIP20Builder {
     name: String,
     symbol: String,
@@ -158,6 +159,7 @@ pub struct TIP20Builder {
     reward_streams: Vec<(U256, u32)>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl TIP20Builder {
     /// Create a new token builder with required fields.
     ///
@@ -328,8 +330,9 @@ impl TIP20Builder {
 }
 
 /// Checks if a contract at the given address has bytecode deployed.
+#[cfg(any(test, feature = "test-utils"))]
 fn is_initialized(address: Address) -> bool {
-    crate::storage::StorageContext.has_bytecode(address)
+    crate::storage::StorageContext::default().has_bytecode(address)
 }
 
 /// Test helper function for constructing EVM words from hex string literals.
