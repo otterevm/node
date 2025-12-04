@@ -334,21 +334,20 @@ mod tests {
     }
 
     #[test]
-    fn test_tick_price_conversion() {
+    fn test_tick_price_conversion() -> eyre::Result<()> {
         // Test at peg price (tick 0)
         assert_eq!(tick_to_price(0), PRICE_SCALE);
-        assert_eq!(price_to_tick_post_moderato(PRICE_SCALE).unwrap(), 0);
+        assert_eq!(price_to_tick_post_moderato(PRICE_SCALE)?, 0);
 
         // Test above peg
         assert_eq!(tick_to_price(100), PRICE_SCALE + 100);
-        assert_eq!(price_to_tick_post_moderato(PRICE_SCALE + 100).unwrap(), 100);
+        assert_eq!(price_to_tick_post_moderato(PRICE_SCALE + 100)?, 100);
 
         // Test below peg
         assert_eq!(tick_to_price(-100), PRICE_SCALE - 100);
-        assert_eq!(
-            price_to_tick_post_moderato(PRICE_SCALE - 100).unwrap(),
-            -100
-        );
+        assert_eq!(price_to_tick_post_moderato(PRICE_SCALE - 100)?, -100);
+
+        Ok(())
     }
 
     #[test]
@@ -456,248 +455,276 @@ mod tests {
         );
     }
 
-    // mod bitmap_tests {
-    //     use super::*;
-    //     use crate::storage::{ContractStorage, hashmap::HashMapStorageProvider};
+    mod bitmap_tests {
+        use super::*;
+        use crate::{
+            stablecoin_exchange::StablecoinExchange, storage::hashmap::HashMapStorageProvider,
+        };
+        const BOOK_KEY: B256 = B256::ZERO;
 
-    //     // Test wrapper that implements ContractStorage for HashMapStorageProvider
-    //     struct TestStorage(HashMapStorageProvider);
+        #[test]
+        fn test_tick_lifecycle() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //     impl TestStorage {
-    //         fn new(chain_id: u64) -> Self {
-    //             Self(HashMapStorageProvider::new(chain_id))
-    //         }
-    //     }
+                // Test full lifecycle (set, check, clear, check) for positive and negative ticks
+                // Include boundary cases, word boundaries, and various representative values
+                let test_ticks = [
+                    MIN_TICK, -1000, -500, -257, -256, -100, -1, 0, 1, 100, 255, 256, 500, 1000,
+                    MAX_TICK,
+                ];
 
-    //     impl ContractStorage for TestStorage {
-    //         type Storage = HashMapStorageProvider;
+                for &tick in &test_ticks {
+                    // Initially not set
+                    assert!(
+                        !book_handler.is_tick_initialized(tick, true)?,
+                        "Tick {tick} should not be initialized initially"
+                    );
 
-    //         fn address(&self) -> Address {
-    //             Address::ZERO
-    //         }
+                    // Set the bit
+                    book_handler.set_tick_bit(tick, true)?;
 
-    //         fn storage(&mut self) -> &mut Self::Storage {
-    //             &mut self.0
-    //         }
-    //     }
+                    assert!(
+                        book_handler.is_tick_initialized(tick, true)?,
+                        "Tick {tick} should be initialized after set"
+                    );
 
-    //     #[test]
-    //     fn test_tick_lifecycle() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
+                    // Clear the bit
+                    book_handler.delete_tick_bit(tick, true)?;
 
-    //         // Test full lifecycle (set, check, clear, check) for positive and negative ticks
-    //         // Include boundary cases, word boundaries, and various representative values
-    //         let test_ticks = [
-    //             MIN_TICK, -1000, -500, -257, -256, -100, -1, 0, 1, 100, 255, 256, 500, 1000,
-    //             MAX_TICK,
-    //         ];
+                    assert!(
+                        !book_handler.is_tick_initialized(tick, true)?,
+                        "Tick {tick} should not be initialized after clear"
+                    );
+                }
 
-    //         for &tick in &test_ticks {
-    //             // Initially not set
-    //             assert!(
-    //                 !Orderbook::is_tick_initialized(&mut storage, book_key, tick, true).unwrap(),
-    //                 "Tick {tick} should not be initialized initially"
-    //             );
+                Ok(())
+            })
+        }
 
-    //             // Set the bit
-    //             Orderbook::set_tick_bit(&mut storage, book_key, tick, true).unwrap();
+        #[test]
+        fn test_boundary_ticks() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //             assert!(
-    //                 Orderbook::is_tick_initialized(&mut storage, book_key, tick, true).unwrap(),
-    //                 "Tick {tick} should be initialized after set"
-    //             );
+                // Test MIN_TICK
+                book_handler.set_tick_bit(MIN_TICK, true)?;
 
-    //             // Clear the bit
-    //             Orderbook::clear_tick_bit(&mut storage, book_key, tick, true).unwrap();
+                assert!(
+                    book_handler.is_tick_initialized(MIN_TICK, true)?,
+                    "MIN_TICK should be settable"
+                );
 
-    //             assert!(
-    //                 !Orderbook::is_tick_initialized(&mut storage, book_key, tick, true).unwrap(),
-    //                 "Tick {tick} should not be initialized after clear"
-    //             );
-    //         }
-    //     }
+                // Test MAX_TICK (use different storage for ask side)
+                book_handler.set_tick_bit(MAX_TICK, false)?;
 
-    //     #[test]
-    //     fn test_boundary_ticks() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
+                assert!(
+                    book_handler.is_tick_initialized(MAX_TICK, false)?,
+                    "MAX_TICK should be settable"
+                );
 
-    //         // Test MIN_TICK
-    //         Orderbook::set_tick_bit(&mut storage, book_key, MIN_TICK, true).unwrap();
+                // Clear MIN_TICK
+                book_handler.delete_tick_bit(MIN_TICK, true)?;
 
-    //         assert!(
-    //             Orderbook::is_tick_initialized(&mut storage, book_key, MIN_TICK, true).unwrap(),
-    //             "MIN_TICK should be settable"
-    //         );
+                assert!(
+                    !book_handler.is_tick_initialized(MIN_TICK, true)?,
+                    "MIN_TICK should be clearable"
+                );
+                Ok(())
+            })
+        }
 
-    //         // Test MAX_TICK (use different storage for ask side)
-    //         Orderbook::set_tick_bit(&mut storage, book_key, MAX_TICK, false).unwrap();
+        #[test]
+        fn test_bid_and_ask_separate() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //         assert!(
-    //             Orderbook::is_tick_initialized(&mut storage, book_key, MAX_TICK, false).unwrap(),
-    //             "MAX_TICK should be settable"
-    //         );
+                let tick = 100;
 
-    //         // Clear MIN_TICK
-    //         Orderbook::clear_tick_bit(&mut storage, book_key, MIN_TICK, true).unwrap();
+                // Set as bid
+                book_handler.set_tick_bit(tick, true)?;
 
-    //         assert!(
-    //             !Orderbook::is_tick_initialized(&mut storage, book_key, MIN_TICK, true).unwrap(),
-    //             "MIN_TICK should be clearable"
-    //         );
-    //     }
+                assert!(
+                    book_handler.is_tick_initialized(tick, true)?,
+                    "Tick should be initialized for bids"
+                );
+                assert!(
+                    !book_handler.is_tick_initialized(tick, false)?,
+                    "Tick should not be initialized for asks"
+                );
 
-    //     #[test]
-    //     fn test_bid_and_ask_separate() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
-    //         let tick = 100;
+                // Set as ask
+                book_handler.set_tick_bit(tick, false)?;
 
-    //         // Set as bid
-    //         Orderbook::set_tick_bit(&mut storage, book_key, tick, true).unwrap();
+                assert!(
+                    book_handler.is_tick_initialized(tick, true)?,
+                    "Tick should still be initialized for bids"
+                );
+                assert!(
+                    book_handler.is_tick_initialized(tick, false)?,
+                    "Tick should now be initialized for asks"
+                );
+                Ok(())
+            })
+        }
 
-    //         assert!(
-    //             Orderbook::is_tick_initialized(&mut storage, book_key, tick, true).unwrap(),
-    //             "Tick should be initialized for bids"
-    //         );
-    //         assert!(
-    //             !Orderbook::is_tick_initialized(&mut storage, book_key, tick, false).unwrap(),
-    //             "Tick should not be initialized for asks"
-    //         );
+        #[test]
+        fn test_ticks_across_word_boundary() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //         // Set as ask
-    //         Orderbook::set_tick_bit(&mut storage, book_key, tick, false).unwrap();
+                // Ticks that span word boundary at 256
+                book_handler.set_tick_bit(255, true)?; // word_index = 0, bit_index = 255
+                book_handler.set_tick_bit(256, true)?; // word_index = 1, bit_index = 0
 
-    //         assert!(
-    //             Orderbook::is_tick_initialized(&mut storage, book_key, tick, true).unwrap(),
-    //             "Tick should still be initialized for bids"
-    //         );
-    //         assert!(
-    //             Orderbook::is_tick_initialized(&mut storage, book_key, tick, false).unwrap(),
-    //             "Tick should now be initialized for asks"
-    //         );
-    //     }
+                assert!(book_handler.is_tick_initialized(255, true)?);
+                assert!(book_handler.is_tick_initialized(256, true)?);
+                Ok(())
+            })
+        }
 
-    //     #[test]
-    //     fn test_ticks_across_word_boundary() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
+        #[test]
+        fn test_ticks_different_words() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //         // Ticks that span word boundary at 256
-    //         Orderbook::set_tick_bit(&mut storage, book_key, 255, true).unwrap(); // word_index = 0, bit_index = 255
-    //         Orderbook::set_tick_bit(&mut storage, book_key, 256, true).unwrap(); // word_index = 1, bit_index = 0
+                // Test ticks in different words (both positive and negative)
 
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, 255, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, 256, true).unwrap());
-    //     }
+                // Negative ticks in different words
+                book_handler.set_tick_bit(-1, true)?; // word_index = -1, bit_index = 255
+                book_handler.set_tick_bit(-100, true)?; // word_index = -1, bit_index = 156
+                book_handler.set_tick_bit(-256, true)?; // word_index = -1, bit_index = 0
+                book_handler.set_tick_bit(-257, true)?; // word_index = -2, bit_index = 255
 
-    //     #[test]
-    //     fn test_ticks_different_words() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
+                // Positive ticks in different words
+                book_handler.set_tick_bit(1, true)?; // word_index = 0, bit_index = 1
+                book_handler.set_tick_bit(100, true)?; // word_index = 0, bit_index = 100
+                book_handler.set_tick_bit(256, true)?; // word_index = 1, bit_index = 0
+                book_handler.set_tick_bit(512, true)?; // word_index = 2, bit_index = 0
 
-    //         // Test ticks in different words (both positive and negative)
+                // Verify negative ticks
+                assert!(book_handler.is_tick_initialized(-1, true)?);
+                assert!(book_handler.is_tick_initialized(-100, true)?);
+                assert!(book_handler.is_tick_initialized(-256, true)?);
+                assert!(book_handler.is_tick_initialized(-257, true)?);
 
-    //         // Negative ticks in different words
-    //         Orderbook::set_tick_bit(&mut storage, book_key, -1, true).unwrap(); // word_index = -1, bit_index = 255
-    //         Orderbook::set_tick_bit(&mut storage, book_key, -100, true).unwrap(); // word_index = -1, bit_index = 156
-    //         Orderbook::set_tick_bit(&mut storage, book_key, -256, true).unwrap(); // word_index = -1, bit_index = 0
-    //         Orderbook::set_tick_bit(&mut storage, book_key, -257, true).unwrap(); // word_index = -2, bit_index = 255
+                // Verify positive ticks
+                assert!(book_handler.is_tick_initialized(1, true)?);
+                assert!(book_handler.is_tick_initialized(100, true)?);
+                assert!(book_handler.is_tick_initialized(256, true)?);
+                assert!(book_handler.is_tick_initialized(512, true)?);
 
-    //         // Positive ticks in different words
-    //         Orderbook::set_tick_bit(&mut storage, book_key, 1, true).unwrap(); // word_index = 0, bit_index = 1
-    //         Orderbook::set_tick_bit(&mut storage, book_key, 100, true).unwrap(); // word_index = 0, bit_index = 100
-    //         Orderbook::set_tick_bit(&mut storage, book_key, 256, true).unwrap(); // word_index = 1, bit_index = 0
-    //         Orderbook::set_tick_bit(&mut storage, book_key, 512, true).unwrap(); // word_index = 2, bit_index = 0
+                // Verify unset ticks
+                assert!(
+                    !book_handler.is_tick_initialized(-50, true)?,
+                    "Unset negative tick should not be initialized"
+                );
+                assert!(
+                    !book_handler.is_tick_initialized(50, true)?,
+                    "Unset positive tick should not be initialized"
+                );
+                Ok(())
+            })
+        }
 
-    //         // Verify negative ticks
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, -1, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, -100, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, -256, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, -257, true).unwrap());
+        #[test]
+        fn test_set_tick_bit_out_of_bounds() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //         // Verify positive ticks
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, 1, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, 100, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, 256, true).unwrap());
-    //         assert!(Orderbook::is_tick_initialized(&mut storage, book_key, 512, true).unwrap());
+                // Test tick above MAX_TICK
+                let result = book_handler.set_tick_bit(MAX_TICK + 1, true);
+                assert!(result.is_err());
+                assert!(matches!(
+                    result.unwrap_err(),
+                    TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(
+                        _
+                    ))
+                ));
 
-    //         // Verify unset ticks
-    //         assert!(
-    //             !Orderbook::is_tick_initialized(&mut storage, book_key, -50, true).unwrap(),
-    //             "Unset negative tick should not be initialized"
-    //         );
-    //         assert!(
-    //             !Orderbook::is_tick_initialized(&mut storage, book_key, 50, true).unwrap(),
-    //             "Unset positive tick should not be initialized"
-    //         );
-    //     }
+                // Test tick below MIN_TICK
+                let result = book_handler.set_tick_bit(MIN_TICK - 1, true);
+                assert!(result.is_err());
+                assert!(matches!(
+                    result.unwrap_err(),
+                    TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(
+                        _
+                    ))
+                ));
+                Ok(())
+            })
+        }
 
-    //     #[test]
-    //     fn test_set_tick_bit_out_of_bounds() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
+        #[test]
+        fn test_clear_tick_bit_out_of_bounds() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let mut book_handler = exchange.books.at(BOOK_KEY);
 
-    //         // Test tick above MAX_TICK
-    //         let result = Orderbook::set_tick_bit(&mut storage, book_key, MAX_TICK + 1, true);
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(_))
-    //         ));
+                // Test tick above MAX_TICK
+                let result = book_handler.delete_tick_bit(MAX_TICK + 1, true);
+                assert!(result.is_err());
+                assert!(matches!(
+                    result.unwrap_err(),
+                    TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(
+                        _
+                    ))
+                ));
 
-    //         // Test tick below MIN_TICK
-    //         let result = Orderbook::set_tick_bit(&mut storage, book_key, MIN_TICK - 1, true);
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(_))
-    //         ));
-    //     }
+                // Test tick below MIN_TICK
+                let result = book_handler.delete_tick_bit(MIN_TICK - 1, true);
+                assert!(result.is_err());
+                assert!(matches!(
+                    result.unwrap_err(),
+                    TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(
+                        _
+                    ))
+                ));
+                Ok(())
+            })
+        }
 
-    //     #[test]
-    //     fn test_clear_tick_bit_out_of_bounds() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
+        #[test]
+        fn test_is_tick_initialized_out_of_bounds() -> eyre::Result<()> {
+            let mut storage = HashMapStorageProvider::new(1);
+            StorageContext::enter(&mut storage, || {
+                let exchange = StablecoinExchange::new();
+                let book_handler = exchange.books.at(BOOK_KEY);
 
-    //         // Test tick above MAX_TICK
-    //         let result = Orderbook::clear_tick_bit(&mut storage, book_key, MAX_TICK + 1, true);
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(_))
-    //         ));
+                // Test tick above MAX_TICK
+                let result = book_handler.is_tick_initialized(MAX_TICK + 1, true);
+                assert!(result.is_err());
+                assert!(matches!(
+                    result.unwrap_err(),
+                    TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(
+                        _
+                    ))
+                ));
 
-    //         // Test tick below MIN_TICK
-    //         let result = Orderbook::clear_tick_bit(&mut storage, book_key, MIN_TICK - 1, true);
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(_))
-    //         ));
-    //     }
-
-    //     #[test]
-    //     fn test_is_tick_initialized_out_of_bounds() {
-    //         let mut storage = TestStorage::new(1);
-    //         let book_key = B256::ZERO;
-
-    //         // Test tick above MAX_TICK
-    //         let result = Orderbook::is_tick_initialized(&mut storage, book_key, MAX_TICK + 1, true);
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(_))
-    //         ));
-
-    //         // Test tick below MIN_TICK
-    //         let result = Orderbook::is_tick_initialized(&mut storage, book_key, MIN_TICK - 1, true);
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(_))
-    //         ));
-    //     }
-    // }
+                // Test tick below MIN_TICK
+                let result = book_handler.is_tick_initialized(MIN_TICK - 1, true);
+                assert!(result.is_err());
+                assert!(matches!(
+                    result.unwrap_err(),
+                    TempoPrecompileError::StablecoinExchange(StablecoinExchangeError::InvalidTick(
+                        _
+                    ))
+                ));
+                Ok(())
+            })
+        }
+    }
 }
