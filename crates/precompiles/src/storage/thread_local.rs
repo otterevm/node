@@ -6,7 +6,7 @@ use tempo_chainspec::hardfork::TempoHardfork;
 
 use crate::{
     error::{Result, TempoPrecompileError},
-    storage::{PrecompileStorageProvider, hashmap},
+    storage::PrecompileStorageProvider,
 };
 
 scoped_thread_local!(static STORAGE: RefCell<&mut dyn PrecompileStorageProvider>);
@@ -164,19 +164,21 @@ impl StorageContext {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+use crate::storage::hashmap::HashMapStorageProvider;
+
+#[cfg(any(test, feature = "test-utils"))]
 impl StorageContext {
     /// Returns a mutable reference to the underlying `HashMapStorageProvider`.
     ///
     /// NOTE: takes a non-mutable reference because it's internal. The mutability
     /// of the storage operation is determined by the public function.
-    fn as_hashmap(&self) -> &mut hashmap::HashMapStorageProvider {
+    fn as_hashmap(&self) -> &mut HashMapStorageProvider {
         Self::with_storage(|s| {
             // SAFETY: Test code always uses HashMapStorageProvider.
             // Reference valid for duration of StorageContext::enter closure.
             unsafe {
                 extend_lifetime_mut(
-                    &mut *(s as *mut dyn PrecompileStorageProvider
-                        as *mut hashmap::HashMapStorageProvider),
+                    &mut *(s as *mut dyn PrecompileStorageProvider as *mut HashMapStorageProvider),
                 )
             }
         })
@@ -238,7 +240,6 @@ unsafe fn extend_lifetime_mut<'b, T: ?Sized>(r: &mut T) -> &'b mut T {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::hashmap::HashMapStorageProvider;
 
     #[test]
     #[should_panic(expected = "already borrowed")]
