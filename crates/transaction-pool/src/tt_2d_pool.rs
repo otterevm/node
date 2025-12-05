@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::{NONCE_PRECOMPILE_ADDRESS, nonce::slots, storage::double_mapping_slot};
+use tempo_precompiles::{NONCE_PRECOMPILE_ADDRESS, nonce::NonceManager};
 
 type Ordering = CoinbaseTipOrdering<TempoPooledTransaction>;
 
@@ -670,11 +670,7 @@ impl AA2dPool {
     /// Caches the 2D nonce key slot for the given sender and nonce key.
     fn record_2d_slot(&mut self, address: Address, nonce_key: U256) {
         trace!(target: "txpool::2d", ?address, ?nonce_key, "recording 2d nonce slot");
-        let slot = double_mapping_slot(
-            address.as_slice(),
-            nonce_key.to_be_bytes::<32>(),
-            slots::NONCES,
-        );
+        let slot = NonceManager::new().nonces.at(address).at(nonce_key).slot();
 
         if self
             .address_slots

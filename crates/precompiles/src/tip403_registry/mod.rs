@@ -6,7 +6,7 @@ use tempo_precompiles_macros::{Storable, contract};
 use crate::{
     TIP403_REGISTRY_ADDRESS,
     error::{Result, TempoPrecompileError},
-    storage::{Handler, Mapping, packing::extract_packed_value},
+    storage::{Handler, Mapping},
 };
 use alloy::primitives::{Address, U256};
 
@@ -27,12 +27,32 @@ pub struct PolicyData {
 // NOTE(rusowsky): can be removed once revm uses precompiles rather than directly
 // interacting with storage slots.
 impl PolicyData {
-    pub fn from_word(word: U256) -> Result<Self> {
+    pub fn decode_from_slot(slot_value: U256) -> Self {
+        use crate::storage::packing::extract_packed_value;
         use __packing_policy_data::{ADMIN_LOC as A_LOC, POLICY_TYPE_LOC as PT_LOC};
-        Ok(Self {
-            policy_type: extract_packed_value::<u8>(word, PT_LOC.offset_bytes, PT_LOC.size)?,
-            admin: extract_packed_value::<Address>(word, A_LOC.offset_bytes, A_LOC.size)?,
-        })
+
+        Self {
+            policy_type: extract_packed_value::<u8>(slot_value, PT_LOC.offset_bytes, PT_LOC.size)
+                .expect("unable to extract 'policy_type'"),
+            admin: extract_packed_value::<Address>(slot_value, A_LOC.offset_bytes, A_LOC.size)
+                .expect("unable to extract 'admin'"),
+        }
+    }
+
+    pub fn encode_to_slot(&self) -> U256 {
+        use crate::storage::packing::insert_packed_value;
+        use __packing_policy_data::{ADMIN_LOC as A_LOC, POLICY_TYPE_LOC as PT_LOC};
+
+        let encoded = insert_packed_value(
+            U256::ZERO,
+            &self.policy_type,
+            PT_LOC.offset_bytes,
+            PT_LOC.size,
+        )
+        .expect("unable to insert 'policy_type'");
+
+        insert_packed_value(encoded, &self.admin, A_LOC.offset_bytes, A_LOC.size)
+            .expect("unable to insert 'admin'")
     }
 }
 

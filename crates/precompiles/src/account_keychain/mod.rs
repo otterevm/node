@@ -38,15 +38,45 @@ pub struct AuthorizedKey {
 }
 
 // TODO(rusowsky): remove this and create a read-only wrapper that is callable from read-only ctx with db access
-// impl AuthorizedKey {
-//     /// Decode AuthorizedKey from a storage slot value
-//     ///
-//     /// This is useful for read-only contexts (like pool validation) that don't have
-//     /// access to PrecompileStorageProvider but need to decode the packed struct.
-//     pub fn decode_from_slot(slot_value: U256) -> Self {
-//         Self::from_evm_words([slot_value]).unwrap()
-//     }
-// }
+impl AuthorizedKey {
+    /// Decode AuthorizedKey from a storage slot value
+    ///
+    /// This is useful for read-only contexts (like pool validation) that don't have
+    /// access to PrecompileStorageProvider but need to decode the packed struct.
+    pub fn decode_from_slot(slot_value: U256) -> Self {
+        use crate::storage::packing::extract_packed_value;
+        use __packing_authorized_key::{
+            ENFORCE_LIMITS_LOC, EXPIRY_LOC, IS_REVOKED_LOC, SIGNATURE_TYPE_LOC,
+        };
+
+        Self {
+            signature_type: extract_packed_value::<u8>(
+                slot_value,
+                SIGNATURE_TYPE_LOC.offset_bytes,
+                SIGNATURE_TYPE_LOC.size,
+            )
+            .expect("unable to extract 'signature_type'"),
+            expiry: extract_packed_value::<u64>(
+                slot_value,
+                EXPIRY_LOC.offset_bytes,
+                EXPIRY_LOC.size,
+            )
+            .expect("unable to extract 'expiry'"),
+            enforce_limits: extract_packed_value::<bool>(
+                slot_value,
+                ENFORCE_LIMITS_LOC.offset_bytes,
+                ENFORCE_LIMITS_LOC.size,
+            )
+            .expect("unable to extract 'enforce_limits'"),
+            is_revoked: extract_packed_value::<bool>(
+                slot_value,
+                IS_REVOKED_LOC.offset_bytes,
+                IS_REVOKED_LOC.size,
+            )
+            .expect("unable to extract 'is_revoked'"),
+        }
+    }
+}
 
 /// Account Keychain contract for managing authorized keys
 #[contract]
@@ -62,18 +92,6 @@ pub struct AccountKeychain {
     // If new (persistent) storage fields need to be added to the precompile, they must go above this one.
     transaction_key: Address,
 }
-
-// TODO(rusowsky): remove this and create a read-only wrapper that is callable from read-only ctx with db access
-// /// Compute the storage slot for keys\[account\]\[key_id\]
-// ///
-// /// This is useful for read-only contexts (like pool validation) that need to
-// /// directly read the keychain state using StateProvider without going through
-// /// the precompile abstraction.
-// ///
-// /// The keys mapping is at slot 0 (first field in the contract).
-// pub fn compute_keys_slot(account: Address, key_id: Address) -> U256 {
-//     double_mapping_slot(account, key_id, slots::KEYS)
-// }
 
 impl AccountKeychain {
     /// Creates an instance of the precompile.

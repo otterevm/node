@@ -48,6 +48,29 @@ pub struct PoolKey {
     pub validator_token: Address,
 }
 
+// TODO(rusowsky): remove this and create a read-only wrapper that is callable from read-only ctx with db access
+impl Pool {
+    pub fn decode_from_slot(slot_value: U256) -> Result<Self> {
+        use crate::storage::packing::extract_packed_value;
+        use __packing_pool::{
+            RESERVE_USER_TOKEN_LOC as U_LOC, RESERVE_VALIDATOR_TOKEN_LOC as V_LOC,
+        };
+
+        Ok(Self {
+            reserve_user_token: extract_packed_value::<u128>(
+                slot_value,
+                U_LOC.offset_bytes,
+                U_LOC.size,
+            )?,
+            reserve_validator_token: extract_packed_value::<u128>(
+                slot_value,
+                V_LOC.offset_bytes,
+                V_LOC.size,
+            )?,
+        })
+    }
+}
+
 impl PoolKey {
     /// Creates a new pool key from user and validator token addresses.
     /// This key uniquely identifies a trading pair in the AMM.

@@ -252,13 +252,7 @@ pub trait TempoStateAccess<T> {
             .base_slot();
 
             let policy_data_word = self.sload(TIP403_REGISTRY_ADDRESS, policy_data_slot)?;
-            let Ok(data) = tip403_registry::PolicyData::from_word(policy_data_word) else {
-                tracing::warn!(
-                    transfer_policy_id,
-                    "failed to parse PolicyData from storage"
-                );
-                return Ok(false);
-            };
+            let data = tip403_registry::PolicyData::decode_from_slot(policy_data_word);
             let Ok(policy_type) = data.policy_type.try_into() else {
                 tracing::warn!(transfer_policy_id, policy_type = ?data.policy_type, "invalid policy type");
                 return Ok(false);
