@@ -143,8 +143,14 @@ impl TipFeeManager {
             return Err(FeeManagerError::invalid_token().into());
         }
 
-        // Forbid setting PathUSD as the user's fee token (only after Moderato hardfork)
-        if self.storage.spec().is_moderato() && call.token == PATH_USD_ADDRESS {
+        // Depending on the hardfork, allow/disallow PathUSD to be set as the fee token
+        // Pre moderato: Allow
+        // Post moderato: Disallow
+        // Post allegro moderato: Allow
+        if self.storage.spec().is_moderato()
+            && !self.storage.spec().is_allegro_moderato()
+            && call.token == PATH_USD_ADDRESS
+        {
             return Err(FeeManagerError::invalid_token().into());
         }
 
