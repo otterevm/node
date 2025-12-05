@@ -1330,7 +1330,7 @@ mod tests {
         state::Account,
     };
     use tempo_chainspec::hardfork::TempoHardfork;
-    use tempo_precompiles::{TIP_FEE_MANAGER_ADDRESS, tip_fee_manager};
+    use tempo_precompiles::TIP_FEE_MANAGER_ADDRESS;
 
     fn create_test_journal() -> Journal<CacheDB<EmptyDB>> {
         let db = CacheDB::new(EmptyDB::default());

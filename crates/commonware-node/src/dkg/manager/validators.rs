@@ -12,7 +12,7 @@ use reth_node_builder::{Block as _, ConfigureEvm as _};
 use reth_provider::{BlockReader as _, StateProviderFactory as _};
 use tempo_node::TempoFullNode;
 use tempo_precompiles::{
-    storage::evm::EvmPrecompileStorageProvider,
+    storage::{StorageContext, evm::EvmPrecompileStorageProvider},
     validator_config::{IValidatorConfig, ValidatorConfig},
 };
 
@@ -67,11 +67,13 @@ pub(super) async fn read_from_contract(
         let internals = EvmInternals::new(&mut ctx.journaled_state, &ctx.block);
         let mut provider = EvmPrecompileStorageProvider::new_max_gas(internals, &ctx.cfg);
 
-        let mut validator_config = ValidatorConfig::new(&mut provider);
-        validator_config
-            .get_validators(IValidatorConfig::getValidatorsCall {})
-            .wrap_err("failed to query contract for validator config")?
-    };
+        StorageContext::enter(&mut provider, || {
+            let validator_config = ValidatorConfig::new();
+            validator_config
+                .get_validators()
+                .wrap_err("failed to query contract for validator config")
+        })
+    }?;
 
     info!(?raw_validators, "read validators from contract",);
 
