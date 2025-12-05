@@ -269,7 +269,7 @@ impl TIP20Token {
         // Check if the currency is USD, if so then the quote token's currency MUST also be USD
         let currency = self.currency()?;
         if currency == USD_CURRENCY {
-            let quote_token_currency = TIP20Token::from_address(call.newQuoteToken).currency()?;
+            let quote_token_currency = Self::from_address(call.newQuoteToken).currency()?;
             if quote_token_currency != USD_CURRENCY {
                 return Err(TIP20Error::invalid_quote_token().into());
             }
@@ -308,7 +308,7 @@ impl TIP20Token {
                 return Err(TIP20Error::invalid_quote_token().into());
             }
 
-            current = TIP20Token::from_address(current).quote_token()?;
+            current = Self::from_address(current).quote_token()?;
         }
 
         // Update the quote token
@@ -681,7 +681,7 @@ impl TIP20Token {
 
         // If the currency is USD, the quote token must also be USD
         if currency == USD_CURRENCY {
-            let quote_token_currency = TIP20Token::from_address(quote_token).currency()?;
+            let quote_token_currency = Self::from_address(quote_token).currency()?;
             if quote_token_currency != USD_CURRENCY {
                 return Err(TIP20Error::invalid_quote_token().into());
             }
@@ -1088,7 +1088,7 @@ pub(crate) mod tests {
             assert_eq!(token.get_balance(addr)?, amount);
             assert_eq!(token.total_supply()?, amount);
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to: addr,
@@ -1128,7 +1128,7 @@ pub(crate) mod tests {
             assert_eq!(token.get_balance(to)?, amount);
             assert_eq!(token.total_supply()?, amount); // Supply unchanged
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to: from,
@@ -1189,7 +1189,7 @@ pub(crate) mod tests {
                 .mint_with_memo(from, ITIP20::mintWithMemoCall { to, amount, memo })
                 .unwrap();
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to,
@@ -1197,7 +1197,7 @@ pub(crate) mod tests {
                 }),
                 TIP20Event::Mint(ITIP20::Mint { to, amount }),
                 TIP20Event::TransferWithMemo(ITIP20::TransferWithMemo {
-                    from: from,
+                    from,
                     to,
                     amount,
                     memo,
@@ -1232,7 +1232,7 @@ pub(crate) mod tests {
 
             // TransferWithMemo event should have Address::ZERO as from for post-Moderato
             assert_eq!(
-                token.emited_events()[2],
+                token.emitted_events()[2],
                 TIP20Event::TransferWithMemo(ITIP20::TransferWithMemo {
                     from: Address::ZERO,
                     to,
@@ -1270,7 +1270,7 @@ pub(crate) mod tests {
 
             // TransferWithMemo event should have msg_sender as from for pre-Moderato
             assert_eq!(
-                token.emited_events()[2],
+                token.emitted_events()[2],
                 TIP20Event::TransferWithMemo(ITIP20::TransferWithMemo {
                     from: admin,
                     to,
@@ -1301,7 +1301,7 @@ pub(crate) mod tests {
 
             token.mint(admin, ITIP20::mintCall { to: admin, amount })?;
             token.burn_with_memo(admin, ITIP20::burnWithMemoCall { amount, memo })?;
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to: admin,
@@ -1362,7 +1362,7 @@ pub(crate) mod tests {
 
             assert!(result);
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to: owner,
@@ -1424,7 +1424,7 @@ pub(crate) mod tests {
 
             assert!(result);
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to: owner,
@@ -1526,7 +1526,7 @@ pub(crate) mod tests {
             assert_eq!(token.get_balance(user)?, refund_amount);
             assert_eq!(token.get_balance(TIP_FEE_MANAGER_ADDRESS)?, U256::from(70));
 
-            token.assert_emited_events(vec![TIP20Event::Transfer(ITIP20::Transfer {
+            token.assert_emitted_events(vec![TIP20Event::Transfer(ITIP20::Transfer {
                 from: user,
                 to: TIP_FEE_MANAGER_ADDRESS,
                 amount: gas_used,
@@ -1589,7 +1589,7 @@ pub(crate) mod tests {
             let result = token.system_transfer_from(from, to, amount);
             assert!(result.is_ok());
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::Transfer(ITIP20::Transfer {
                     from: Address::ZERO,
                     to: from,
@@ -1636,7 +1636,7 @@ pub(crate) mod tests {
 
             assert_eq!(token.next_quote_token()?, quote_token_address);
 
-            token.assert_emited_events(vec![TIP20Event::NextQuoteTokenSet(
+            token.assert_emitted_events(vec![TIP20Event::NextQuoteTokenSet(
                 ITIP20::NextQuoteTokenSet {
                     updater: admin,
                     nextQuoteToken: quote_token_address,
@@ -1753,7 +1753,7 @@ pub(crate) mod tests {
             token.complete_quote_token_update(admin, ITIP20::completeQuoteTokenUpdateCall {})?;
             assert_eq!(token.quote_token()?, quote_token_address);
 
-            token.assert_emited_events(vec![
+            token.assert_emitted_events(vec![
                 TIP20Event::NextQuoteTokenSet(ITIP20::NextQuoteTokenSet {
                     updater: admin,
                     nextQuoteToken: quote_token_address,

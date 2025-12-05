@@ -32,6 +32,12 @@ pub struct NonceManager {
     active_key_count: Mapping<Address, U256>,
 }
 
+impl Default for NonceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NonceManager {
     pub fn new() -> Self {
         Self::__new(NONCE_PRECOMPILE_ADDRESS)
@@ -260,7 +266,7 @@ mod tests {
             mgr.increment_nonce(account, nonce_key)?;
 
             // Check the ActiveKeyCountChanged event
-            mgr.assert_emited_events(vec![NonceEvent::ActiveKeyCountChanged(
+            mgr.assert_emitted_events(vec![NonceEvent::ActiveKeyCountChanged(
                 INonce::ActiveKeyCountChanged {
                     account,
                     newCount: U256::ONE,
@@ -269,12 +275,12 @@ mod tests {
 
             // Second increment on same key should NOT emit ActiveKeyCountChanged
             mgr.increment_nonce(account, nonce_key)?;
-            assert_eq!(mgr.emited_events().len(), 1);
+            assert_eq!(mgr.emitted_events().len(), 1);
 
             // Increment on different key SHOULD emit ActiveKeyCountChanged again
             let nonce_key2 = U256::from(10);
             mgr.increment_nonce(account, nonce_key2)?;
-            mgr.assert_emited_events(vec![
+            mgr.assert_emitted_events(vec![
                 NonceEvent::ActiveKeyCountChanged(INonce::ActiveKeyCountChanged {
                     account,
                     newCount: U256::ONE,
@@ -287,7 +293,7 @@ mod tests {
 
             // Second increment on same key should NOT emit ActiveKeyCountChanged
             mgr.increment_nonce(account, nonce_key2)?;
-            assert_eq!(mgr.emited_events().len(), 2);
+            assert_eq!(mgr.emitted_events().len(), 2);
 
             Ok(())
         })
@@ -304,7 +310,7 @@ mod tests {
             mgr.increment_nonce(account, nonce_key)?;
 
             assert!(
-                mgr.emited_events().is_empty(),
+                mgr.emitted_events().is_empty(),
                 "No events should be emitted pre-Moderato"
             );
 
@@ -312,7 +318,7 @@ mod tests {
             mgr.increment_nonce(account, nonce_key2)?;
 
             assert!(
-                mgr.emited_events().is_empty(),
+                mgr.emitted_events().is_empty(),
                 "No events should be emitted pre-Moderato"
             );
             Ok(())
@@ -330,7 +336,7 @@ mod tests {
             let mut mgr = NonceManager::new();
             mgr.increment_nonce(account, nonce_key)?;
 
-            mgr.assert_emited_events(vec![
+            mgr.assert_emitted_events(vec![
                 NonceEvent::ActiveKeyCountChanged(INonce::ActiveKeyCountChanged {
                     account,
                     newCount: U256::ONE,
@@ -344,9 +350,9 @@ mod tests {
 
             // Second increment on same key only emits NonceIncremented (no new key)
             mgr.increment_nonce(account, nonce_key)?;
-            assert_eq!(mgr.emited_events().len(), 3);
+            assert_eq!(mgr.emitted_events().len(), 3);
 
-            mgr.assert_emited_events(vec![
+            mgr.assert_emitted_events(vec![
                 NonceEvent::ActiveKeyCountChanged(INonce::ActiveKeyCountChanged {
                     account,
                     newCount: U256::ONE,

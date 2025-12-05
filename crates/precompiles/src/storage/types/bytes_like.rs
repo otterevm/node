@@ -504,7 +504,7 @@ mod tests {
         fn test_long_strings(s in arb_long_string(), base_slot in arb_safe_slot()) {
             let (mut storage, address) = setup_storage();
             StorageContext::enter(&mut storage, || {
-                let mut slot = Slot::<String>::new(base_slot, address.clone());
+                let mut slot = Slot::<String>::new(base_slot, address);
 
                 // Verify store → load roundtrip
                 slot.write(s.clone()).unwrap();
@@ -522,7 +522,7 @@ mod tests {
                 // Verify all keccak256-addressed data slots are actually zero
                 let data_slot_start = calc_data_slot(base_slot);
                 for i in 0..chunks {
-                    let slot = Slot::<U256>::new_at_offset(data_slot_start, i, address.clone());
+                    let slot = Slot::<U256>::new_at_offset(data_slot_start, i, address);
                     let value = slot.read().unwrap();
                     prop_assert_eq!(value, U256::ZERO, "Data slot not cleared after delete");
                 }
@@ -578,7 +578,7 @@ mod tests {
         fn test_long_bytes(b in arb_long_bytes(), base_slot in arb_safe_slot()) {
             let (mut storage, address) = setup_storage();
             StorageContext::enter(&mut storage, || {
-                let mut slot = Slot::<Bytes>::new(base_slot, address.clone());
+                let mut slot = Slot::<Bytes>::new(base_slot, address);
 
                 // Verify store → load roundtrip
                 slot.write(b.clone()).unwrap();
@@ -596,7 +596,7 @@ mod tests {
                 // Verify all keccak256-addressed data slots are actually zero
                 let data_slot_start = calc_data_slot(base_slot);
                 for i in 0..chunks {
-                    let slot = Slot::<U256>::new_at_offset(data_slot_start, i, address.clone());
+                    let slot = Slot::<U256>::new_at_offset(data_slot_start, i, address);
                     let value = slot.read().unwrap();
                     prop_assert_eq!(value, U256::ZERO, "Data slot not cleared after delete");
                 }

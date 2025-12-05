@@ -24,6 +24,12 @@ pub struct TIP20RewardsRegistry {
     stream_index: Mapping<B256, U256>,
 }
 
+impl Default for TIP20RewardsRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TIP20RewardsRegistry {
     /// Creates an instance of the precompile.
     ///
@@ -123,12 +129,6 @@ impl TIP20RewardsRegistry {
         self.last_updated_timestamp.write(current_timestamp)?;
 
         Ok(())
-    }
-
-    /// Helper method to get the count of streams at a given end time (for testing)
-    #[cfg(test)]
-    pub(crate) fn get_stream_count_at(&self, end_time: u128) -> Result<usize> {
-        self.ending_streams.at(end_time).len()
     }
 }
 

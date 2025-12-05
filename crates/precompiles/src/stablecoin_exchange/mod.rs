@@ -55,6 +55,12 @@ pub struct StablecoinExchange {
     book_keys: Vec<B256>,
 }
 
+impl Default for StablecoinExchange {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StablecoinExchange {
     pub fn new() -> Self {
         Self::__new(STABLECOIN_EXCHANGE_ADDRESS)
@@ -2804,7 +2810,7 @@ mod tests {
                 .expect("Could not create pair");
 
             // Verify PairCreated event was emitted
-            exchange.assert_emited_events(vec![StablecoinExchangeEvents::PairCreated(
+            exchange.assert_emitted_events(vec![StablecoinExchangeEvents::PairCreated(
                 IStablecoinExchange::PairCreated {
                     key,
                     base: base_token,
@@ -4152,7 +4158,7 @@ mod tests {
             assert_eq!(book_after.base, base_token);
 
             // Verify PairCreated event was emitted (along with OrderPlaced)
-            let events = exchange.emited_events();
+            let events = exchange.emitted_events();
             assert_eq!(events.len(), 2);
             assert_eq!(
                 events[0],
@@ -4205,7 +4211,7 @@ mod tests {
             assert_eq!(book_after.base, base_token);
 
             // Verify PairCreated event was emitted (along with FlipOrderPlaced)
-            let events = exchange.emited_events();
+            let events = exchange.emitted_events();
             assert_eq!(events.len(), 2);
             assert_eq!(
                 events[0],

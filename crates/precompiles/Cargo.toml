@@ -29,7 +29,6 @@ derive_more.workspace = true
 scoped-tls = "1.0"
 
 [dev-dependencies]
-tempo-precompiles = { path = ".", features = ["test-utils"] }
 criterion.workspace = true
 alloy-signer.workspace = true
 alloy-signer-local.workspace = true
@@ -41,6 +40,10 @@ serde.workspace = true
 serde_json.workspace = true
 tempo-evm.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[[test]]
+name = "storage"
+required-features = ["test-utils"]
 
 [[bench]]
 name = "tempo_precompiles"

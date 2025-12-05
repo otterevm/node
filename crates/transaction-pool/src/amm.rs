@@ -200,7 +200,7 @@ impl AmmLiquidityCache {
             inner.validator_preferences.insert(beneficiary, preference);
             inner
                 .slot_to_validator
-                .insert(validator_token_slot.into(), beneficiary);
+                .insert(validator_token_slot, beneficiary);
         }
 
         // Track the new observed fee token

@@ -80,7 +80,7 @@ where
     T: Storable + Clone + PartialEq + std::fmt::Debug,
 {
     // Create a slot and use it for storage operations
-    let mut slot = Slot::<T>::new(base_slot, address.clone());
+    let mut slot = Slot::<T>::new(base_slot, *address);
 
     // Write and read using the new API
     slot.write(original.clone())?;
@@ -100,7 +100,7 @@ where
     T: Storable + Clone + PartialEq + std::fmt::Debug,
 {
     // Create a slot and use it for storage operations
-    let mut slot = Slot::<T>::new(base_slot, address.clone());
+    let mut slot = Slot::<T>::new(base_slot, *address);
 
     // Test initial write and read
     slot.write(initial.clone())?;
@@ -120,7 +120,7 @@ where
     T: Storable + Clone + PartialEq + Default + std::fmt::Debug,
 {
     // Create a slot and use it for storage operations
-    let mut slot = Slot::<T>::new(base_slot, address.clone());
+    let mut slot = Slot::<T>::new(base_slot, *address);
 
     // Write and verify
     slot.write(data.clone())?;

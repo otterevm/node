@@ -733,12 +733,11 @@ mod tests {
             let amount: u128 = 999888777666;
 
             let mut flag_slot =
-                Slot::<bool>::new_with_ctx(struct_base, LayoutCtx::packed(0), address.clone());
+                Slot::<bool>::new_with_ctx(struct_base, LayoutCtx::packed(0), address);
             flag_slot.write(flag)?;
             assert_eq!(flag_slot.read()?, flag);
 
-            let mut ts_slot =
-                Slot::<u64>::new_with_ctx(struct_base, LayoutCtx::packed(1), address.clone());
+            let mut ts_slot = Slot::<u64>::new_with_ctx(struct_base, LayoutCtx::packed(1), address);
             ts_slot.write(timestamp)?;
             assert_eq!(ts_slot.read()?, timestamp);
 
@@ -766,7 +765,7 @@ mod tests {
             // Field in slot 0 (bool is 1 byte, packable)
             let flag = false;
             let mut flag_slot =
-                Slot::<bool>::new_with_ctx(struct_base, LayoutCtx::packed(0), address.clone());
+                Slot::<bool>::new_with_ctx(struct_base, LayoutCtx::packed(0), address);
             flag_slot.write(flag)?;
             assert_eq!(flag_slot.read()?, flag);
 
@@ -775,7 +774,7 @@ mod tests {
             let mut amount_slot = Slot::<u128>::new_with_ctx(
                 struct_base + U256::from(1),
                 LayoutCtx::packed(0),
-                address.clone(),
+                address,
             );
             amount_slot.write(amount)?;
             assert_eq!(amount_slot.read()?, amount);

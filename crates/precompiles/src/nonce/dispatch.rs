@@ -55,7 +55,7 @@ mod tests {
                 &mut nonce_manager,
                 INonceCalls::SELECTORS,
                 "INonce",
-                |s| INonceCalls::name_by_selector(s),
+                INonceCalls::name_by_selector,
             );
 
             assert_full_coverage([unsupported]);

@@ -38,6 +38,12 @@ pub struct ValidatorConfig {
     validators: Mapping<Address, Validator>,
 }
 
+impl Default for ValidatorConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidatorConfig {
     pub fn new() -> Self {
         Self::__new(VALIDATOR_CONFIG_ADDRESS)

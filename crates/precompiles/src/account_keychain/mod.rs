@@ -93,6 +93,12 @@ pub struct AccountKeychain {
     transaction_key: Address,
 }
 
+impl Default for AccountKeychain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AccountKeychain {
     /// Creates an instance of the precompile.
     ///

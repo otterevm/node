@@ -59,13 +59,13 @@ impl<
         params: PaginationParams<OrdersFilters>,
     ) -> Result<OrdersResponse, DexApiError> {
         let response = self.with_storage_at_block(BlockNumberOrTag::Latest.into(), || {
-            let mut exchange = StablecoinExchange::new();
+            let exchange = StablecoinExchange::new();
             let exchange_address = exchange.address();
 
             // Determine which books to iterate based on filter
             let base_token = params.filters.as_ref().and_then(|f| f.base_token);
             let quote_token = params.filters.as_ref().and_then(|f| f.quote_token);
-            let book_keys = get_book_keys_for_iteration(&mut exchange, base_token, quote_token)?;
+            let book_keys = get_book_keys_for_iteration(&exchange, base_token, quote_token)?;
 
             let is_bid = params
                 .filters

@@ -141,6 +141,7 @@ proptest! {
 
     /// Roundtrip test for Vec<MultiSlotStruct> with inner packing using push/pop
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn proptest_vec_multi_slot_roundtrip(
         two_slots in prop::collection::vec(arb_packed_two_slot(), 1..5),
         three_slots in prop::collection::vec(arb_packed_three_slot(), 1..5),

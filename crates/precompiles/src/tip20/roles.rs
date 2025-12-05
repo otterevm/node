@@ -190,7 +190,7 @@ mod tests {
             assert!(has_custom);
 
             // Verify events were emitted
-            assert_eq!(token.emited_events().len(), 1); // One grant event
+            assert_eq!(token.emitted_events().len(), 1); // One grant event
 
             Ok(())
         })

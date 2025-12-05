@@ -30,7 +30,7 @@ pub struct TokenPair {
 
 impl StorageKey for TokenPair {
     fn as_storage_bytes(&self) -> impl AsRef<[u8]> {
-        let mut bytes = Vec::with_capacity(TokenPair::BYTES);
+        let mut bytes = Vec::with_capacity(Self::BYTES);
         bytes.extend_from_slice(self.user_token.as_storage_bytes().as_ref());
         bytes.extend_from_slice(self.validator_token.as_storage_bytes().as_ref());
         bytes
@@ -52,6 +52,12 @@ pub struct TipFeeManager {
     pool_in_fees_array: Mapping<TokenPair, bool>,
     validators_with_fees: Vec<Address>,
     validator_in_fees_array: Mapping<Address, bool>,
+}
+
+impl Default for TipFeeManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TipFeeManager {

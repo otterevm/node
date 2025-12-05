@@ -26,6 +26,12 @@ pub struct PathUSD {
     storage: StorageContext,
 }
 
+impl Default for PathUSD {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PathUSD {
     pub fn new() -> Self {
         Self {

@@ -34,7 +34,6 @@ pub struct Slot<T> {
     _ty: PhantomData<T>,
 }
 
-
 impl<T> Slot<T> {
     /// Creates a new `Slot` with the given slot number and address.
     ///
@@ -163,7 +162,7 @@ impl<T: Storable> Handler<T> for Slot<T> {
     /// This method delegates to the `Storable::load` implementation,
     /// which may read one or more consecutive slots depending on the type.
     ///
-    /// Uses thread-local storage context initialized by [`StorageGuard`].
+    /// Uses thread-local storage context initialized by [`StorageContext`].
     ///
     /// # Example
     ///
@@ -181,7 +180,7 @@ impl<T: Storable> Handler<T> for Slot<T> {
     /// This method delegates to the `Storable::store` implementation,
     /// which may write one or more consecutive slots depending on the type.
     ///
-    /// Uses thread-local storage context initialized by [`StorageGuard`].
+    /// Uses thread-local storage context initialized by [`StorageContext`].
     ///
     /// # Example
     ///
@@ -199,7 +198,7 @@ impl<T: Storable> Handler<T> for Slot<T> {
     /// This method delegates to the `Storable::delete` implementation,
     /// which sets the appropriate slots to zero.
     ///
-    /// Uses thread-local storage context initialized by [`StorageGuard`].
+    /// Uses thread-local storage context initialized by [`StorageContext`].
     ///
     /// # Example
     ///
@@ -254,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_slot_size() {
-        // slot (U256) 32 bytes + LayoutCtx (usize) 8 bytes + Address 20 bytes (+4 for byte alignement)
+        // slot (U256) 32 bytes + LayoutCtx (usize) 8 bytes + Address 20 bytes (+4 for byte alignment)
         assert_eq!(std::mem::size_of::<Slot<U256>>(), 64);
         assert_eq!(std::mem::size_of::<Slot<Address>>(), 64);
         assert_eq!(std::mem::size_of::<Slot<bool>>(), 64);
@@ -264,8 +263,8 @@ mod tests {
     fn test_slot_number_extraction() -> eyre::Result<()> {
         let (mut storage, address) = setup_storage();
         StorageContext::enter(&mut storage, || {
-            let slot_0 = Slot::<U256>::new(U256::ZERO, address.clone());
-            let slot_1 = Slot::<Address>::new(U256::ONE, address.clone());
+            let slot_0 = Slot::<U256>::new(U256::ZERO, address);
+            let slot_1 = Slot::<Address>::new(U256::ONE, address);
             let slot_max = Slot::<bool>::new(U256::MAX, address);
             assert_eq!(slot_0.slot(), U256::ZERO);
             assert_eq!(slot_1.slot(), U256::ONE);
@@ -393,7 +392,7 @@ mod tests {
         fn proptest_slot_isolation(slot1 in arb_u256(), slot2 in arb_u256(), value1 in arb_u256(), value2 in arb_u256()) {
             let (mut storage, address) = setup_storage();
             StorageContext::enter(&mut storage, || -> std::result::Result<(), TestCaseError> {
-                let mut slot1 = Slot::<U256>::new(slot1, address.clone());
+                let mut slot1 = Slot::<U256>::new(slot1, address);
                 let mut slot2 = Slot::<U256>::new(slot2, address);
 
                 slot1.write(value1).unwrap();
@@ -519,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transient_persistance_isolation() -> eyre::Result<()> {
+    fn test_transient_persistence_isolation() -> eyre::Result<()> {
         let (mut storage, address) = setup_storage();
         let slot_num = U256::random();
         let t_value = U256::random();

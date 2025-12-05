@@ -680,7 +680,7 @@ mod tests {
 
         StorageContext::enter(&mut storage, || {
             let len_slot = U256::random();
-            let mut slot = Slot::<Vec<bool>>::new(len_slot, address.clone());
+            let mut slot = Slot::<Vec<bool>>::new(len_slot, address);
 
             // Test 1: Exactly 32 bools (fills exactly 1 slot: 32 * 1 byte = 32 bytes)
             let data_exact: Vec<bool> = (0..32).map(|i| i % 2 == 0).collect();
@@ -721,12 +721,12 @@ mod tests {
             let data = vec![10u8, 20, 30, 40, 50];
 
             // Store exactly 5 u8 elements (should fit in 1 slot with 27 unused bytes)
-            <Vec<u8>>::handle(len_slot, LayoutCtx::FULL, address.clone())
+            <Vec<u8>>::handle(len_slot, LayoutCtx::FULL, address)
                 .write(data.clone())
                 .unwrap();
 
             // Verify length stored in base slot
-            let length = U256::handle(len_slot, LayoutCtx::FULL, address.clone())
+            let length = U256::handle(len_slot, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_eq!(
@@ -736,7 +736,7 @@ mod tests {
             );
 
             let data_start = calc_data_slot(len_slot);
-            let slot_data = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot_data = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -756,13 +756,10 @@ mod tests {
             // Also verify each element can be extracted correctly
             for (i, &expected) in data.iter().enumerate() {
                 let offset = i * u8::BYTES;
-                let actual = Slot::<u8>::new_with_ctx(
-                    data_start,
-                    LayoutCtx::packed(offset),
-                    address.clone(),
-                )
-                .read()
-                .unwrap();
+                let actual =
+                    Slot::<u8>::new_with_ctx(data_start, LayoutCtx::packed(offset), address)
+                        .read()
+                        .unwrap();
                 assert_eq!(actual, expected, "mismatch: elem[{i}] at offset {offset}");
             }
         });
@@ -774,14 +771,14 @@ mod tests {
 
         StorageContext::enter(&mut storage, || {
             let len_slot = U256::from(2100);
-            let mut vec_slot = Slot::<Vec<u16>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u16>>::new(len_slot, address);
 
             // Test 1: Exactly 16 u16 elements (fills exactly 1 slot: 16 * 2 bytes = 32 bytes)
             let data_exact: Vec<u16> = (0..16).map(|i| i * 100).collect();
             vec_slot.write(data_exact.clone()).unwrap();
 
             let data_start = calc_data_slot(len_slot);
-            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -811,13 +808,10 @@ mod tests {
             // Also verify each element can be extracted
             for (i, &expected) in data_exact.iter().enumerate() {
                 let offset = i * u16::BYTES;
-                let actual = Slot::<u16>::new_with_ctx(
-                    data_start,
-                    LayoutCtx::packed(offset),
-                    address.clone(),
-                )
-                .read()
-                .unwrap();
+                let actual =
+                    Slot::<u16>::new_with_ctx(data_start, LayoutCtx::packed(offset), address)
+                        .read()
+                        .unwrap();
                 assert_eq!(actual, expected, "mismatch: elem[{i}] at offset {offset}");
             }
 
@@ -826,7 +820,7 @@ mod tests {
             vec_slot.write(data_overflow).unwrap();
 
             // Verify slot 0 still matches (first 16 elements)
-            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_eq!(
@@ -836,7 +830,7 @@ mod tests {
 
             // Verify slot 1 has the 17th element (1600 = 0x0640)
             let slot1_addr = data_start + U256::ONE;
-            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address.clone())
+            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -867,10 +861,10 @@ mod tests {
             // - Slot 0: 32 elements (full) - elements 1-32
             // - Slot 1: 3 elements (elements 33-35) + 29 zeros
             let data: Vec<u8> = (0..35).map(|i| (i + 1) as u8).collect();
-            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address);
             vec_slot.write(data).unwrap();
             let data_start = calc_data_slot(len_slot);
-            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -915,7 +909,7 @@ mod tests {
 
             // Verify slot 1 has exactly 3 elements at rightmost positions
             let slot1_addr = data_start + U256::ONE;
-            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address.clone())
+            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -933,13 +927,10 @@ mod tests {
             let slot1_data = [33u8, 34u8, 35u8];
             for (i, &expected) in slot1_data.iter().enumerate() {
                 let offset = i * u8::BYTES;
-                let actual = Slot::<u8>::new_with_ctx(
-                    slot1_addr,
-                    LayoutCtx::packed(offset),
-                    address.clone(),
-                )
-                .read()
-                .unwrap();
+                let actual =
+                    Slot::<u8>::new_with_ctx(slot1_addr, LayoutCtx::packed(offset), address)
+                        .read()
+                        .unwrap();
                 assert_eq!(
                     actual, expected,
                     "mismatch: slot1_elem[{i}] at offset {offset}"
@@ -961,7 +952,7 @@ mod tests {
                 U256::from(0x2222222222222222u64),
                 U256::from(0x3333333333333333u64),
             ];
-            let mut vec_slot = Slot::<Vec<U256>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<U256>>::new(len_slot, address);
             vec_slot.write(data.clone()).unwrap();
 
             let data_start = calc_data_slot(len_slot);
@@ -969,7 +960,7 @@ mod tests {
             // Verify each U256 occupies its own sequential slot
             for (i, &expected) in data.iter().enumerate() {
                 let stored_value =
-                    U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone())
+                    U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address)
                         .read()
                         .unwrap();
                 assert_eq!(stored_value, expected, "incorrect U256 element {i}");
@@ -996,13 +987,13 @@ mod tests {
                 Address::repeat_byte(0xBB),
                 Address::repeat_byte(0xCC),
             ];
-            let mut vec_slot = Slot::<Vec<Address>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<Address>>::new(len_slot, address);
             vec_slot.write(data.clone()).unwrap();
 
             let data_start = calc_data_slot(len_slot);
 
             // Verify slot 0: Address(0xAA...) right-aligned with 12-byte padding
-            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot0 = gen_word_from(&["0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"]);
@@ -1013,7 +1004,7 @@ mod tests {
 
             // Verify slot 1: Address(0xBB...) right-aligned with 12-byte padding
             let slot1_addr = data_start + U256::ONE;
-            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address.clone())
+            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot1 = gen_word_from(&["0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"]);
@@ -1024,7 +1015,7 @@ mod tests {
 
             // Verify slot 2: Address(0xCC...) right-aligned with 12-byte padding
             let slot2_addr = data_start + U256::from(2);
-            let slot2_value = U256::handle(slot2_addr, LayoutCtx::FULL, address.clone())
+            let slot2_value = U256::handle(slot2_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot2 = gen_word_from(&["0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"]);
@@ -1036,7 +1027,7 @@ mod tests {
             // Also verify addresses can be loaded back
             for (i, &expected_addr) in data.iter().enumerate() {
                 let slot_addr = data_start + U256::from(i);
-                let stored_value = U256::handle(slot_addr, LayoutCtx::FULL, address.clone())
+                let stored_value = U256::handle(slot_addr, LayoutCtx::FULL, address)
                     .read()
                     .unwrap();
                 let expected_u256 = U256::from_be_slice(expected_addr.as_slice());
@@ -1062,7 +1053,7 @@ mod tests {
                 TestStruct { a: 200, b: 2 },
                 TestStruct { a: 300, b: 3 },
             ];
-            let mut vec_slot = Slot::<Vec<TestStruct>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<TestStruct>>::new(len_slot, address);
             vec_slot.write(data.clone()).unwrap();
 
             let data_start = calc_data_slot(len_slot);
@@ -1070,7 +1061,7 @@ mod tests {
             // Verify slot 0: TestStruct { a: 100, b: 1 }
             // Note: Solidity packs struct fields right-to-left (declaration order reversed in memory)
             // So field b (declared second) goes in bytes 0-15, field a (declared first) goes in bytes 16-31
-            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot0 = gen_word_from(&[
@@ -1084,7 +1075,7 @@ mod tests {
 
             // Verify slot 1: TestStruct { a: 200, b: 2 }
             let slot1_addr = data_start + U256::ONE;
-            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address.clone())
+            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot1 = gen_word_from(&[
@@ -1098,7 +1089,7 @@ mod tests {
 
             // Verify slot 2: TestStruct { a: 300, b: 3 }
             let slot2_addr = data_start + U256::from(2);
-            let slot2_value = U256::handle(slot2_addr, LayoutCtx::FULL, address.clone())
+            let slot2_value = U256::handle(slot2_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot2 = gen_word_from(&[
@@ -1112,7 +1103,7 @@ mod tests {
 
             // Verify slot 3 is empty (no 4th element)
             let slot3_addr = data_start + U256::from(3);
-            let slot3_value = U256::handle(slot3_addr, LayoutCtx::FULL, address.clone())
+            let slot3_value = U256::handle(slot3_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_eq!(slot3_value, U256::ZERO, "Slot 3 should be empty");
@@ -1120,7 +1111,7 @@ mod tests {
             // Also verify each struct can be loaded back correctly
             for (i, expected_struct) in data.iter().enumerate() {
                 let struct_slot_addr = data_start + U256::from(i);
-                let struct_slot = Slot::<TestStruct>::new(struct_slot_addr, address.clone());
+                let struct_slot = Slot::<TestStruct>::new(struct_slot_addr, address);
                 let loaded_struct = struct_slot.read().unwrap();
                 assert_eq!(
                     loaded_struct, *expected_struct,
@@ -1164,11 +1155,11 @@ mod tests {
                     value: 300,
                 },
             ];
-            let mut vec_slot = Slot::<Vec<SmallStruct>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<SmallStruct>>::new(len_slot, address);
             vec_slot.write(data.clone()).unwrap();
 
             // Verify length stored in base slot
-            let length_value = U256::handle(len_slot, LayoutCtx::FULL, address.clone())
+            let length_value = U256::handle(len_slot, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_eq!(length_value, U256::from(3), "Length not stored correctly");
@@ -1176,7 +1167,7 @@ mod tests {
             let data_start = calc_data_slot(len_slot);
 
             // Verify slot 0: first struct (fields packed within the struct)
-            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot0 = gen_word_from(&[
@@ -1191,7 +1182,7 @@ mod tests {
 
             // Verify slot 1: second struct
             let slot1_addr = data_start + U256::ONE;
-            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address.clone())
+            let slot1_value = U256::handle(slot1_addr, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             let expected_slot1 = gen_word_from(&[
@@ -1234,11 +1225,11 @@ mod tests {
 
             // Store a vec with 3 u8 elements
             let data = vec![100u8, 200, 250];
-            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address);
             vec_slot.write(data.clone()).unwrap();
 
             // Verify base slot contains length
-            let length_value = U256::handle(len_slot, LayoutCtx::FULL, address.clone())
+            let length_value = U256::handle(len_slot, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_eq!(length_value, U256::from(3), "Length slot incorrect");
@@ -1252,7 +1243,7 @@ mod tests {
             );
 
             // Verify data slot matches expected Solidity byte layout
-            let data_slot_value = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let data_slot_value = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -1269,13 +1260,10 @@ mod tests {
             // Also verify each element can be extracted
             for (i, &expected) in data.iter().enumerate() {
                 let offset = i * u8::BYTES;
-                let actual = Slot::<u8>::new_with_ctx(
-                    data_start,
-                    LayoutCtx::packed(offset),
-                    address.clone(),
-                )
-                .read()
-                .unwrap();
+                let actual =
+                    Slot::<u8>::new_with_ctx(data_start, LayoutCtx::packed(offset), address)
+                        .read()
+                        .unwrap();
                 assert_eq!(actual, expected, "mismatch: elem[{i}] at offset {offset}");
             }
         });
@@ -1287,7 +1275,7 @@ mod tests {
 
         StorageContext::enter(&mut storage, || {
             let len_slot = U256::from(2700);
-            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address);
 
             // Store a vec with 5 u8 elements (requires 1 slot)
             let data_long = vec![1u8, 2, 3, 4, 5];
@@ -1296,7 +1284,7 @@ mod tests {
             let data_start = calc_data_slot(len_slot);
 
             // Verify initial storage
-            let slot0_before = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_before = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_ne!(slot0_before, U256::ZERO, "Initial data should be stored");
@@ -1306,7 +1294,7 @@ mod tests {
             vec_slot.write(data_short.clone()).unwrap();
 
             // Verify length updated
-            let length_value = U256::handle(len_slot, LayoutCtx::FULL, address.clone())
+            let length_value = U256::handle(len_slot, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
             assert_eq!(length_value, U256::from(3), "Length should be updated");
@@ -1314,13 +1302,10 @@ mod tests {
             // Verify new data can be extracted correctly (even though old data might remain)
             for (i, &expected) in data_short.iter().enumerate() {
                 let offset = i * u8::BYTES;
-                let actual = Slot::<u8>::new_with_ctx(
-                    data_start,
-                    LayoutCtx::packed(offset),
-                    address.clone(),
-                )
-                .read()
-                .unwrap();
+                let actual =
+                    Slot::<u8>::new_with_ctx(data_start, LayoutCtx::packed(offset), address)
+                        .read()
+                        .unwrap();
                 assert_eq!(
                     actual, expected,
                     "mismatch: new_elem[{i}] at offset {offset}"
@@ -1336,7 +1321,7 @@ mod tests {
             vec_slot.write(data_short.clone()).unwrap();
 
             // Verify slot matches expected Solidity byte layout after delete+store
-            let slot0_after_delete = U256::handle(data_start, LayoutCtx::FULL, address.clone())
+            let slot0_after_delete = U256::handle(data_start, LayoutCtx::FULL, address)
                 .read()
                 .unwrap();
 
@@ -1353,13 +1338,10 @@ mod tests {
             // Also verify each element can still be extracted
             for (i, &expected) in data_short.iter().enumerate() {
                 let offset = i * u8::BYTES;
-                let actual = Slot::<u8>::new_with_ctx(
-                    data_start,
-                    LayoutCtx::packed(offset),
-                    address.clone(),
-                )
-                .read()
-                .unwrap();
+                let actual =
+                    Slot::<u8>::new_with_ctx(data_start, LayoutCtx::packed(offset), address)
+                        .read()
+                        .unwrap();
                 assert_eq!(actual, expected, "mismatch: elem[{i}] at offset {offset}");
             }
         });
@@ -1416,7 +1398,7 @@ mod tests {
 
         StorageContext::enter(&mut storage, || {
             let len_slot = U256::random();
-            let mut handler = VecHandler::<u8>::new(len_slot, address.clone());
+            let mut handler = VecHandler::<u8>::new(len_slot, address);
 
             // Write some data
             handler.write(vec![1, 2, 3, 4, 5]).unwrap();
@@ -1443,7 +1425,7 @@ mod tests {
 
         StorageContext::enter(&mut storage, || {
             let len_slot = U256::random();
-            let handler = VecHandler::<U256>::new(len_slot, address.clone());
+            let handler = VecHandler::<U256>::new(len_slot, address);
 
             // Write full vector first
             let data = vec![U256::from(10), U256::from(20), U256::from(30)];
@@ -1629,7 +1611,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1648,7 +1630,7 @@ mod tests {
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
-                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                     prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                 }
             }
@@ -1663,7 +1645,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<u16>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u16>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1682,7 +1664,7 @@ mod tests {
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
-                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                     prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                 }
             }
@@ -1697,7 +1679,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<u32>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u32>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1716,7 +1698,7 @@ mod tests {
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
-                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                     prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                 }
             }
@@ -1731,7 +1713,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<u64>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u64>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1750,7 +1732,7 @@ mod tests {
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
-                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                     prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                 }
             }
@@ -1765,7 +1747,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<u128>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<u128>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1784,7 +1766,7 @@ mod tests {
                 let slot_count = calc_packed_slot_count(data_len, byte_count);
 
                 for i in 0..slot_count {
-                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                     prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                 }
             }
@@ -1799,7 +1781,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<U256>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<U256>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1816,7 +1798,7 @@ mod tests {
                 let data_start = calc_data_slot(len_slot);
 
                 for i in 0..data_len {
-                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                    let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                     prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                 }
             }
@@ -1831,7 +1813,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<Address>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<Address>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1849,7 +1831,7 @@ mod tests {
                     let data_start = calc_data_slot(len_slot);
 
                     for i in 0..data_len {
-                        let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                        let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                         prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                     }
                 }
@@ -1863,7 +1845,7 @@ mod tests {
             let (mut storage, address) = setup_storage();
 
             StorageContext::enter(&mut storage, || {
-                let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address.clone());
+                let mut vec_slot = Slot::<Vec<u8>>::new(len_slot, address);
 
             // Store data
             vec_slot.write(data.clone())?;
@@ -1882,7 +1864,7 @@ mod tests {
                     let slot_count = calc_packed_slot_count(data.len(), byte_count);
 
                     for i in 0..slot_count {
-                        let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                        let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                         prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                     }
                 }
@@ -1897,7 +1879,7 @@ mod tests {
 
             StorageContext::enter(&mut storage, || {
                 let data_len = data.len();
-            let mut vec_slot = Slot::<Vec<TestStruct>>::new(len_slot, address.clone());
+            let mut vec_slot = Slot::<Vec<TestStruct>>::new(len_slot, address);
 
             // Store → Load roundtrip
             vec_slot.write(data.clone())?;
@@ -1914,7 +1896,7 @@ mod tests {
                     let data_start = calc_data_slot(len_slot);
 
                     for i in 0..data_len {
-                        let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address.clone()).read()?;
+                        let slot_value = U256::handle(data_start + U256::from(i), LayoutCtx::FULL, address).read()?;
                         prop_assert_eq!(slot_value, U256::ZERO, "Data slot {} not cleared", i);
                     }
                 }

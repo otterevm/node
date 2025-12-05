@@ -20,6 +20,12 @@ pub struct TIP20Factory {
     token_id_counter: U256,
 }
 
+impl Default for TIP20Factory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Precompile functions
 impl TIP20Factory {
     /// Creates an instance of the precompile.
@@ -183,7 +189,7 @@ mod tests {
                     admin: sender,
                 }),
             ];
-            factory.assert_emited_events(expected);
+            factory.assert_emitted_events(expected);
 
             Ok(())
         })

@@ -17,6 +17,12 @@ use tempo_contracts::{
 #[contract]
 pub struct TipAccountRegistrar {}
 
+impl Default for TipAccountRegistrar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TipAccountRegistrar {
     /// Creates an instance of the precompile.
     ///

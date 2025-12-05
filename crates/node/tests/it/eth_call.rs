@@ -18,10 +18,7 @@ use tempo_contracts::precompiles::{
     ITIP20::{self, transferCall},
     ITIPFeeAMM, UnknownFunctionSelector,
 };
-use tempo_precompiles::{
-    PATH_USD_ADDRESS, TIP_ACCOUNT_REGISTRAR,
-    tip20::{self, TIP20Token},
-};
+use tempo_precompiles::{PATH_USD_ADDRESS, TIP_ACCOUNT_REGISTRAR, tip20::TIP20Token};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_eth_call() -> eyre::Result<()> {

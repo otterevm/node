@@ -131,7 +131,7 @@ mod tests {
         let mut buf = [0u8; 64];
         buf[32 - key.len()..32].copy_from_slice(key);
         buf[32..].copy_from_slice(&slot.to_be_bytes::<32>());
-        U256::from_be_bytes(keccak256(&buf).0)
+        U256::from_be_bytes(keccak256(buf).0)
     }
 
     #[test]
@@ -171,14 +171,14 @@ mod tests {
         let u256 = U256::random();
         assert_eq!(
             u256.mapping_slot(slot),
-            old_mapping_slot(&u256.to_be_bytes::<32>(), slot),
+            old_mapping_slot(u256.to_be_bytes::<32>(), slot),
         );
     }
 
     #[test]
     fn test_mapping_size() {
         assert_eq!(std::mem::size_of::<Address>(), 20);
-        // Mapping contains: U256 (32) + Address (20 + 4 for 8-byte alignement) + PhantomData (0) = 56 bytes
+        // Mapping contains: U256 (32) + Address (20 + 4 for 8-byte alignment) + PhantomData (0) = 56 bytes
         assert_eq!(std::mem::size_of::<Mapping<Address, U256>>(), 56);
         assert_eq!(std::mem::size_of::<Mapping<U256, Address>>(), 56);
         // Nested mappings are just Mapping<K, Mapping<K2, V>>, same size

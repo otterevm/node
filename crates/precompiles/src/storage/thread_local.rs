@@ -172,6 +172,7 @@ impl StorageContext {
     ///
     /// NOTE: takes a non-mutable reference because it's internal. The mutability
     /// of the storage operation is determined by the public function.
+    #[allow(clippy::mut_from_ref)]
     fn as_hashmap(&self) -> &mut HashMapStorageProvider {
         Self::with_storage(|s| {
             // SAFETY: Test code always uses HashMapStorageProvider.

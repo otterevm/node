@@ -377,7 +377,7 @@ fn test_packed_two_slot_contents() {
         let base_slot = U256::random();
 
         // Write the struct to storage
-        PackedTwo::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PackedTwo::handle(base_slot, LayoutCtx::FULL, address)
             .write(PackedTwo {
                 addr: Address::from([0x12; 20]),
                 count: 0x1234567890ABCDEF,
@@ -412,7 +412,7 @@ fn test_packed_three_slot_contents() {
             c: 0x3333333333333333,
         };
 
-        PackedThree::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PackedThree::handle(base_slot, LayoutCtx::FULL, address)
             .write(value)
             .unwrap();
 
@@ -449,7 +449,7 @@ fn test_rule2_slot_contents() {
             d: 0x123456789ABCDEF0, // 8 bytes
         };
 
-        Rule2Test::handle(base_slot, LayoutCtx::FULL, address.clone())
+        Rule2Test::handle(base_slot, LayoutCtx::FULL, address)
             .write(value)
             .unwrap();
 
@@ -488,7 +488,7 @@ fn test_partially_packed_slot_contents() {
             addr2: Address::from([0xBB; 20]),
         };
 
-        PartiallyPacked::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PartiallyPacked::handle(base_slot, LayoutCtx::FULL, address)
             .write(value.clone())
             .unwrap();
 
@@ -497,10 +497,10 @@ fn test_partially_packed_slot_contents() {
         // Slot 1: value (32 bytes) - fills entire slot
         // Slot 2: addr2 (20 bytes) - alone in slot, right-aligned
 
-        let slot0 = U256::handle(base_slot, LayoutCtx::FULL, address.clone())
+        let slot0 = U256::handle(base_slot, LayoutCtx::FULL, address)
             .read()
             .unwrap();
-        let slot1 = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address.clone())
+        let slot1 = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address)
             .read()
             .unwrap();
         let slot2 = U256::handle(base_slot + U256::from(2), LayoutCtx::FULL, address)
@@ -540,7 +540,7 @@ fn test_partial_update_preserves_adjacent_fields() {
             b: 0x2222222222222222,
             c: 0x3333333333333333,
         };
-        PackedThree::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PackedThree::handle(base_slot, LayoutCtx::FULL, address)
             .write(initial)
             .unwrap();
 
@@ -550,7 +550,7 @@ fn test_partial_update_preserves_adjacent_fields() {
             b: 0x9999999999999999, // changed
             c: 0x3333333333333333,
         };
-        PackedThree::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PackedThree::handle(base_slot, LayoutCtx::FULL, address)
             .write(updated)
             .unwrap();
 
@@ -585,21 +585,20 @@ fn test_delete_zeros_all_slots() {
         };
 
         // Store the value (uses 3 slots)
-        PartiallyPacked::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PartiallyPacked::handle(base_slot, LayoutCtx::FULL, address)
             .write(value)
             .unwrap();
 
         // Verify slots are non-zero
-        let slot0_before = U256::handle(base_slot, LayoutCtx::FULL, address.clone())
+        let slot0_before = U256::handle(base_slot, LayoutCtx::FULL, address)
             .read()
             .unwrap();
-        let slot1_before = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address.clone())
+        let slot1_before = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address)
             .read()
             .unwrap();
-        let slot2_before =
-            U256::handle(base_slot + U256::from(2), LayoutCtx::FULL, address.clone())
-                .read()
-                .unwrap();
+        let slot2_before = U256::handle(base_slot + U256::from(2), LayoutCtx::FULL, address)
+            .read()
+            .unwrap();
 
         assert_ne!(
             slot0_before,
@@ -618,15 +617,15 @@ fn test_delete_zeros_all_slots() {
         );
 
         // Delete the value
-        PartiallyPacked::handle(base_slot, LayoutCtx::FULL, address.clone())
+        PartiallyPacked::handle(base_slot, LayoutCtx::FULL, address)
             .delete()
             .unwrap();
 
         // Verify all slots are now zero
-        let slot0_after = U256::handle(base_slot, LayoutCtx::FULL, address.clone())
+        let slot0_after = U256::handle(base_slot, LayoutCtx::FULL, address)
             .read()
             .unwrap();
-        let slot1_after = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address.clone())
+        let slot1_after = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address)
             .read()
             .unwrap();
         let slot2_after = U256::handle(base_slot + U256::from(2), LayoutCtx::FULL, address)
@@ -652,13 +651,13 @@ fn test_slot_boundary_at_32_bytes() {
             flag: true,
         };
 
-        ExactFit::handle(base_slot, LayoutCtx::FULL, address.clone())
+        ExactFit::handle(base_slot, LayoutCtx::FULL, address)
             .write(value.clone())
             .unwrap();
 
         // Slot 0: data (32 bytes) - fills entire slot
         // Slot 1: flag (1 byte)
-        let slot0 = U256::handle(base_slot, LayoutCtx::FULL, address.clone())
+        let slot0 = U256::handle(base_slot, LayoutCtx::FULL, address)
             .read()
             .unwrap();
         let slot1 = U256::handle(base_slot + U256::ONE, LayoutCtx::FULL, address)

@@ -56,6 +56,12 @@ impl PolicyData {
     }
 }
 
+impl Default for TIP403Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TIP403Registry {
     /// Creates an instance of the precompile.
     ///
