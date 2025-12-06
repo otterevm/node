@@ -412,12 +412,16 @@ where
             )
             .map_err(PayloadBuilderError::other)?;
 
+        let execution_start = Instant::now();
+
+        let pre_execution_changes_start = Instant::now();
         builder.apply_pre_execution_changes().map_err(|err| {
             warn!(%err, "failed to apply pre-execution changes");
             PayloadBuilderError::Internal(err.into())
         })?;
-
-        debug!("building new payload");
+        self.metrics
+            .pre_execution_changes_duration_seconds
+            .record(pre_execution_changes_start.elapsed());
 
         // Prepare system transactions before actual block building and account for their size.
         let prepare_system_txs_start = Instant::now();
@@ -454,7 +458,6 @@ where
             .start_block_txs_execution_duration_seconds
             .record(start_block_txs_execution_elapsed);
 
-        let execution_start = Instant::now();
         while let Some(pool_tx) = best_txs.next() {
             // ensure we still have capacity for this transaction
             if cumulative_gas_used + pool_tx.gas_limit() > non_shared_gas_limit {
@@ -600,10 +603,6 @@ where
             }
         }
 
-        let execution_elapsed = execution_start.elapsed();
-        self.metrics
-            .total_transaction_execution_duration_seconds
-            .record(execution_elapsed);
         self.metrics
             .payment_transactions
             .record(payment_transactions as f64);
@@ -622,6 +621,11 @@ where
         self.metrics
             .system_transactions_execution_duration_seconds
             .record(system_txs_execution_elapsed);
+
+        let execution_elapsed = execution_start.elapsed();
+        self.metrics
+            .total_transaction_execution_duration_seconds
+            .record(execution_elapsed);
 
         let builder_finish_start = Instant::now();
         let BlockBuilderOutcome {
