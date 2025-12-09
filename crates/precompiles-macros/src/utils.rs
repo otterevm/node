@@ -256,28 +256,6 @@ pub(crate) fn extract_mapping_types(ty: &Type) -> Option<(&Type, &Type)> {
     None
 }
 
-/// Extracts the value type from `UserMapping<V>`.
-///
-/// Returns `Some(value_type)` if the type is a `UserMapping`, `None` otherwise.
-pub(crate) fn extract_user_mapping_type(ty: &Type) -> Option<&Type> {
-    if let Type::Path(type_path) = ty {
-        let last_segment = type_path.path.segments.last()?;
-
-        // Check if the type is named "UserMapping"
-        if last_segment.ident != "UserMapping" {
-            return None;
-        }
-
-        // Extract single generic argument (value type)
-        if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
-            if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
-                return Some(ty);
-            }
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

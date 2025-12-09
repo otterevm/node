@@ -94,8 +94,6 @@ enum FieldKind<'a> {
     Direct(&'a Type),
     /// Mapping fields. Handles all nesting levels via recursive types.
     Mapping { key: &'a Type, value: &'a Type },
-    /// UserMapping fields. Identity slot computation (no keccak hashing).
-    UserMapping { value: &'a Type },
 }
 
 fn parse_fields(input: DeriveInput) -> syn::Result<Vec<FieldInfo>> {
