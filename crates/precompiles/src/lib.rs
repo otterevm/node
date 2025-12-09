@@ -58,7 +58,7 @@ pub use tempo_contracts::precompiles::{
     TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
 };
 
-//Re-export storage layout helpers for read-only contexts (e.g., pool validation)
+// Re-export storage layout helpers for read-only contexts (e.g., pool validation)
 pub use account_keychain::AuthorizedKey;
 
 /// Input per word cost. It covers abi decoding and cloning of input into call data.
