@@ -32,7 +32,7 @@ The contract maintains per‑user, per‑token internal balances. Order placemen
 
 **Implementation note (non‑normative):**  
 
-The current reference implementation additionally tracks aggregate escrowed base and quote balances per trading pair and decrements them on fills and cancellations. This per‑pair accounting is a technically redundant runtime invariant check that enforces that each pair never spends more base or quote token than it has escrowed, providing an additional guardrail to prevent any bugs that can be triggered in a single pair from putting other pairs at risk.
+The current implementation additionally tracks aggregate escrowed base and quote balances per trading pair and decrements them on fills and cancellations. This per‑pair accounting is a technically redundant runtime invariant check that enforces that each pair never spends more base or quote token than it has escrowed, providing an additional guardrail to prevent any bugs that can be triggered in a single pair from putting other pairs at risk.
 
 #### Delayed order placement
 
