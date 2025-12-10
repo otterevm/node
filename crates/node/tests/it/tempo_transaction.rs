@@ -2743,10 +2743,10 @@ async fn test_aa_estimate_gas_with_keychain_and_key_auth() -> eyre::Result<()> {
     // Test 4: KeyAuthorization with secp256k1 (no limits)
     println!("\nTest 4: KeyAuthorization (secp256k1, no limits)");
     let mut tx_key_auth = tx_request.clone();
-    tx_key_auth
-        .as_object_mut()
-        .unwrap()
-        .insert("keyAuthSignatureType".to_string(), serde_json::json!("secp256k1"));
+    tx_key_auth.as_object_mut().unwrap().insert(
+        "keyAuthSignatureType".to_string(),
+        serde_json::json!("secp256k1"),
+    );
 
     let key_auth_gas: String = provider
         .raw_request("eth_estimateGas".into(), [tx_key_auth])
@@ -2765,10 +2765,10 @@ async fn test_aa_estimate_gas_with_keychain_and_key_auth() -> eyre::Result<()> {
     // Test 5: KeyAuthorization with P256 (no limits)
     println!("\nTest 5: KeyAuthorization (P256, no limits)");
     let mut tx_key_auth_p256 = tx_request.clone();
-    tx_key_auth_p256
-        .as_object_mut()
-        .unwrap()
-        .insert("keyAuthSignatureType".to_string(), serde_json::json!("p256"));
+    tx_key_auth_p256.as_object_mut().unwrap().insert(
+        "keyAuthSignatureType".to_string(),
+        serde_json::json!("p256"),
+    );
 
     let key_auth_p256_gas: String = provider
         .raw_request("eth_estimateGas".into(), [tx_key_auth_p256])
@@ -2788,10 +2788,10 @@ async fn test_aa_estimate_gas_with_keychain_and_key_auth() -> eyre::Result<()> {
     // Test 6: KeyAuthorization with spending limits
     println!("\nTest 6: KeyAuthorization (secp256k1, 3 spending limits)");
     let mut tx_key_auth_limits = tx_request.clone();
-    tx_key_auth_limits
-        .as_object_mut()
-        .unwrap()
-        .insert("keyAuthSignatureType".to_string(), serde_json::json!("secp256k1"));
+    tx_key_auth_limits.as_object_mut().unwrap().insert(
+        "keyAuthSignatureType".to_string(),
+        serde_json::json!("secp256k1"),
+    );
     tx_key_auth_limits
         .as_object_mut()
         .unwrap()
