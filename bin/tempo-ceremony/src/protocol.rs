@@ -751,16 +751,6 @@ impl GenesisCeremony {
         outcome: PublicOutcome,
     ) -> eyre::Result<()> {
         self.verification.our_outcome = Some(outcome.clone());
-        for (pk, stored) in self.verification.outcomes.iter() {
-            if stored != &outcome {
-                return Err(Error::OutcomeMismatch {
-                    from: pk.clone().into(),
-                    expected: outcome.clone().into(),
-                    got: stored.clone().into(),
-                }
-                .into());
-            }
-        }
         self.verification
             .outcomes
             .insert(self.membership.my_public_key.clone(), outcome.clone());
@@ -781,6 +771,18 @@ impl GenesisCeremony {
                 )
                 .await?;
         }
+
+        for (pk, stored) in self.verification.outcomes.iter() {
+            if stored != &outcome {
+                return Err(Error::OutcomeMismatch {
+                    from: pk.clone().into(),
+                    expected: outcome.clone().into(),
+                    got: stored.clone().into(),
+                }
+                .into());
+            }
+        }
+
         Ok(())
     }
 
