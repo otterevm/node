@@ -10,13 +10,7 @@ This specification defines a system of one-way Automated Market Makers (AMMs) de
 
 Current blockchain fee systems typically require users to hold native tokens for gas payments. This creates friction for users who prefer to transact in stablecoins.
 
-The Fee AMM is a dedicated AMM for trading between stablecoins, which can only be used by the protocol (and by arbitrageurs rebalancing it to keep it balanced). The protocol automatically collects fees in many different coins during the block, and then sells them all at the end of the block (paying a constant price) into the token preferred by the validator. 
-
-The system is designed to minimize several forms of MEV:
-
-- **No Probabilistic MEV**: The fixed fee swap rate and batch settlement prevent profitable backrunning of fee swaps. There is no way to profitably spam the chain with transactions hoping an opportunity might arise.
-- **No Sandwich Attacks**: Fee swaps execute at a fixed rate and settle atomically at block end, eliminating sandwich attack vectors.
-- **Top-of-Block Auction**: The main MEV in the AMM (from rebalancing) occurs as a single race at the top of the next block rather than creating probabilistic spam throughout.
+The Fee AMM is a dedicated AMM for trading between stablecoins, which can only be used by the protocol (and by arbitrageurs rebalancing it to keep it balanced). The protocol automatically collects fees and executes fee swaps immediately during pre-transaction processing, converting user tokens to validator tokens at a fixed rate.
 
 ## Specification
 
@@ -114,32 +108,23 @@ function burn(
 ) external returns (uint256 amountUserToken, uint256 amountValidatorToken)
 ```
 
-Burns LP tokens and receives pro-rata share of reserves. Reverts if withdrawal would prevent pending swaps at the end of the block. Emits `Burn` event.
+Burns LP tokens and receives pro-rata share of reserves. Emits `Burn` event.
 
 ```solidity
-function executePendingFeeSwaps(
+function executeFeeSwap(
     address userToken,
-    address validatorToken
+    address validatorToken,
+    uint256 amountIn
 ) internal returns (uint256 amountOut)
 ```
 
-Settles all pending fee swaps by updating reserves. Calculates `amountOut = (amountIn * M) / SCALE`. Only executed by the protocol, at the end of each block. Emits `FeeSwap` event.
-
-```solidity
-function reserveLiquidity(
-    address userToken,
-    address validatorToken,
-    uint256 maxAmount
-) internal
-```
-
-Reserves liquidity for a pending fee swap. Calculates `maxAmountOut = (maxAmount * M) / SCALE`. Verifies sufficient validator token reserves (accounting for pending swaps). Tracks pending swap input for the full `maxAmount`.
+Executes a fee swap immediately, converting `userToken` to `validatorToken` at the fixed rate m = 0.9970. Called by `FeeManager.collectFeePreTx` during pre-transaction fee collection. Calculates `amountOut = (amountIn * M) / SCALE`. Reverts if insufficient liquidity. Updates reserves immediately. Access: Internal only (called by FeeManager).
 
 #### 2. FeeManager Contract
 
 Tempo introduces a precompiled contract, the `FeeManager`, at the address `0xfeec000000000000000000000000000000000000`.
 
-The `FeeManager` is a singleton contract that implements all the functions of the Fee AMM for every pool. It also handles the collection and accounting of fees during each transaction (without refunds of unused gas), stores fee token preferences for users and validators, and implements the `executeBlock()` function that is called by a system transaction at the end of each block.
+The `FeeManager` is a singleton contract that implements all the functions of the Fee AMM for every pool. It also handles the collection and accounting of fees during each transaction, stores fee token preferences for users and validators, maintains fee balances per validator, and implements the `executeBlock()` function that transfers accumulated fees to validators at the end of each block.
 
 ##### Key Functions
 
@@ -163,13 +148,13 @@ function collectFeePreTx(
 ) external
 ```
 
-Called by the protocol before transaction execution. The fee token (`userToken`) is determined by the protocol before calling using logic that considers: explicit tx fee token, setUserToken calls, stored user preference, tx.to if TIP-20. Reserves AMM liquidity if user token differs from validator token, collects the maximum fee from the user using `transferFeePreTx`, and immediately records the full `maxAmount` as the fee owed to the validator (either directly or as expected AMM output). Access: Protocol only (`msg.sender == address(0)`).
+Called by the protocol before transaction execution. The fee token (`userToken`) is determined by the protocol before calling using logic that considers: explicit tx fee token, setUserToken calls, stored user preference, tx.to if TIP-20. Collects the maximum fee from the user using `transferFeePreTx`. If user token differs from validator token, executes the fee swap immediately via `executeFeeSwap` and adds the output to the validator's fee balance. If tokens match, adds `maxAmount` directly to the validator's fee balance. Adds the validator's address to a tracking array for distribution at end of block. Access: Protocol only (`msg.sender == address(0)`).
 
 ```solidity
 function executeBlock() external
 ```
 
-Called once in a system transaction at the end of each block. Processes all collected fees and executes pending swaps. For each token with collected fees: if token differs from validator token, executes pending fee swaps via AMM and updates reserves and calculates output amount. Transfers all validator tokens to the validator (`block.coinbase`). Clears fee tracking arrays. Access: Protocol only (`msg.sender == address(0)`).
+Called once in a system transaction at the end of each block. Transfers accumulated fee balances to all validators who received fees during the block. Clears fee tracking arrays. Access: Protocol only (`msg.sender == address(0)`).
 
 ### Swap Mechanisms
 
@@ -177,7 +162,7 @@ Called once in a system transaction at the end of each block. Processes all coll
 - **Rate**: Fixed at m=0.9970 (validator receives 0.9970 of their preferred token per 1 user token that user pays)
 - **Direction**: User token to validator token
 - **Purpose**: Convert tokens paid by users as fees to tokens preferred by validators
-- **Settlement**: Batched at block end via `executePendingFeeSwaps`
+- **Settlement**: Immediate during `collectFeePreTx`
 - **Access**: Protocol only
 
 #### Rebalancing Swaps
@@ -193,17 +178,14 @@ Called once in a system transaction at the end of each block. Processes all coll
    - Protocol determines user's fee token using logic that considers: explicit tx fee token, setUserToken calls, stored user preference, tx.to if TIP-20
    - Protocol calculates maximum gas needed (`maxAmount = gasLimit * maxFeePerGas`)
    - `FeeManager.collectFeePreTx(user, userToken, maxAmount)` is called:
-     - If user token differs from validator token, reserves AMM liquidity via `reserveLiquidity()`
      - Collects maximum fee from user using `transferFeePreTx()`
-     - Records the full `maxAmount` as the fee owed to the validator (either directly or as expected AMM output)
+     - If user token differs from validator token, executes fee swap immediately via `executeFeeSwap()`
+     - Adds fee amount (in validator's token) to the validator's fee balance
    - If any check fails (insufficient balance, insufficient liquidity), transaction is invalid
 
 2. **Block End**:
    - System transaction calls `FeeManager.executeBlock()`:
-     - For each token with collected fees:
-       - If token differs from validator token, executes pending fee swaps via `executePendingFeeSwaps()`
-       - Updates pool reserves (adds userToken, subtracts validatorToken)
-     - Transfers all validator tokens to validator (`block.coinbase`)
+     - Transfers accumulated fee balances to each validator
      - Clears fee tracking arrays
 
 ### Events
@@ -213,12 +195,6 @@ event RebalanceSwap(
     address indexed userToken,
     address indexed validatorToken,
     address indexed swapper,
-    uint256 amountIn,
-    uint256 amountOut
-)
-event FeeSwap(
-    address indexed userToken,
-    address indexed validatorToken,
     uint256 amountIn,
     uint256 amountOut
 )
@@ -275,4 +251,4 @@ The proposer **must** construct and include this transaction when building the b
 
 ### Gas
 
-Fee swaps are designed to be gas-free from the user perspective. The pre-tx and post-tx steps in each transaction do not cost any gas; nor does the system transaction at the end of each block.
+Fee swaps are designed to be gas-free from the user perspective. The pre-tx step in each transaction does not cost any gas; nor does the system transaction at the end of each block.
