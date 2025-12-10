@@ -24,7 +24,9 @@ if (!moduleName || !functionName) {
   console.error(
     'Usage: bun scripts/sdk/generate-param-docs.ts <module> <function> [--wagmi]',
   )
-  console.error('Example: bun scripts/sdk/generate-param-docs.ts dex createPair')
+  console.error(
+    'Example: bun scripts/sdk/generate-param-docs.ts dex createPair',
+  )
   process.exit(1)
 }
 

@@ -21,7 +21,9 @@ if (!moduleName || !functionName) {
   console.error(
     'Usage: bun scripts/sdk/generate-return-docs.ts <module> <function>',
   )
-  console.error('Example: bun scripts/sdk/generate-return-docs.ts dex placeFlip')
+  console.error(
+    'Example: bun scripts/sdk/generate-return-docs.ts dex placeFlip',
+  )
   process.exit(1)
 }
 

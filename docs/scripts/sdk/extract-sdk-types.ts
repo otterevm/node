@@ -22,9 +22,7 @@ if (!moduleName || !functionName) {
   console.error(
     'Usage: bun scripts/sdk/extract-sdk-types.ts <module> <function>',
   )
-  console.error(
-    'Example: bun scripts/sdk/extract-sdk-types.ts token transfer',
-  )
+  console.error('Example: bun scripts/sdk/extract-sdk-types.ts token transfer')
   process.exit(1)
 }
 

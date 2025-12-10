@@ -11,7 +11,7 @@ import type { Account, Chain, WatchContractEventReturnType } from 'viem'
 import type {
   ReadParameters,
   WriteParameters,
-} from '../node_modules/tempo.ts/src/viem/internal/types.js'
+} from '../../node_modules/tempo.ts/src/viem/internal/types.js'
 
 // Use mapped type to force TypeScript to expand the intersection types
 type ExpandType<T> = T extends object ? { [K in keyof T]: T[K] } : T
