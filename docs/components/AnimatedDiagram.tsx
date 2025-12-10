@@ -400,7 +400,7 @@ export function AnimatedDiagram(props: AnimatedDiagramProps) {
     return () => window.removeEventListener('hashchange', checkHash)
   }, [title])
 
-  // IntersectionObserver to start animation when approaching middle of viewport
+  // IntersectionObserver to start animation when diagram is mostly in view
   useEffect(() => {
     const element = wrapperRef.current
     if (!element) return
@@ -416,8 +416,8 @@ export function AnimatedDiagram(props: AnimatedDiagramProps) {
         })
       },
       { 
-        threshold: 0.1,
-        rootMargin: '-25% 0px -25% 0px' // Trigger when element enters middle 50% of viewport
+        threshold: 0.7, // Trigger when 70% of the diagram is visible
+        rootMargin: '0px'
       }
     )
     
