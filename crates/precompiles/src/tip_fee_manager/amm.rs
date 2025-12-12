@@ -50,24 +50,12 @@ pub struct PoolKey {
 
 // TODO(rusowsky): remove this and create a read-only wrapper that is callable from read-only ctx with db access
 impl Pool {
-    pub fn decode_from_slot(slot_value: U256) -> Result<Self> {
-        use crate::storage::packing::extract_packed_value;
-        use __packing_pool::{
-            RESERVE_USER_TOKEN_LOC as U_LOC, RESERVE_VALIDATOR_TOKEN_LOC as V_LOC,
-        };
+    pub fn decode_from_slot(slot_value: U256) -> Self {
+        use crate::storage::{LayoutCtx, Storable, packing::PackedSlot};
 
-        Ok(Self {
-            reserve_user_token: extract_packed_value::<u128>(
-                slot_value,
-                U_LOC.offset_bytes,
-                U_LOC.size,
-            )?,
-            reserve_validator_token: extract_packed_value::<u128>(
-                slot_value,
-                V_LOC.offset_bytes,
-                V_LOC.size,
-            )?,
-        })
+        // NOTE: fine to expect, as `StorageOps` on `PackedSlot` are infallible
+        Self::load(&PackedSlot(slot_value), U256::ZERO, LayoutCtx::FULL)
+            .expect("unable to decode Pool from slot")
     }
 }
 
@@ -723,7 +711,7 @@ mod tests {
     use super::*;
     use crate::{
         error::TempoPrecompileError,
-        storage::{ContractStorage, StorageContext, hashmap::HashMapStorageProvider},
+        storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
         tip_fee_manager::TIPFeeAMMError,
     };
@@ -752,7 +740,7 @@ mod tests {
     fn test_mint_identical_addresses() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut amm = TipFeeManager::new();
             let result = amm.mint(
@@ -777,7 +765,7 @@ mod tests {
     fn test_burn_identical_addresses() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut amm = TipFeeManager::new();
             let result = amm.burn(
@@ -801,7 +789,7 @@ mod tests {
     fn test_fee_swap() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -835,7 +823,7 @@ mod tests {
     fn test_fee_swap_insufficient_liquidity() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -867,7 +855,7 @@ mod tests {
     fn test_fee_swap_rounding_consistency() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -908,7 +896,7 @@ mod tests {
     fn test_execute_pending_fee_swaps() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -958,7 +946,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let to = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -1038,7 +1026,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let to = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -1073,7 +1061,7 @@ mod tests {
     fn test_reserve_liquidity_boundary() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
 
@@ -1106,7 +1094,7 @@ mod tests {
     fn test_mint_rejects_non_usd_user_token() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let eur_token = TIP20Setup::create("EuroToken", "EUR", admin)
                 .currency("EUR")
                 .apply()?;
@@ -1146,7 +1134,7 @@ mod tests {
     fn test_burn_rejects_non_usd_tokens() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let eur_token = TIP20Setup::create("EuroToken", "EUR", admin)
                 .currency("EUR")
                 .apply()?;
@@ -1185,7 +1173,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let to = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let eur_token = TIP20Setup::create("EuroToken", "EUR", admin)
                 .currency("EUR")
                 .apply()?;
@@ -1223,7 +1211,7 @@ mod tests {
     fn test_mint_with_validator_token_identical_addresses() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut amm = TipFeeManager::new();
             let result = amm.mint_with_validator_token(
@@ -1247,7 +1235,7 @@ mod tests {
     fn test_mint_with_validator_token_insufficient_amount() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin).apply()?;
             let validator_token = TIP20Setup::create("ValidatorToken", "VTK", admin).apply()?;
             let mut amm = TipFeeManager::new();
@@ -1278,7 +1266,7 @@ mod tests {
         let user = Address::random();
         let user2 = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin)
                 .apply()?
                 .address();
@@ -1402,7 +1390,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mint_amount = uint!(10000000_U256);
             let token1 = TIP20Setup::create("Token1", "TK1", admin)
                 .with_issuer(admin)
@@ -1443,7 +1431,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mint_amount = uint!(10000000_U256);
             let token1 = TIP20Setup::create("Token1", "TK1", admin)
                 .with_issuer(admin)
@@ -1482,7 +1470,7 @@ mod tests {
     fn test_calculate_burn_amounts_pre_allegretto() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut amm = TipFeeManager::new();
 
             // Create a pool with very large total supply to make burn amounts round to zero
@@ -1515,7 +1503,7 @@ mod tests {
     fn test_calculate_burn_amounts_post_allegretto() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut amm = TipFeeManager::new();
 
             let pool = Pool {
@@ -1545,7 +1533,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new_with_spec(1, TempoHardfork::AllegroModerato);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let user_token = TIP20Setup::create("UserToken", "UTK", admin)
                 .apply()?
                 .address();

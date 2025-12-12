@@ -32,6 +32,7 @@ pub trait HashStrategy {
 /// Slot computation: `keccak256(key || base_slot)` with first byte set to `STORAGE_SPACE`.
 ///
 /// Generic over `K` to allow any key type that implements `StorageKey`.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Keccak256<K: StorageKey>(PhantomData<K>);
 
 impl<K: StorageKey> HashStrategy for Keccak256<K> {

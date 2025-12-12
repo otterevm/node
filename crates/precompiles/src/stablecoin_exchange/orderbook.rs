@@ -3,7 +3,7 @@
 use crate::{
     error::Result,
     stablecoin_exchange::IStablecoinExchange,
-    storage::{Handler, Mapping, Slot, StorageContext},
+    storage::{Handler, Mapping, Slot, StorageCtx},
 };
 use alloy::primitives::{Address, B256, U256, keccak256};
 use tempo_contracts::precompiles::StablecoinExchangeError;
@@ -148,7 +148,7 @@ impl Orderbook {
 }
 
 impl OrderbookHandler {
-    pub fn handle_tick_level(&self, tick: i16, is_bid: bool) -> TickLevelHandler {
+    pub fn get_tick_level_handler(&self, tick: i16, is_bid: bool) -> TickLevelHandler {
         if is_bid {
             self.bids.at(tick)
         } else {
@@ -156,7 +156,7 @@ impl OrderbookHandler {
         }
     }
 
-    fn handle_tick_bit(&self, tick: i16, is_bid: bool) -> Result<Slot<U256>> {
+    fn get_tick_bit_handler(&self, tick: i16, is_bid: bool) -> Result<Slot<U256>> {
         if !(MIN_TICK..=MAX_TICK).contains(&tick) {
             return Err(StablecoinExchangeError::invalid_tick().into());
         }
@@ -172,7 +172,7 @@ impl OrderbookHandler {
 
     /// Set bit in bitmap to mark tick as active
     pub fn set_tick_bit(&mut self, tick: i16, is_bid: bool) -> Result<()> {
-        let mut bitmap = self.handle_tick_bit(tick, is_bid)?;
+        let mut bitmap = self.get_tick_bit_handler(tick, is_bid)?;
 
         // Read current bitmap word
         let current_word = bitmap.read()?;
@@ -187,7 +187,7 @@ impl OrderbookHandler {
 
     /// Clear bit in bitmap to mark tick as inactive
     pub fn delete_tick_bit(&mut self, tick: i16, is_bid: bool) -> Result<()> {
-        let mut bitmap = self.handle_tick_bit(tick, is_bid)?;
+        let mut bitmap = self.get_tick_bit_handler(tick, is_bid)?;
 
         // Read current bitmap word
         let current_word = bitmap.read()?;
@@ -202,7 +202,7 @@ impl OrderbookHandler {
 
     /// Check if a tick is initialized (has orders)
     pub fn is_tick_initialized(&self, tick: i16, is_bid: bool) -> Result<bool> {
-        let bitmap = self.handle_tick_bit(tick, is_bid)?;
+        let bitmap = self.get_tick_bit_handler(tick, is_bid)?;
 
         // Read current bitmap word
         let word = bitmap.read()?;
@@ -226,7 +226,7 @@ impl OrderbookHandler {
     /// Find next initialized ask tick higher than current tick
     fn next_initialized_ask_tick(&self, tick: i16) -> (i16, bool) {
         // Guard against overflow when tick is at or above MAX_TICK
-        if StorageContext.spec().is_allegretto() && tick >= MAX_TICK {
+        if StorageCtx.spec().is_allegretto() && tick >= MAX_TICK {
             return (MAX_TICK, false);
         }
         let mut next_tick = tick + 1;
@@ -242,7 +242,7 @@ impl OrderbookHandler {
     /// Find next initialized bid tick lower than current tick
     fn next_initialized_bid_tick(&self, tick: i16) -> (i16, bool) {
         // Guard against underflow when tick is at or below MIN_TICK
-        if StorageContext.spec().is_allegretto() && tick <= MIN_TICK {
+        if StorageCtx.spec().is_allegretto() && tick <= MIN_TICK {
             return (MIN_TICK, false);
         }
         let mut next_tick = tick - 1;
@@ -465,8 +465,9 @@ mod tests {
         #[test]
         fn test_tick_lifecycle() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 // Test full lifecycle (set, check, clear, check) for positive and negative ticks
@@ -507,8 +508,9 @@ mod tests {
         #[test]
         fn test_boundary_ticks() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 // Test MIN_TICK
@@ -541,8 +543,9 @@ mod tests {
         #[test]
         fn test_bid_and_ask_separate() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 let tick = 100;
@@ -577,8 +580,9 @@ mod tests {
         #[test]
         fn test_ticks_across_word_boundary() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 // Ticks that span word boundary at 256
@@ -594,8 +598,9 @@ mod tests {
         #[test]
         fn test_ticks_different_words() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 // Test ticks in different words (both positive and negative)
@@ -640,8 +645,9 @@ mod tests {
         #[test]
         fn test_set_tick_bit_out_of_bounds() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 // Test tick above MAX_TICK
@@ -670,8 +676,9 @@ mod tests {
         #[test]
         fn test_clear_tick_bit_out_of_bounds() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
-                let exchange = StablecoinExchange::new();
+            StorageCtx::enter(&mut storage, || {
+                let mut exchange = StablecoinExchange::new();
+                exchange.initialize()?;
                 let mut book_handler = exchange.books.at(BOOK_KEY);
 
                 // Test tick above MAX_TICK
@@ -700,7 +707,7 @@ mod tests {
         #[test]
         fn test_is_tick_initialized_out_of_bounds() -> eyre::Result<()> {
             let mut storage = HashMapStorageProvider::new(1);
-            StorageContext::enter(&mut storage, || {
+            StorageCtx::enter(&mut storage, || {
                 let exchange = StablecoinExchange::new();
                 let book_handler = exchange.books.at(BOOK_KEY);
 

@@ -16,8 +16,28 @@ use alloy::primitives::U256;
 
 use crate::{
     error::Result,
-    storage::{Layout, Packable},
+    storage::{Layout, Packable, StorageOps},
 };
+
+/// A helper struct to support packing elements into a single slot. Represents an
+/// in-memory storage slot value.
+///
+/// We used it when we operate on elements that are guaranteed to be packable.
+/// To avoid doing multiple storage reads/writes when packing those elements, we
+/// use this as an intermediate [`StorageOps`] implementation that can be passed to
+/// `Storable::store` and `Storable::load`.
+pub struct PackedSlot(pub U256);
+
+impl StorageOps for PackedSlot {
+    fn load(&self, _slot: U256) -> Result<U256> {
+        Ok(self.0)
+    }
+
+    fn store(&mut self, _slot: U256, value: U256) -> Result<()> {
+        self.0 = value;
+        Ok(())
+    }
+}
 
 /// Location information for a packed field within a storage slot.
 #[derive(Debug, Clone, Copy)]
@@ -82,7 +102,7 @@ pub fn extract_packed_value<T: Packable>(
     let mask = create_element_mask(bytes);
 
     // Extract and right-align the value
-    Ok(T::from_word((slot_value >> shift_bits) & mask))
+    T::from_word((slot_value >> shift_bits) & mask)
 }
 
 /// Insert a packed value into a storage slot at a given byte offset.
@@ -173,12 +193,61 @@ pub const fn calc_packed_slot_count(n: usize, elem_bytes: usize) -> usize {
     (n * elem_bytes).div_ceil(32)
 }
 
+/// Test helper function for constructing EVM words from hex string literals.
+///
+/// Takes an array of hex strings (with or without "0x" prefix), concatenates
+/// them left-to-right, left-pads with zeros to 32 bytes, and returns a U256.
+///
+/// # Example
+/// ```ignore
+/// let word = gen_word_from(&[
+///     "0x2a",                                        // 1 byte
+///     "0x1111111111111111111111111111111111111111",  // 20 bytes
+///     "0x01",                                        // 1 byte
+/// ]);
+/// // Produces: [10 zeros] [0x2a] [20 bytes of 0x11] [0x01]
+/// ```
+#[cfg(any(test, feature = "test-utils"))]
+pub fn gen_word_from(values: &[&str]) -> U256 {
+    let mut bytes = Vec::new();
+
+    for value in values {
+        let hex_str = value.strip_prefix("0x").unwrap_or(value);
+
+        // Parse hex string to bytes
+        assert!(
+            hex_str.len() % 2 == 0,
+            "Hex string '{value}' has odd length"
+        );
+
+        for i in (0..hex_str.len()).step_by(2) {
+            let byte_str = &hex_str[i..i + 2];
+            let byte = u8::from_str_radix(byte_str, 16)
+                .unwrap_or_else(|e| panic!("Invalid hex in '{value}': {e}"));
+            bytes.push(byte);
+        }
+    }
+
+    assert!(
+        bytes.len() <= 32,
+        "Total bytes ({}) exceed 32-byte slot limit",
+        bytes.len()
+    );
+
+    // Left-pad with zeros to 32 bytes
+    let mut slot_bytes = [0u8; 32];
+    let start_idx = 32 - bytes.len();
+    slot_bytes[start_idx..].copy_from_slice(&bytes);
+
+    U256::from_be_bytes(slot_bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         storage::{
-            Handler, StorageContext,
+            Handler, StorageCtx,
             types::{LayoutCtx, Slot},
         },
         test_util::{gen_word_from, setup_storage},
@@ -724,7 +793,7 @@ mod tests {
     #[test]
     fn test_packed_at_multiple_types() -> Result<()> {
         let (mut storage, address) = setup_storage();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let struct_base = U256::from(0x2000);
 
             // Pack multiple types in same slot: bool(1) + u64(8) + u128(16)
@@ -759,7 +828,7 @@ mod tests {
     #[test]
     fn test_packed_at_different_slots() -> Result<()> {
         let (mut storage, address) = setup_storage();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let struct_base = U256::from(0x4000);
 
             // Field in slot 0 (bool is 1 byte, packable)

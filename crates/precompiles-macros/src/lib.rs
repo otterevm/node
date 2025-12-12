@@ -19,12 +19,41 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
     Data, DeriveInput, Expr, Fields, Ident, Token, Type, Visibility,
-    parse::{ParseStream, Parser},
+    parse::{Parse, ParseStream, Parser},
     parse_macro_input,
     punctuated::Punctuated,
 };
 
 use crate::utils::extract_attributes;
+
+/// Configuration parsed from `#[contract(...)]` attribute arguments.
+struct ContractConfig {
+    /// Optional address expression for generating `Self::new()` and `Default`.
+    address: Option<Expr>,
+}
+
+impl Parse for ContractConfig {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        if input.is_empty() {
+            return Ok(Self { address: None });
+        }
+
+        let ident: Ident = input.parse()?;
+        if ident != "addr" && ident != "address" {
+            return Err(syn::Error::new(
+                ident.span(),
+                "only `addr` attribute is supported",
+            ));
+        }
+
+        input.parse::<Token![=]>()?;
+        let address: Expr = input.parse()?;
+
+        Ok(Self {
+            address: Some(address),
+        })
+    }
+}
 
 const RESERVED: &[&str] = &["address", "storage", "msg_sender"];
 
@@ -60,21 +89,25 @@ const RESERVED: &[&str] = &["address", "storage", "msg_sender"];
 /// - Unique field names, excluding the reserved ones: `address`, `storage`, `msg_sender`.
 /// - All field types must implement `Storable`, and mapping keys must implement `StorageKey`.
 #[proc_macro_attribute]
-pub fn contract(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(attr as ContractConfig);
     let input = parse_macro_input!(item as DeriveInput);
 
-    match gen_contract_output(input) {
+    match gen_contract_output(input, config.address.as_ref()) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
 }
 
 /// Main code generation function with optional call trait generation
-fn gen_contract_output(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+fn gen_contract_output(
+    input: DeriveInput,
+    address: Option<&Expr>,
+) -> syn::Result<proc_macro2::TokenStream> {
     let (ident, vis) = (input.ident.clone(), input.vis.clone());
     let fields = parse_fields(input)?;
 
-    let storage_output = gen_contract_storage(&ident, &vis, &fields)?;
+    let storage_output = gen_contract_storage(&ident, &vis, &fields, address)?;
     Ok(quote! { #storage_output })
 }
 
@@ -149,19 +182,26 @@ fn gen_contract_storage(
     ident: &Ident,
     vis: &Visibility,
     fields: &[FieldInfo],
+    address: Option<&Expr>,
 ) -> syn::Result<proc_macro2::TokenStream> {
     // Generate the complete output
     let allocated_fields = packing::allocate_slots(fields)?;
     let transformed_struct = layout::gen_struct(ident, vis, &allocated_fields);
     let storage_trait = layout::gen_contract_storage_impl(ident);
-    let constructor = layout::gen_constructor(ident, &allocated_fields);
+    let constructor = layout::gen_constructor(ident, &allocated_fields, address);
     let slots_module = layout::gen_slots_module(&allocated_fields);
+    let default_impl = if address.is_some() {
+        layout::gen_default_impl(ident)
+    } else {
+        proc_macro2::TokenStream::new()
+    };
 
     let output = quote! {
         #slots_module
         #transformed_struct
         #constructor
         #storage_trait
+        #default_impl
     };
 
     Ok(output)

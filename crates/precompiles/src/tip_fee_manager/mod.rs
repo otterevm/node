@@ -37,7 +37,7 @@ impl StorageKey for TokenPair {
     }
 }
 
-#[contract]
+#[contract(addr = TIP_FEE_MANAGER_ADDRESS)]
 pub struct TipFeeManager {
     validator_tokens: Mapping<Address, Address>,
     user_tokens: Mapping<Address, Address>,
@@ -54,24 +54,11 @@ pub struct TipFeeManager {
     validator_in_fees_array: Mapping<Address, bool>,
 }
 
-impl Default for TipFeeManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TipFeeManager {
     // Constants
     pub const FEE_BPS: u64 = 25; // 0.25% fee
     pub const BASIS_POINTS: u64 = 10000;
     pub const MINIMUM_BALANCE: U256 = uint!(1_000_000_000_U256); // 1e9
-
-    /// Creates an instance of the precompile.
-    ///
-    /// Caution: This does not initialize the account, see [`Self::initialize`].
-    pub fn new() -> Self {
-        Self::__new(TIP_FEE_MANAGER_ADDRESS)
-    }
 
     /// Initializes the contract
     ///
@@ -454,16 +441,16 @@ mod tests {
     use crate::{
         TIP_FEE_MANAGER_ADDRESS,
         error::TempoPrecompileError,
-        storage::{ContractStorage, StorageContext, hashmap::HashMapStorageProvider},
+        storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
-        tip20::{ITIP20, token_id_to_address},
+        tip20::ITIP20,
     };
 
     #[test]
     fn test_set_user_token() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let user = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token = TIP20Setup::create("Test", "TST", user).apply()?;
 
             let mut fee_manager = TipFeeManager::new();
@@ -485,7 +472,7 @@ mod tests {
     fn test_set_user_token_cannot_be_path_usd_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
         let user = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let path_usd = TIP20Setup::path_usd(user).apply()?;
             let mut fee_manager = TipFeeManager::new();
 
@@ -504,7 +491,7 @@ mod tests {
     fn test_set_user_token_allows_path_usd_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
         let user = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let path_usd = TIP20Setup::path_usd(user).apply()?;
             let mut fee_manager = TipFeeManager::new();
 
@@ -527,7 +514,7 @@ mod tests {
         let validator = Address::random();
         let admin = Address::random();
         let beneficiary = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut fee_manager = TipFeeManager::new();
 
@@ -562,7 +549,7 @@ mod tests {
         let validator = Address::random();
         let beneficiary = Address::random();
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut fee_manager = TipFeeManager::new();
 
@@ -608,29 +595,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_tip20_token() -> eyre::Result<()> {
-        let mut storage = HashMapStorageProvider::new(1);
-        let random = Address::random();
-        StorageContext::enter(&mut storage, || {
-            // Valid TIP20 address
-            let token_id = rand::random::<u64>();
-            let token = token_id_to_address(token_id);
-            assert!(is_tip20_prefix(token));
-
-            // Random address is not TIP20
-            assert!(!is_tip20_prefix(random));
-
-            Ok(())
-        })
-    }
-
-    #[test]
     fn test_collect_fee_pre_tx() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let user = Address::random();
         let validator = Address::random();
         let beneficiary = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let max_amount = U256::from(10000);
 
             let token = TIP20Setup::create("Test", "TST", user)
@@ -675,7 +645,7 @@ mod tests {
         let admin = Address::random();
         let validator = Address::random();
         let beneficiary = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let actual_used = U256::from(6000);
             let refund_amount = U256::from(4000);
 
@@ -733,7 +703,7 @@ mod tests {
         let user = Address::random();
         let validator = Address::random();
         let beneficiary = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Create a non-USD token
             let non_usd_token = TIP20Setup::create("NonUSD", "EUR", admin)
                 .currency("EUR")
@@ -771,7 +741,7 @@ mod tests {
         let admin = Address::random();
         let validator = Address::random();
         let beneficiary = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Simulate attack: collected fees = 1000, but actual balance = 500
             let collected_fees = U256::from(1000);
             let balance = U256::from(500);
@@ -794,15 +764,7 @@ mod tests {
             )?;
 
             // Simulate collected fees > actual balance by setting directly
-            fee_manager
-                .collected_fees
-                .at(validator)
-                .write(collected_fees)?;
-            fee_manager
-                .validator_in_fees_array
-                .at(validator)
-                .write(true)?;
-            fee_manager.validators_with_fees.push(validator)?;
+            fee_manager.increment_collected_fees(validator, collected_fees)?;
 
             // Execute block
             let result = fee_manager.execute_block(Address::ZERO, validator);

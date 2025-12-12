@@ -27,7 +27,7 @@ struct Validator {
 }
 
 /// Validator Config precompile for managing consensus validators
-#[contract]
+#[contract(addr = VALIDATOR_CONFIG_ADDRESS)]
 pub struct ValidatorConfig {
     owner: Address,
     // NOTE(rusowsky): we delete `validator_count`, as that info is available via `validators_array.len()`
@@ -38,17 +38,7 @@ pub struct ValidatorConfig {
     validators: Mapping<Address, Validator>,
 }
 
-impl Default for ValidatorConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ValidatorConfig {
-    pub fn new() -> Self {
-        Self::__new(VALIDATOR_CONFIG_ADDRESS)
-    }
-
     /// Initialize the precompile with an owner
     pub fn initialize(&mut self, owner: Address) -> Result<()> {
         trace!(address=%self.address, %owner, "Initializing validator config precompile");
@@ -274,7 +264,7 @@ pub fn ensure_address_is_ip_port(input: &str) -> core::result::Result<(), IpWith
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{StorageContext, hashmap::HashMapStorageProvider};
+    use crate::storage::{StorageCtx, hashmap::HashMapStorageProvider};
     use alloy::primitives::Address;
     use alloy_primitives::FixedBytes;
 
@@ -283,7 +273,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let owner1 = Address::random();
         let owner2 = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut validator_config = ValidatorConfig::new();
 
             // Initialize with owner1
@@ -317,7 +307,7 @@ mod tests {
         let owner2 = Address::random();
         let validator1 = Address::random();
         let validator2 = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut validator_config = ValidatorConfig::new();
 
             // Initialize with owner1
@@ -386,7 +376,7 @@ mod tests {
     #[test]
     fn test_validator_lifecycle() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let owner = Address::from([0x01; 20]);
 
             let mut validator_config = ValidatorConfig::new();
@@ -618,7 +608,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let owner = Address::random();
         let validator = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut validator_config = ValidatorConfig::new();
             validator_config.initialize(owner)?;
 
@@ -662,7 +652,7 @@ mod tests {
         let owner = Address::random();
         let validator1 = Address::random();
         let validator2 = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut validator_config = ValidatorConfig::new();
             validator_config.initialize(owner)?;
 

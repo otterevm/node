@@ -3,7 +3,7 @@ use crate::{
     packing::{self, LayoutField, PackingConstants, SlotAssignment},
 };
 use quote::{format_ident, quote};
-use syn::{Ident, Visibility};
+use syn::{Expr, Ident, Visibility};
 
 /// Generates a public handler field declaration for a storage field
 pub(crate) fn gen_handler_field_decl(field: &LayoutField<'_>) -> proc_macro2::TokenStream {
@@ -114,7 +114,7 @@ pub(crate) fn gen_struct(
         #vis struct #name {
             #(#handler_fields,)*
             address: ::alloy::primitives::Address,
-            storage: crate::storage::StorageContext,
+            storage: crate::storage::StorageCtx,
         }
     }
 }
@@ -123,6 +123,7 @@ pub(crate) fn gen_struct(
 pub(crate) fn gen_constructor(
     name: &Ident,
     allocated_fields: &[LayoutField<'_>],
+    address: Option<&Expr>,
 ) -> proc_macro2::TokenStream {
     // Generate handler initializations for each field using the shared helper
     let field_inits = allocated_fields
@@ -130,8 +131,22 @@ pub(crate) fn gen_constructor(
         .enumerate()
         .map(|(idx, field)| gen_handler_field_init(field, idx, allocated_fields, None));
 
+    // Generate `pub fn new()` when address is provided
+    let new_fn = address.map(|addr| {
+        quote! {
+            /// Creates an instance of the precompile.
+            ///
+            /// Caution: This does not initialize the account, see [`Self::initialize`].
+            pub fn new() -> Self {
+                Self::__new(#addr)
+            }
+        }
+    });
+
     quote! {
         impl #name {
+            #new_fn
+
             #[inline(always)]
             fn __new(address: ::alloy::primitives::Address) -> Self {
                 // Run collision detection checks in debug builds
@@ -143,7 +158,7 @@ pub(crate) fn gen_constructor(
                 Self {
                     #(#field_inits,)*
                     address,
-                    storage: crate::storage::StorageContext::default(),
+                    storage: crate::storage::StorageCtx::default(),
                 }
             }
 
@@ -188,7 +203,7 @@ pub(crate) fn gen_contract_storage_impl(name: &Ident) -> proc_macro2::TokenStrea
             }
 
             #[inline(always)]
-            fn storage(&mut self) -> &mut crate::storage::StorageContext {
+            fn storage(&mut self) -> &mut crate::storage::StorageCtx {
                 &mut self.storage
             }
         }
@@ -202,7 +217,6 @@ pub(crate) fn gen_slots_module(allocated_fields: &[LayoutField<'_>]) -> proc_mac
     // Generate constants and collision check functions
     let constants = packing::gen_constants_from_ir(allocated_fields, false);
     let collision_checks = gen_collision_checks(allocated_fields);
-    let storage_space_check = gen_storage_space_check(allocated_fields);
 
     quote! {
         pub mod slots {
@@ -211,8 +225,6 @@ pub(crate) fn gen_slots_module(allocated_fields: &[LayoutField<'_>]) -> proc_mac
             #constants
             #collision_checks
         }
-
-        #storage_space_check
     }
 }
 
@@ -244,43 +256,15 @@ fn gen_collision_checks(allocated_fields: &[LayoutField<'_>]) -> proc_macro2::To
     generated
 }
 
-/// Generate compile-time check for unique non-zero STORAGE_SPACE values.
+/// Generate a `Default` implementation that calls `Self::new()`.
 ///
-/// This validates that DirectBytes-based mappings (UserMapping, etc.) don't
-/// have conflicting storage space identifiers. The check runs at compile time
-/// via const evaluation.
-fn gen_storage_space_check(allocated_fields: &[LayoutField<'_>]) -> proc_macro2::TokenStream {
-    let field_types: Vec<_> = allocated_fields.iter().map(|f| &f.ty).collect();
-    let field_names: Vec<_> = allocated_fields
-        .iter()
-        .map(|f| f.name.to_string())
-        .collect();
-
+/// This is used when `#[contract(Default)]` is specified.
+pub(crate) fn gen_default_impl(name: &Ident) -> proc_macro2::TokenStream {
     quote! {
-        /// Compile-time check for unique non-zero STORAGE_SPACE values.
-        ///
-        /// Ensures that DirectBytes-based mappings don't have conflicting storage spaces.
-        const _: () = {
-            const SPACES: &[(u8, &str)] = &[
-                #((<#field_types as crate::storage::StorableType>::STORAGE_SPACE, #field_names),)*
-            ];
-
-            // Check for duplicates among non-zero values
-            let mut i = 0;
-            while i < SPACES.len() {
-                let (space_i, _) = SPACES[i];
-                if space_i != 0 {
-                    let mut j = i + 1;
-                    while j < SPACES.len() {
-                        let (space_j, _) = SPACES[j];
-                        if space_i == space_j {
-                            panic!("duplicate STORAGE_SPACE: multiple fields use the same non-zero storage space");
-                        }
-                        j += 1;
-                    }
-                }
-                i += 1;
+        impl ::core::default::Default for #name {
+            fn default() -> Self {
+                Self::new()
             }
-        };
+        }
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     account_keychain::AccountKeychain,
     error::{Result, TempoPrecompileError},
-    storage::{Handler, Mapping, StorageContext, UserMapping},
+    storage::{Handler, Mapping, StorageCtx, UserMapping},
     tip20::{
         rewards::{RewardStream, UserRewardInfo},
         roles::DEFAULT_ADMIN_ROLE,
@@ -116,7 +116,7 @@ pub static ISSUER_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"ISSUER_ROL
 pub static BURN_BLOCKED_ROLE: LazyLock<B256> = LazyLock::new(|| keccak256(b"BURN_BLOCKED_ROLE"));
 
 /// Validates that a token has USD currency
-pub fn validate_usd_currency(token: Address, storage: StorageContext) -> Result<()> {
+pub fn validate_usd_currency(token: Address, storage: StorageCtx) -> Result<()> {
     if storage.spec().is_moderato() && !is_tip20_prefix(token) {
         return Err(FeeManagerError::invalid_token().into());
     }
@@ -681,7 +681,7 @@ impl TIP20Token {
     /// Create a TIP20Token from an address.
     /// Returns an error if the address is not a valid TIP20 token (post-AllegroModerato).
     pub fn from_address(address: Address) -> Result<Self> {
-        if StorageContext.spec().is_allegro_moderato() && !is_tip20_prefix(address) {
+        if StorageCtx.spec().is_allegro_moderato() && !is_tip20_prefix(address) {
             return Err(TIP20Error::invalid_token().into());
         }
         let token_id = address_to_token_id_unchecked(address);
@@ -969,7 +969,7 @@ pub(crate) mod tests {
     /// Initialize PathUSD token. For AllegroModerato+, uses the factory flow.
     /// For older specs, initializes directly.
     pub(crate) fn initialize_path_usd(admin: Address) -> Result<()> {
-        if !StorageContext.spec().is_allegretto() {
+        if !StorageCtx.spec().is_allegretto() {
             let mut path_usd = TIP20Token::from_address(PATH_USD_ADDRESS)?;
             path_usd.initialize(
                 "PathUSD",
@@ -1059,8 +1059,8 @@ pub(crate) mod tests {
         )?;
 
         // Advance time to accrue rewards
-        let initial_time = StorageContext.timestamp();
-        StorageContext.set_timestamp(initial_time + U256::from(50));
+        let initial_time = StorageCtx.timestamp();
+        StorageCtx.set_timestamp(initial_time + U256::from(50));
 
         Ok((token_id, initial_opted_in))
     }
@@ -1068,9 +1068,8 @@ pub(crate) mod tests {
     /// Initialize a factory and create a single token
     fn setup_factory_with_token(admin: Address, name: &str, symbol: &str) -> Result<u64> {
         initialize_path_usd(admin)?;
-        let mut factory = TIP20Factory::new();
-        factory.initialize()?;
 
+        let mut factory = TIP20Factory::new();
         let token_address = factory.create_token(
             admin,
             ITIP20Factory::createTokenCall {
@@ -1127,7 +1126,7 @@ pub(crate) mod tests {
         let addr = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             // Initialize with admin
@@ -1162,7 +1161,7 @@ pub(crate) mod tests {
         let to = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1196,7 +1195,7 @@ pub(crate) mod tests {
         let from = Address::random();
         let to = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(1);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1221,7 +1220,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1255,7 +1254,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1289,7 +1288,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1341,7 +1340,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1397,7 +1396,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1444,7 +1443,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1492,7 +1491,7 @@ pub(crate) mod tests {
         let user = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1521,7 +1520,7 @@ pub(crate) mod tests {
         let user = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1544,7 +1543,7 @@ pub(crate) mod tests {
         let user = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1583,7 +1582,7 @@ pub(crate) mod tests {
         let amount = U256::from(100);
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1610,7 +1609,7 @@ pub(crate) mod tests {
         let amount = U256::from(100);
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1634,7 +1633,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token_id = setup_factory_with_token(admin, "Test", "TST")?;
             let token = TIP20Token::new(token_id);
 
@@ -1651,7 +1650,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let (token_id, quote_token_id) = setup_token_with_custom_quote_token(admin)?;
             let quote_token_address = token_id_to_address(quote_token_id);
 
@@ -1689,7 +1688,7 @@ pub(crate) mod tests {
         let non_admin = Address::random();
         let token_id = 1;
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut token = TIP20Token::new(token_id);
             token.initialize("Test", "TST", "USD", PATH_USD_ADDRESS, admin, Address::ZERO)?;
@@ -1720,7 +1719,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token_id = setup_factory_with_token(admin, "Test", "TST")?;
             let mut token = TIP20Token::new(token_id);
 
@@ -1749,7 +1748,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token_id = setup_factory_with_token(admin, "Test", "TST")?;
             let mut token = TIP20Token::new(token_id);
 
@@ -1779,7 +1778,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let (token_id, quote_token_id) = setup_token_with_custom_quote_token(admin)?;
             let quote_token_address = token_id_to_address(quote_token_id);
 
@@ -1818,7 +1817,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut factory = TIP20Factory::new();
 
@@ -1862,7 +1861,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let non_admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let (token_id, quote_token_id) = setup_token_with_custom_quote_token(admin)?;
             let quote_token_address = token_id_to_address(quote_token_id);
 
@@ -1910,7 +1909,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             for _ in 0..50 {
                 let mut token = TIP20Token::new(1);
 
@@ -1945,7 +1944,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             for _ in 0..10 {
                 let mut token = TIP20Token::new(1);
 
@@ -1978,7 +1977,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Create a token to get a valid address
             let token_id = setup_factory_with_token(admin, "TEST", "TST")?;
             let token_address = token_id_to_address(token_id);
@@ -2008,7 +2007,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let currency: String = thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(31)
@@ -2053,7 +2052,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
             let mut usd_token1 = TIP20Token::new(1);
             usd_token1.initialize(
@@ -2123,7 +2122,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(admin)?;
 
             let currency: String = thread_rng()
@@ -2178,7 +2177,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let sender = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(sender)?;
 
             let mut factory = TIP20Factory::new();
@@ -2212,7 +2211,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let user = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mint_amount = U256::from(1000e18);
             let reward_amount = U256::from(100e18);
 
@@ -2221,7 +2220,7 @@ pub(crate) mod tests {
                 setup_token_with_rewards(admin, user, mint_amount, reward_amount)?;
 
             // Update the hardfork to Moderato to ensure rewards are handled post hardfork
-            StorageContext.set_spec(TempoHardfork::Moderato);
+            StorageCtx.set_spec(TempoHardfork::Moderato);
 
             // Transfer fee from user
             let fee_amount = U256::from(100e18);
@@ -2254,7 +2253,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let user = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mint_amount = U256::from(1000e18);
             let reward_amount = U256::from(100e18);
 
@@ -2295,7 +2294,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let user = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mint_amount = U256::from(1000e18);
             let reward_amount = U256::from(100e18);
 
@@ -2304,7 +2303,7 @@ pub(crate) mod tests {
                 setup_token_with_rewards(admin, user, mint_amount, reward_amount)?;
 
             // Update the hardfork to Moderato to ensure rewards are handled post hardfork
-            StorageContext.set_spec(TempoHardfork::Moderato);
+            StorageCtx.set_spec(TempoHardfork::Moderato);
             // Simulate fee transfer: first take fee from user
             let fee_amount = U256::from(100e18);
             let mut token = TIP20Token::new(token_id);
@@ -2345,7 +2344,7 @@ pub(crate) mod tests {
         storage.set_spec(TempoHardfork::Adagio);
         let user = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mint_amount = U256::from(1000e18);
             let reward_amount = U256::from(100e18);
 
@@ -2396,7 +2395,7 @@ pub(crate) mod tests {
 
         storage.set_spec(TempoHardfork::Moderato);
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token_id = setup_factory_with_token(admin, "Test", "TST")?;
             let token = TIP20Token::new(token_id);
 
@@ -2413,7 +2412,7 @@ pub(crate) mod tests {
 
         storage.set_spec(TempoHardfork::Adagio);
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token_id = setup_factory_with_token(admin, "Test", "TST")?;
             let token = TIP20Token::new(token_id);
 
@@ -2430,7 +2429,7 @@ pub(crate) mod tests {
         let admin = Address::random();
         let burner = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Initialize token
             initialize_path_usd(admin)?;
             let token_id = 1;
@@ -2509,7 +2508,7 @@ pub(crate) mod tests {
 
         storage.set_spec(TempoHardfork::Adagio);
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let token_id = setup_factory_with_token(admin, "Test", "TST")?;
             let mut token = TIP20Token::new(token_id);
 
@@ -2534,7 +2533,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::AllegroModerato);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // USD token with zero quote token should succeed
             let mut token = TIP20Token::new(1);
             assert!(
@@ -2590,7 +2589,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // USD token with zero quote token should fail (no skip for zero quote token pre-AllegroModerato)
             let mut token = TIP20Token::new(1);
             assert!(
@@ -2630,7 +2629,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::AllegroModerato);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Factory::new();
             factory.initialize()?;
 
@@ -2650,7 +2649,7 @@ pub(crate) mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::AllegroModerato);
         let admin = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Factory::new();
             factory.initialize()?;
 

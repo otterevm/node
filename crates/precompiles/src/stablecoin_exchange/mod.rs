@@ -46,7 +46,7 @@ fn calculate_quote_amount_ceil(amount: u128, tick: i16) -> Option<u128> {
     Some(amount.checked_mul(price)?.div_ceil(PRICE_SCALE as u128))
 }
 
-#[contract]
+#[contract(addr = STABLECOIN_EXCHANGE_ADDRESS)]
 pub struct StablecoinExchange {
     books: Mapping<B256, Orderbook>,
     orders: Mapping<u128, Order>,
@@ -56,17 +56,7 @@ pub struct StablecoinExchange {
     book_keys: Vec<B256>,
 }
 
-impl Default for StablecoinExchange {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl StablecoinExchange {
-    pub fn new() -> Self {
-        Self::__new(STABLECOIN_EXCHANGE_ADDRESS)
-    }
-
     /// Stablecoin exchange address
     pub fn address(&self) -> Address {
         self.address
@@ -414,7 +404,7 @@ impl StablecoinExchange {
         let book_key = compute_book_key(base, quote);
         self.books
             .at(book_key)
-            .handle_tick_level(tick, is_bid)
+            .get_tick_level_handler(tick, is_bid)
             .read()
     }
 
@@ -704,7 +694,7 @@ impl StablecoinExchange {
         }
 
         let mut book_handler = self.books.at(order.book_key);
-        let mut level_handler = book_handler.handle_tick_level(order.tick(), order.is_bid());
+        let mut level_handler = book_handler.get_tick_level_handler(order.tick(), order.is_bid());
         let orderbook = book_handler.read()?;
         let mut level = level_handler.read()?;
 
@@ -790,7 +780,7 @@ impl StablecoinExchange {
         level.total_liquidity = new_liquidity;
 
         book_handler
-            .handle_tick_level(order.tick(), order.is_bid())
+            .get_tick_level_handler(order.tick(), order.is_bid())
             .write(*level)?;
 
         // Emit OrderFilled event for partial fill
@@ -807,8 +797,18 @@ impl StablecoinExchange {
         mut level: TickLevel,
         taker: Address,
     ) -> Result<(u128, Option<(TickLevel, Order)>)> {
-        let mut book_handler = self.books.at(order.book_key());
-        let orderbook = book_handler.read()?;
+        let book_handler = self.books.at(book_key);
+        // Pre-Allegretto: use order.book_key() for gas compatibility with legacy behavior.
+        // This is a patched bug where stale best_tick can cause reading an empty order (order_id=0).
+        // ref: https://github.com/tempoxyz/tempo/issues/1062
+        let mut book_handler_order = if self.storage.spec().is_allegretto() {
+            debug_assert_eq!(order.book_key(), book_key);
+            book_handler.clone()
+        } else {
+            self.books.at(order.book_key())
+        };
+
+        let orderbook = book_handler_order.read()?;
         let price = tick_to_price(order.tick());
         let fill_amount = order.remaining();
 
@@ -851,9 +851,9 @@ impl StablecoinExchange {
         // Advance tick if liquidity is exhausted
         let next_tick_info = if order.next() == 0 {
             book_handler
-                .handle_tick_level(order.tick(), order.is_bid())
+                .get_tick_level_handler(order.tick(), order.is_bid())
                 .delete()?;
-            book_handler.delete_tick_bit(order.tick(), order.is_bid())?;
+            book_handler_order.delete_tick_bit(order.tick(), order.is_bid())?;
 
             let (tick, has_liquidity) =
                 book_handler.next_initialized_tick(order.tick(), order.is_bid());
@@ -874,7 +874,7 @@ impl StablecoinExchange {
                 None
             } else {
                 let new_level = book_handler
-                    .handle_tick_level(tick, order.is_bid())
+                    .get_tick_level_handler(tick, order.is_bid())
                     .read()?;
                 let new_order = self.orders.at(new_level.head).read()?;
 
@@ -892,8 +892,8 @@ impl StablecoinExchange {
                 .ok_or(TempoPrecompileError::under_overflow())?;
             level.total_liquidity = new_liquidity;
 
-            book_handler
-                .handle_tick_level(order.tick(), order.is_bid())
+            book_handler_order
+                .get_tick_level_handler(order.tick(), order.is_bid())
                 .write(level)?;
 
             let new_order = self.orders.at(order.next()).read()?;
@@ -1201,7 +1201,9 @@ impl StablecoinExchange {
             orderbook.best_ask_tick
         };
 
-        book_handler.handle_tick_level(current_tick, is_bid).read()
+        book_handler
+            .get_tick_level_handler(current_tick, is_bid)
+            .read()
     }
 
     /// Cancel an order and refund tokens to maker
@@ -1267,7 +1269,7 @@ impl StablecoinExchange {
     /// Cancel an active order (already in the orderbook)
     fn cancel_active_order(&mut self, order: Order) -> Result<()> {
         let mut book_handler = self.books.at(order.book_key());
-        let mut level_handler = book_handler.handle_tick_level(order.tick(), order.is_bid());
+        let mut level_handler = book_handler.get_tick_level_handler(order.tick(), order.is_bid());
         let mut level = level_handler.read()?;
 
         // Update linked list
@@ -1386,7 +1388,7 @@ impl StablecoinExchange {
 
         while remaining_out > 0 {
             let level = book_handler
-                .handle_tick_level(current_tick, is_bid)
+                .get_tick_level_handler(current_tick, is_bid)
                 .read()?;
 
             // If no liquidity at this level, move to next tick
@@ -1585,7 +1587,7 @@ impl StablecoinExchange {
 
         while remaining_in > 0 {
             let level = book_handler
-                .handle_tick_level(current_tick, is_bid)
+                .get_tick_level_handler(current_tick, is_bid)
                 .read()?;
 
             // If no liquidity at this level, move to next tick
@@ -1671,7 +1673,7 @@ mod tests {
     use crate::{
         error::TempoPrecompileError,
         path_usd::TRANSFER_ROLE,
-        storage::{ContractStorage, StorageContext, hashmap::HashMapStorageProvider},
+        storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
     };
 
@@ -1718,7 +1720,7 @@ mod tests {
         ];
 
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let exchange = StablecoinExchange::new();
 
             for price in test_prices {
@@ -1735,7 +1737,7 @@ mod tests {
     fn test_price_to_tick_post_moderato() -> eyre::Result<()> {
         // Post-Moderato: price validation should be enforced
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let exchange = StablecoinExchange::new();
 
             // Valid prices should succeed
@@ -1776,7 +1778,7 @@ mod tests {
     fn test_price_to_tick_pre_moderato() -> eyre::Result<()> {
         // Pre-Moderato: no price validation (legacy behavior)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let exchange = StablecoinExchange::new();
 
             // Valid prices should succeed
@@ -1871,7 +1873,7 @@ mod tests {
     fn test_place_order_pair_does_not_exist_post_moderato() -> eyre::Result<()> {
         // Test with Moderato hardfork (validation should be enforced)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -1901,7 +1903,7 @@ mod tests {
     fn test_place_order_pair_does_not_exist_pre_moderato() -> eyre::Result<()> {
         // Test with Adagio (pre-Moderato) - validation is enforced in all hardforks
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -1934,7 +1936,7 @@ mod tests {
     #[test]
     fn test_place_order_below_minimum_amount() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -1969,7 +1971,7 @@ mod tests {
     #[test]
     fn test_place_bid_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2014,7 +2016,7 @@ mod tests {
             // Verify the order is not yet in the active orderbook
             let book_key = compute_book_key(base_token, quote_token);
             let book_handler = exchange.books.at(book_key);
-            let level = book_handler.handle_tick_level(tick, true).read()?;
+            let level = book_handler.get_tick_level_handler(tick, true).read()?;
             assert_eq!(level.head, 0);
             assert_eq!(level.tail, 0);
             assert_eq!(level.total_liquidity, 0);
@@ -2038,7 +2040,7 @@ mod tests {
     #[test]
     fn test_place_ask_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2076,7 +2078,7 @@ mod tests {
 
             let book_key = compute_book_key(base_token, quote_token);
             let book_handler = exchange.books.at(book_key);
-            let level = book_handler.handle_tick_level(tick, false).read()?;
+            let level = book_handler.get_tick_level_handler(tick, false).read()?;
             assert_eq!(level.head, 0);
             assert_eq!(level.tail, 0);
             assert_eq!(level.total_liquidity, 0);
@@ -2100,7 +2102,7 @@ mod tests {
     #[test]
     fn test_place_flip_order_below_minimum_amount() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2138,7 +2140,7 @@ mod tests {
     fn test_place_flip_order_pair_does_not_exist_post_moderato() -> eyre::Result<()> {
         // Test with Moderato hardfork (validation should be enforced)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2171,7 +2173,7 @@ mod tests {
     fn test_place_flip_order_pair_does_not_exist_pre_moderato() -> eyre::Result<()> {
         // Test with Adagio (pre-Moderato) - validation should not be enforced
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2204,7 +2206,7 @@ mod tests {
     #[test]
     fn test_place_flip_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2249,7 +2251,7 @@ mod tests {
             // Verify the order is not yet in the active orderbook
             let book_key = compute_book_key(base_token, quote_token);
             let book_handler = exchange.books.at(book_key);
-            let level = book_handler.handle_tick_level(tick, true).read()?;
+            let level = book_handler.get_tick_level_handler(tick, true).read()?;
             assert_eq!(level.head, 0);
             assert_eq!(level.tail, 0);
             assert_eq!(level.total_liquidity, 0);
@@ -2273,7 +2275,7 @@ mod tests {
     #[test]
     fn test_cancel_pending_order() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2336,7 +2338,7 @@ mod tests {
     #[test]
     fn test_execute_block() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2382,7 +2384,7 @@ mod tests {
             // Verify tick level is empty before execute_block
             let book_key = compute_book_key(base_token, quote_token);
             let book_handler = exchange.books.at(book_key);
-            let level_before = book_handler.handle_tick_level(tick, true).read()?;
+            let level_before = book_handler.get_tick_level_handler(tick, true).read()?;
             assert_eq!(level_before.head, 0);
             assert_eq!(level_before.tail, 0);
             assert_eq!(level_before.total_liquidity, 0);
@@ -2403,7 +2405,7 @@ mod tests {
             assert_eq!(order_1.next(), 0);
 
             // Assert tick level is updated
-            let level_after = book_handler.handle_tick_level(tick, true).read()?;
+            let level_after = book_handler.get_tick_level_handler(tick, true).read()?;
             assert_eq!(level_after.head, order_0.order_id());
             assert_eq!(level_after.tail, order_1.order_id());
             assert_eq!(level_after.total_liquidity, min_order_amount * 2);
@@ -2419,7 +2421,7 @@ mod tests {
     #[test]
     fn test_execute_block_unauthorized() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2432,7 +2434,7 @@ mod tests {
     #[test]
     fn test_withdraw() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2488,7 +2490,7 @@ mod tests {
     #[test]
     fn test_withdraw_insufficient_balance() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2517,7 +2519,7 @@ mod tests {
     #[test]
     fn test_quote_swap_exact_amount_out() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2557,7 +2559,7 @@ mod tests {
     #[test]
     fn test_quote_swap_exact_amount_in() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2598,7 +2600,7 @@ mod tests {
     #[test]
     fn test_quote_swap_exact_amount_out_base_for_quote() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2641,7 +2643,7 @@ mod tests {
     #[test]
     fn test_swap_exact_amount_out() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2692,7 +2694,7 @@ mod tests {
     #[test]
     fn test_swap_exact_amount_in() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2744,7 +2746,7 @@ mod tests {
     #[test]
     fn test_flip_order_execution() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2804,7 +2806,7 @@ mod tests {
     #[test]
     fn test_pair_created() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2837,7 +2839,7 @@ mod tests {
     #[test]
     fn test_pair_already_created() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2884,7 +2886,7 @@ mod tests {
     #[test]
     fn test_find_path_to_root() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2912,7 +2914,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_same_token_errors() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2937,7 +2939,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_direct_pair() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2968,7 +2970,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_reverse_pair() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -2999,7 +3001,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_two_hop_siblings() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3030,7 +3032,7 @@ mod tests {
     #[test]
     fn test_quote_exact_in_multi_hop() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3056,10 +3058,6 @@ mod tests {
                 .with_mint(alice, min_order_amount_x10)
                 .with_approval(alice, exchange.address, min_order_amount_x10)
                 .apply()?;
-
-            // Create pairs
-            exchange.create_pair(usdc.address())?;
-            exchange.create_pair(eurc.address())?;
 
             // Place orders to provide liquidity at 1:1 rate (tick 0)
             // For trade USDC -> PathUSD -> EURC:
@@ -3092,7 +3090,7 @@ mod tests {
     #[test]
     fn test_quote_exact_out_multi_hop() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3119,10 +3117,6 @@ mod tests {
                 .with_approval(alice, exchange.address, min_order_amount_x10)
                 .apply()?;
 
-            // Create pairs (same as previous test)
-            exchange.create_pair(usdc.address())?;
-            exchange.create_pair(eurc.address())?;
-
             // Place orders at 1:1 rate
             exchange.place(alice, usdc.address(), min_order_amount * 5, true, 0)?;
             exchange.place(alice, eurc.address(), min_order_amount * 5, false, 0)?;
@@ -3146,7 +3140,7 @@ mod tests {
     #[test]
     fn test_swap_exact_in_multi_hop_transitory_balances() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3181,10 +3175,6 @@ mod tests {
                 .with_mint(alice, min_order_amount_x10)
                 .with_approval(alice, exchange.address, min_order_amount_x10)
                 .apply()?;
-
-            // Create pairs
-            exchange.create_pair(usdc.address())?;
-            exchange.create_pair(eurc.address())?;
 
             // Place liquidity orders at 1:1
             exchange.place(alice, usdc.address(), min_order_amount * 5, true, 0)?;
@@ -3243,7 +3233,7 @@ mod tests {
     #[test]
     fn test_swap_exact_out_multi_hop_transitory_balances() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3278,10 +3268,6 @@ mod tests {
                 .with_mint(alice, min_order_amount_x10)
                 .with_approval(alice, exchange.address, min_order_amount_x10)
                 .apply()?;
-
-            // Create pairs
-            exchange.create_pair(usdc.address())?;
-            exchange.create_pair(eurc.address())?;
 
             // Place liquidity orders at 1:1
             exchange.place(alice, usdc.address(), min_order_amount * 5, true, 0)?;
@@ -3342,7 +3328,7 @@ mod tests {
     #[test]
     fn test_create_pair_invalid_currency() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let admin = Address::random();
 
             // Create EUR token with PATH USD as quote (valid non-USD token)
@@ -3367,7 +3353,7 @@ mod tests {
     #[test]
     fn test_max_in_check_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3411,7 +3397,7 @@ mod tests {
     fn test_create_pair_rejects_non_tip20_base_post_moderato() -> eyre::Result<()> {
         // Test with Moderato hardfork (validation should be enforced)
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let admin = Address::random();
             let _path_usd = TIP20Setup::path_usd(admin).apply()?;
 
@@ -3435,7 +3421,7 @@ mod tests {
     #[test]
     fn test_max_in_check_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3482,7 +3468,7 @@ mod tests {
     fn test_create_pair_allows_non_tip20_base_pre_moderato() -> eyre::Result<()> {
         // Test with Adagio (pre-Moderato) - validation should not be enforced
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let admin = Address::random();
             let _path_usd = TIP20Setup::path_usd(admin).apply()?;
 
@@ -3512,7 +3498,7 @@ mod tests {
     fn test_exact_out_bid_side_pre_moderato() -> eyre::Result<()> {
         // Pre-Moderato: old behavior with unit mismatch causes MaxInputExceeded
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3564,7 +3550,7 @@ mod tests {
     fn test_exact_out_bid_side_post_moderato() -> eyre::Result<()> {
         // Post-Moderato: new behavior with correct unit conversion
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3610,7 +3596,7 @@ mod tests {
     fn test_exact_in_ask_side_pre_moderato() -> eyre::Result<()> {
         // Pre-Moderato: old behavior treats quote amount as base amount
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3658,7 +3644,7 @@ mod tests {
     fn test_exact_in_ask_side_post_moderato() -> eyre::Result<()> {
         // Post-Moderato: new behavior with correct unit conversion
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3704,7 +3690,7 @@ mod tests {
 
         // Test that fill_order properly clears the prev pointer when advancing to the next order
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3768,7 +3754,7 @@ mod tests {
     #[test]
     fn test_best_tick_updates_on_fill() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3845,7 +3831,7 @@ mod tests {
     #[test]
     fn test_best_tick_updates_on_cancel() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3932,7 +3918,7 @@ mod tests {
         const AMOUNT: u128 = 1_000_000_000;
 
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -3973,7 +3959,7 @@ mod tests {
         const AMOUNT: u128 = 1_000_000_000;
 
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -4046,7 +4032,7 @@ mod tests {
     #[test]
     fn test_find_trade_path_rejects_non_tip20_post_allegretto() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -4075,7 +4061,7 @@ mod tests {
     #[test]
     fn test_quote_exact_in_handles_both_directions() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -4137,7 +4123,7 @@ mod tests {
     #[test]
     fn test_place_auto_creates_pair_post_allegretto() -> Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
             let admin = Address::random();
@@ -4189,7 +4175,7 @@ mod tests {
     #[test]
     fn test_place_flip_auto_creates_pair_post_allegretto() -> Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -4242,7 +4228,7 @@ mod tests {
     #[test]
     fn test_decrement_balance_zeroes_balance_pre_allegro_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 
@@ -4272,7 +4258,7 @@ mod tests {
     #[test]
     fn test_decrement_balance_preserves_balance_post_allegro_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::AllegroModerato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut exchange = StablecoinExchange::new();
             exchange.initialize()?;
 

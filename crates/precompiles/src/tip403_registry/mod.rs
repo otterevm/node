@@ -10,7 +10,7 @@ use crate::{
 };
 use alloy::primitives::{Address, U256};
 
-#[contract]
+#[contract(addr = TIP403_REGISTRY_ADDRESS)]
 pub struct TIP403Registry {
     policy_id_counter: u64,
     policy_data: Mapping<u64, PolicyData>,
@@ -28,15 +28,11 @@ pub struct PolicyData {
 // interacting with storage slots.
 impl PolicyData {
     pub fn decode_from_slot(slot_value: U256) -> Self {
-        use crate::storage::packing::extract_packed_value;
-        use __packing_policy_data::{ADMIN_LOC as A_LOC, POLICY_TYPE_LOC as PT_LOC};
+        use crate::storage::{LayoutCtx, Storable, packing::PackedSlot};
 
-        Self {
-            policy_type: extract_packed_value::<u8>(slot_value, PT_LOC.offset_bytes, PT_LOC.size)
-                .expect("unable to extract 'policy_type'"),
-            admin: extract_packed_value::<Address>(slot_value, A_LOC.offset_bytes, A_LOC.size)
-                .expect("unable to extract 'admin'"),
-        }
+        // NOTE: fine to expect, as `StorageOps` on `PackedSlot` are infallible
+        Self::load(&PackedSlot(slot_value), U256::ZERO, LayoutCtx::FULL)
+            .expect("unable to decode PoliciData from slot")
     }
 
     pub fn encode_to_slot(&self) -> U256 {
@@ -56,20 +52,7 @@ impl PolicyData {
     }
 }
 
-impl Default for TIP403Registry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TIP403Registry {
-    /// Creates an instance of the precompile.
-    ///
-    /// Caution: This does not initialize the account, see [`Self::initialize`].
-    pub fn new() -> Self {
-        Self::__new(TIP403_REGISTRY_ADDRESS)
-    }
-
     /// Initializes the registry contract.
     pub fn initialize(&mut self) -> Result<()> {
         self.__initialize()
@@ -344,14 +327,14 @@ impl TIP403Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{StorageContext, hashmap::HashMapStorageProvider};
+    use crate::storage::{StorageCtx, hashmap::HashMapStorageProvider};
     use alloy::primitives::Address;
 
     #[test]
     fn test_create_policy() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut registry = TIP403Registry::new();
 
             // Initial counter should be 2 (skipping special policies)
@@ -383,7 +366,7 @@ mod tests {
     fn test_is_authorized_special_policies() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let user = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let registry = TIP403Registry::new();
 
             // Policy 0 should always reject
@@ -404,7 +387,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let user = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut registry = TIP403Registry::new();
 
             // Create whitelist policy
@@ -447,7 +430,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let admin = Address::random();
         let user = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut registry = TIP403Registry::new();
 
             // Create blacklist policy

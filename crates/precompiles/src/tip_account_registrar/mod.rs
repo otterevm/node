@@ -14,23 +14,10 @@ use tempo_contracts::{
     precompiles::{TIP_ACCOUNT_REGISTRAR, TIPAccountRegistrarError},
 };
 
-#[contract]
+#[contract(addr = TIP_ACCOUNT_REGISTRAR)]
 pub struct TipAccountRegistrar {}
 
-impl Default for TipAccountRegistrar {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TipAccountRegistrar {
-    /// Creates an instance of the precompile.
-    ///
-    /// Caution: This does not initialize the account, see [`Self::initialize`].
-    pub fn new() -> Self {
-        Self::__new(TIP_ACCOUNT_REGISTRAR)
-    }
-
     /// Initializes the TIP Account Registrar contract
     ///
     /// Ensures the [`TipAccountRegistrar`] account isn't empty and prevents state clear.
@@ -140,7 +127,7 @@ mod tests {
     use crate::{
         Precompile,
         error::TempoPrecompileError,
-        storage::{StorageContext, hashmap::HashMapStorageProvider},
+        storage::{StorageCtx, hashmap::HashMapStorageProvider},
     };
     use alloy::sol_types::{SolCall, SolError};
     use alloy_signer::SignerSync;
@@ -149,9 +136,9 @@ mod tests {
     use tempo_contracts::precompiles::{TIPAccountRegistrarError, UnknownFunctionSelector};
 
     #[test]
-    fn delegate_to_default_v1_pre_moderato() -> eyre::Result<()> {
+    fn test_delegate_to_default_v1_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Pre-Moderato: delegateToDefault(bytes32,bytes) should work
             let signer = PrivateKeySigner::random();
             let expected_address = signer.address();
@@ -185,9 +172,9 @@ mod tests {
     }
 
     #[test]
-    fn delegate_to_default_v1_rejected_post_moderato() -> eyre::Result<()> {
+    fn test_delegate_to_default_v1_rejected_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Post-Moderato: delegateToDefault(bytes32,bytes) should be rejected
             let hash = alloy::primitives::keccak256(b"test");
             let mut registrar = TipAccountRegistrar::new();
@@ -227,9 +214,9 @@ mod tests {
     }
 
     #[test]
-    fn delegate_to_default_v2_post_moderato() -> eyre::Result<()> {
+    fn test_delegate_to_default_v2_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Post-Moderato: delegateToDefault(bytes,bytes) should work
             let signer = PrivateKeySigner::random();
             let expected_address = signer.address();
@@ -265,9 +252,9 @@ mod tests {
     }
 
     #[test]
-    fn delegate_to_default_v2_rejected_pre_moderato() -> eyre::Result<()> {
+    fn test_delegate_to_default_v2_rejected_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Pre-Moderato: delegateToDefault(bytes,bytes) should be rejected
             let mut registrar = TipAccountRegistrar::new();
 
@@ -295,9 +282,9 @@ mod tests {
     }
 
     #[test]
-    fn malformed_signature_v1() -> eyre::Result<()> {
+    fn test_malformed_signature_v1() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let hash = alloy::primitives::keccak256(b"test");
             let mut registrar = TipAccountRegistrar::new();
 
@@ -336,9 +323,9 @@ mod tests {
     }
 
     #[test]
-    fn invalid_signature_v1() -> eyre::Result<()> {
+    fn test_invalid_signature_v1() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let hash = alloy::primitives::keccak256(b"test");
             let mut registrar = TipAccountRegistrar::new();
 
@@ -365,9 +352,9 @@ mod tests {
     }
 
     #[test]
-    fn nonce_gt_zero_v1() -> eyre::Result<()> {
+    fn test_nonce_gt_zero_v1() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let signer = PrivateKeySigner::random();
             let expected_address = signer.address();
             let hash = alloy::primitives::keccak256(b"test");
@@ -400,9 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn delegate_to_default_v2_different_messages_different_signers() -> eyre::Result<()> {
+    fn test_delegate_to_default_v2_different_messages_different_signers() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let signer = PrivateKeySigner::random();
             let expected_address = signer.address();
 

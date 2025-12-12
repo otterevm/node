@@ -17,27 +17,14 @@ use tempo_precompiles_macros::contract;
 
 /// TIPRewardsRegistry precompile that tracks stream end times
 /// Maps timestamp -> Vec of token addresses with streams ending at that time
-#[contract]
+#[contract(addr = TIP20_REWARDS_REGISTRY_ADDRESS)]
 pub struct TIP20RewardsRegistry {
     last_updated_timestamp: u128,
     ending_streams: Mapping<u128, Vec<Address>>,
     stream_index: Mapping<B256, U256>,
 }
 
-impl Default for TIP20RewardsRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TIP20RewardsRegistry {
-    /// Creates an instance of the precompile.
-    ///
-    /// Caution: This does not initialize the account, see [`Self::initialize`].
-    pub fn new() -> Self {
-        Self::__new(TIP20_REWARDS_REGISTRY_ADDRESS)
-    }
-
     /// Initializes the TIP20 rewards registry contract.
     ///
     /// Ensures the [`TIP20RewardsRegistry`] account isn't empty and prevents state clear.
@@ -137,7 +124,7 @@ mod tests {
     use super::*;
     use crate::{
         error::TempoPrecompileError,
-        storage::{ContractStorage, StorageContext, hashmap::HashMapStorageProvider},
+        storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
         tip20_rewards_registry::TIP20RewardsRegistry,
     };
@@ -150,8 +137,8 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let token = Address::random();
         let token2 = Address::random();
-        StorageContext::enter(&mut storage, || {
-            StorageContext.set_timestamp(U256::from(1000));
+        StorageCtx::enter(&mut storage, || {
+            StorageCtx.set_timestamp(U256::from(1000));
 
             let mut registry = TIP20RewardsRegistry::new();
             registry.initialize()?;
@@ -190,8 +177,8 @@ mod tests {
         let token2 = Address::random();
         let token3 = Address::random();
         let non_existent_token = Address::random();
-        StorageContext::enter(&mut storage, || {
-            StorageContext.set_timestamp(U256::from(1000));
+        StorageCtx::enter(&mut storage, || {
+            StorageCtx.set_timestamp(U256::from(1000));
 
             let mut registry = TIP20RewardsRegistry::new();
             registry.initialize()?;
@@ -254,8 +241,8 @@ mod tests {
         let token2 = Address::random();
         let token3 = Address::random();
         let token4 = Address::random();
-        StorageContext::enter(&mut storage, || {
-            StorageContext.set_timestamp(U256::from(1000));
+        StorageCtx::enter(&mut storage, || {
+            StorageCtx.set_timestamp(U256::from(1000));
 
             let mut registry = TIP20RewardsRegistry::new();
             registry.initialize()?;
@@ -297,8 +284,8 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
         let admin = Address::random();
         let unauthorized = Address::random();
-        StorageContext::enter(&mut storage, || {
-            StorageContext.set_timestamp(U256::from(1500));
+        StorageCtx::enter(&mut storage, || {
+            StorageCtx.set_timestamp(U256::from(1500));
 
             let mut registry = TIP20RewardsRegistry::new();
             registry.initialize()?;

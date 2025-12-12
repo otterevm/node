@@ -224,7 +224,7 @@ export default defineConfig({
               },
               {
                 text: 'Reference Implementation',
-                link: 'https://github.com/tempoxyz/docs/blob/main/specs/src/TIP20.sol',
+                link: 'https://github.com/tempoxyz/tempo/blob/main/docs/specs/src/TIP20.sol',
               },
               {
                 text: 'Rust Implementation',
@@ -260,7 +260,7 @@ export default defineConfig({
               },
               {
                 text: 'Reference Implementation',
-                link: 'https://github.com/tempoxyz/docs/blob/main/specs/src/TIP403Registry.sol',
+                link: 'https://github.com/tempoxyz/tempo/blob/main/docs/specs/src/TIP403Registry.sol',
               },
               {
                 text: 'Rust Implementation',
@@ -294,7 +294,7 @@ export default defineConfig({
                   },
                   {
                     text: 'Reference Implementation',
-                    link: 'https://github.com/tempoxyz/docs/blob/main/specs/src/FeeManager.sol',
+                    link: 'https://github.com/tempoxyz/tempo/blob/main/docs/specs/src/FeeManager.sol',
                   },
                   {
                     text: 'Rust Implementation',
@@ -317,8 +317,12 @@ export default defineConfig({
                 link: '/protocol/transactions/spec-tempo-transaction',
               },
               {
-                text: 'Default Account Abstraction Specification',
-                link: '/protocol/transactions/spec-default-aa',
+                text: 'Account Keychain Precompile Specification',
+                link: '/protocol/transactions/AccountKeychain',
+              },
+              {
+                text: 'Default Delegation Specification',
+                link: '/protocol/transactions/spec-default-delegation',
               },
               {
                 text: 'Rust Implementation',
@@ -374,7 +378,7 @@ export default defineConfig({
               },
               {
                 text: 'Reference Implementation',
-                link: 'https://github.com/tempoxyz/docs/blob/main/specs/src/StablecoinExchange.sol',
+                link: 'https://github.com/tempoxyz/tempo/blob/main/docs/specs/src/StablecoinExchange.sol',
               },
               {
                 text: 'Rust Implementation',
@@ -633,6 +637,27 @@ export default defineConfig({
                     {
                       text: 'watchSetUserToken',
                       link: '/sdk/typescript/viem/fee.watchSetUserToken',
+                    },
+                  ],
+                },
+                {
+                  text: 'Nonce',
+                  items: [
+                    {
+                      text: 'getNonce',
+                      link: '/sdk/typescript/viem/nonce.getNonce',
+                    },
+                    {
+                      text: 'getNonceKeyCount',
+                      link: '/sdk/typescript/viem/nonce.getNonceKeyCount',
+                    },
+                    {
+                      text: 'watchActiveKeyCountChanged',
+                      link: '/sdk/typescript/viem/nonce.watchActiveKeyCountChanged',
+                    },
+                    {
+                      text: 'watchNonceIncremented',
+                      link: '/sdk/typescript/viem/nonce.watchNonceIncremented',
                     },
                   ],
                 },
@@ -1007,6 +1032,27 @@ export default defineConfig({
                   ],
                 },
                 {
+                  text: 'Nonce',
+                  items: [
+                    {
+                      text: 'getNonce',
+                      link: '/sdk/typescript/wagmi/actions/nonce.getNonce',
+                    },
+                    {
+                      text: 'getNonceKeyCount',
+                      link: '/sdk/typescript/wagmi/actions/nonce.getNonceKeyCount',
+                    },
+                    {
+                      text: 'watchActiveKeyCountChanged',
+                      link: '/sdk/typescript/wagmi/actions/nonce.watchActiveKeyCountChanged',
+                    },
+                    {
+                      text: 'watchNonceIncremented',
+                      link: '/sdk/typescript/wagmi/actions/nonce.watchNonceIncremented',
+                    },
+                  ],
+                },
+                {
                   text: 'Policy',
                   items: [
                     {
@@ -1350,6 +1396,27 @@ export default defineConfig({
                     {
                       text: 'useWatchSetUserToken',
                       link: '/sdk/typescript/wagmi/hooks/fee.useWatchSetUserToken',
+                    },
+                  ],
+                },
+                {
+                  text: 'Nonce',
+                  items: [
+                    {
+                      text: 'useNonce',
+                      link: '/sdk/typescript/wagmi/hooks/nonce.useNonce',
+                    },
+                    {
+                      text: 'useNonceKeyCount',
+                      link: '/sdk/typescript/wagmi/hooks/nonce.useNonceKeyCount',
+                    },
+                    {
+                      text: 'useWatchActiveKeyCountChanged',
+                      link: '/sdk/typescript/wagmi/hooks/nonce.useWatchActiveKeyCountChanged',
+                    },
+                    {
+                      text: 'useWatchNonceIncremented',
+                      link: '/sdk/typescript/wagmi/hooks/nonce.useWatchNonceIncremented',
                     },
                   ],
                 },

@@ -349,7 +349,10 @@ where
             }
         }
 
-        match self.inner.validate_one(origin, transaction) {
+        match self
+            .inner
+            .validate_one_with_state_provider(origin, transaction, &state_provider)
+        {
             TransactionValidationOutcome::Valid {
                 balance,
                 mut state_nonce,
@@ -398,6 +401,9 @@ where
                         );
                     }
                 }
+
+                // Pre-compute TempoTxEnv to avoid the cost during payload building.
+                transaction.transaction().prepare_tx_env();
 
                 TransactionValidationOutcome::Valid {
                     balance,

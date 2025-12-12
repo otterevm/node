@@ -143,6 +143,12 @@ pub trait StorableType {
     /// Whether this type can be packed with adjacent fields.
     const IS_PACKABLE: bool = Self::LAYOUT.is_packable();
 
+    /// Whether this type stores it's data in its base slot or not.
+    ///
+    /// Dynamic types (`Bytes`, `String`, `Vec`) store data at keccak256-addressed
+    /// slots and need special cleanup. Non-dynamic types just zero their slots.
+    const IS_DYNAMIC: bool = false;
+
     /// Storage space identifier for exclusive mappings.
     ///
     /// - `0` = shared namespace (keccak256-based mappings, primitives, structs)
@@ -245,7 +251,9 @@ pub trait Packable: sealed::OnlyPrimitives + StorableType {
     fn to_word(&self) -> U256;
 
     /// Decode this type from a single U256 word.
-    fn from_word(word: U256) -> Self;
+    fn from_word(word: U256) -> Result<Self>
+    where
+        Self: Sized;
 }
 
 /// Blanket implementation of `Storable` for all `Packable` types.
@@ -258,7 +266,7 @@ impl<T: Packable> Storable for T {
         const { assert!(T::IS_PACKABLE, "Packable requires IS_PACKABLE to be true") };
 
         match ctx.packed_offset() {
-            None => storage.load(slot).map(Self::from_word),
+            None => storage.load(slot).and_then(Self::from_word),
             Some(offset) => {
                 let slot_value = storage.load(slot)?;
                 packing::extract_packed_value(slot_value, offset, Self::BYTES)

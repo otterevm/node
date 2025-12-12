@@ -15,32 +15,16 @@ use crate::{
 use alloy::primitives::{Address, U256};
 use tracing::trace;
 
-#[contract]
+#[contract(addr = TIP20_FACTORY_ADDRESS)]
 pub struct TIP20Factory {
     // TODO: It would be nice to have a `#[initial_value=`n`]` macro
     // to mimic setting an initial value in solidity
     token_id_counter: U256,
 }
 
-impl Default for TIP20Factory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 // Precompile functions
 impl TIP20Factory {
-    /// Creates an instance of the precompile.
-    ///
-    /// Caution: This does not initialize the account, see [`Self::initialize`].
-    pub fn new() -> Self {
-        Self::__new(TIP20_FACTORY_ADDRESS)
-    }
-
     /// Initializes the TIP20 factory contract.
-    ///
-    /// Sets the initial token counter to 1, reserving token ID 0 for the LinkingUSD precompile.
-    /// Also ensures the [`TIP20Factory`] account isn't empty and prevents state clear.
     pub fn initialize(&mut self) -> Result<()> {
         // must ensure the account is not empty, by setting some code
         self.__initialize()
@@ -162,7 +146,7 @@ mod tests {
     use super::*;
     use crate::{
         error::TempoPrecompileError,
-        storage::{ContractStorage, StorageContext, hashmap::HashMapStorageProvider},
+        storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
         tip20::tests::initialize_path_usd,
     };
@@ -173,7 +157,7 @@ mod tests {
     fn test_create_token() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Setup::factory()?;
             let path_usd = TIP20Setup::path_usd(sender).apply()?;
 
@@ -229,7 +213,7 @@ mod tests {
     fn test_create_token_invalid_quote_token_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Setup::factory()?;
 
             let invalid_call = ITIP20Factory::createTokenCall {
@@ -253,7 +237,7 @@ mod tests {
     fn test_create_token_quote_token_not_deployed_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Setup::factory()?;
 
             let non_existent_tip20 = token_id_to_address(5);
@@ -278,7 +262,7 @@ mod tests {
     fn test_create_token_off_by_one_rejected_post_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Test the off-by-one bug fix: using token_id as quote token should be rejected post-Moderato
             let mut factory = TIP20Setup::factory()?;
 
@@ -311,7 +295,7 @@ mod tests {
     fn test_create_token_future_quote_token_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Moderato);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Test that pre-Moderato SHOULD still validate that quote tokens exist
             // Using a TIP20 address with ID > current token_id should fail (not yet created)
             let mut factory = TIP20Setup::factory()?;
@@ -353,7 +337,7 @@ mod tests {
     fn test_create_token_off_by_one_allowed_pre_moderato() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Adagio);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Setup::factory()?;
 
             // Get the current token_id (should be 1)
@@ -398,7 +382,7 @@ mod tests {
     #[test]
     fn test_token_id_post_allegretto() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let factory = TIP20Setup::factory()?;
 
             let current_token_id = factory.token_id_counter()?;
@@ -411,7 +395,7 @@ mod tests {
     fn test_create_token_post_allegretto() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
         let sender = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut factory = TIP20Setup::factory()?;
 
             let call_fail = ITIP20Factory::createTokenCall {
@@ -446,7 +430,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::AllegroModerato);
         let sender = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(sender)?;
 
             let mut factory = TIP20Factory::new();
@@ -476,7 +460,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1).with_spec(TempoHardfork::Allegretto);
         let sender = Address::random();
 
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             initialize_path_usd(sender)?;
 
             let mut factory = TIP20Factory::new();
@@ -495,6 +479,24 @@ mod tests {
 
             // Non-TIP20 address should still be invalid (wrong prefix)
             assert!(!factory.is_tip20(Address::random())?);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_is_tip20_prefix() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        StorageCtx::enter(&mut storage, || {
+            // Valid TIP20 address
+            let token_id = rand::random::<u64>();
+            let token = token_id_to_address(token_id);
+            assert!(is_tip20_prefix(token));
+
+            // Random address is not TIP20
+            let random = Address::random();
+            assert!(!is_tip20_prefix(random));
 
             Ok(())
         })

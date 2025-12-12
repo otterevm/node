@@ -44,42 +44,16 @@ impl AuthorizedKey {
     /// This is useful for read-only contexts (like pool validation) that don't have
     /// access to PrecompileStorageProvider but need to decode the packed struct.
     pub fn decode_from_slot(slot_value: U256) -> Self {
-        use crate::storage::packing::extract_packed_value;
-        use __packing_authorized_key::{
-            ENFORCE_LIMITS_LOC, EXPIRY_LOC, IS_REVOKED_LOC, SIGNATURE_TYPE_LOC,
-        };
+        use crate::storage::{LayoutCtx, Storable, packing::PackedSlot};
 
-        Self {
-            signature_type: extract_packed_value::<u8>(
-                slot_value,
-                SIGNATURE_TYPE_LOC.offset_bytes,
-                SIGNATURE_TYPE_LOC.size,
-            )
-            .expect("unable to extract 'signature_type'"),
-            expiry: extract_packed_value::<u64>(
-                slot_value,
-                EXPIRY_LOC.offset_bytes,
-                EXPIRY_LOC.size,
-            )
-            .expect("unable to extract 'expiry'"),
-            enforce_limits: extract_packed_value::<bool>(
-                slot_value,
-                ENFORCE_LIMITS_LOC.offset_bytes,
-                ENFORCE_LIMITS_LOC.size,
-            )
-            .expect("unable to extract 'enforce_limits'"),
-            is_revoked: extract_packed_value::<bool>(
-                slot_value,
-                IS_REVOKED_LOC.offset_bytes,
-                IS_REVOKED_LOC.size,
-            )
-            .expect("unable to extract 'is_revoked'"),
-        }
+        // NOTE: fine to expect, as `StorageOps` on `PackedSlot` are infallible
+        Self::load(&PackedSlot(slot_value), U256::ZERO, LayoutCtx::FULL)
+            .expect("unable to decode AuthorizedKey from slot")
     }
 }
 
 /// Account Keychain contract for managing authorized keys
-#[contract]
+#[contract(addr = ACCOUNT_KEYCHAIN_ADDRESS)]
 pub struct AccountKeychain {
     // keys[account][keyId] -> AuthorizedKey
     keys: Mapping<Address, Mapping<Address, AuthorizedKey>>,
@@ -93,20 +67,7 @@ pub struct AccountKeychain {
     transaction_key: Address,
 }
 
-impl Default for AccountKeychain {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AccountKeychain {
-    /// Creates an instance of the precompile.
-    ///
-    /// Caution: This does not initialize the account, see [`Self::initialize`].
-    pub fn new() -> Self {
-        Self::__new(ACCOUNT_KEYCHAIN_ADDRESS)
-    }
-
     /// Create a hash key for spending limits mapping from account and keyId
     fn spending_limit_key(account: Address, key_id: Address) -> B256 {
         use alloy::primitives::keccak256;
@@ -467,7 +428,7 @@ impl AccountKeychain {
         new_approval: U256,
     ) -> Result<()> {
         // Get the transaction key for this account
-        let transaction_key = self.transaction_key.read()?;
+        let transaction_key = self.transaction_key.t_read()?;
 
         // If using main key (Address::ZERO), no spending limits apply
         if transaction_key == Address::ZERO {
@@ -494,7 +455,7 @@ mod tests {
     use super::*;
     use crate::{
         error::TempoPrecompileError,
-        storage::{StorageContext, hashmap::HashMapStorageProvider},
+        storage::{StorageCtx, hashmap::HashMapStorageProvider},
     };
     use alloy::primitives::{Address, U256};
     use tempo_contracts::precompiles::IAccountKeychain::SignatureType;
@@ -516,7 +477,7 @@ mod tests {
     fn test_transaction_key_transient_storage() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
         let access_key_addr = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut keychain = AccountKeychain::new();
 
             // Test 1: Initially transaction key should be zero
@@ -563,7 +524,7 @@ mod tests {
         let access_key = Address::random();
         let token = Address::random();
         let other = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             // Initialize the keychain
             let mut keychain = AccountKeychain::new();
             keychain.initialize()?;
@@ -630,7 +591,7 @@ mod tests {
         let mut storage = HashMapStorageProvider::new(1);
         let account = Address::random();
         let key_id = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut keychain = AccountKeychain::new();
             keychain.initialize()?;
 
@@ -695,7 +656,7 @@ mod tests {
         let account = Address::random();
         let key_id_1 = Address::random();
         let key_id_2 = Address::random();
-        StorageContext::enter(&mut storage, || {
+        StorageCtx::enter(&mut storage, || {
             let mut keychain = AccountKeychain::new();
             keychain.initialize()?;
 
