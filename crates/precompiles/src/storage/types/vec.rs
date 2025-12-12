@@ -327,9 +327,7 @@ where
         Ok(Some(element))
     }
 
-    /// Iterator over [`VecHandler`] elements.
-    ///
-    /// Reads the length once (1 SLOAD), then yields element handlers without re-reading.
+    /// Iterator over [`VecHandler`] elements. Reads the length once, then yields handlers without re-reading.
     #[inline]
     pub fn iter(&self) -> Result<VecIter<'_, T>> {
         let length = self.len()?;

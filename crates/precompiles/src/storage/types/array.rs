@@ -133,7 +133,7 @@ where
         Some(T::handle(base_slot, layout_ctx, self.address))
     }
 
-    /// Returns an iterator over element handlers.
+    /// Iterator over [`ArrayHandler`] elements.
     #[inline]
     pub fn iter(&self) -> ArrayIter<'_, T, N> {
         ArrayIter {
