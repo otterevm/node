@@ -180,12 +180,20 @@ pub const fn calc_element_offset(idx: usize, elem_bytes: usize) -> usize {
     (idx * elem_bytes) % 32
 }
 
+/// Calculate the byte offset within a slot for an array element at index `idx` and which slot an array element at index `idx` starts in .
+#[inline]
+pub const fn calc_element_offset_and_slot(idx: usize, elem_bytes: usize) -> (usize, usize) {
+   let total =  (idx * elem_bytes);
+   ((total / 32), (total % 32))
+}
+
 /// Calculate the element location within a slot for an array element at index `idx`.
 #[inline]
 pub const fn calc_element_loc(idx: usize, elem_bytes: usize) -> FieldLocation {
+    let (slots, offset) = idx * elem_bytes;
     FieldLocation::new(
-        calc_element_slot(idx, elem_bytes),
-        calc_element_offset(idx, elem_bytes),
+        slots,
+        offset,
         elem_bytes,
     )
 }
