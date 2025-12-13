@@ -134,8 +134,7 @@ pub fn insert_packed_value<T: Packable>(
     // Calculate shift and mask
     let shift_bits = offset * 8;
 
-    // we know bytes is less than 32 here because of the invariant above
-    let mask = (U256::ONE << (bytes * 8)) - U256::ONE;
+    let mask =  create_element_mask(bytes);
 
     // Clear the bits for this field in the current slot value
     let clear_mask = !(mask << shift_bits);
@@ -163,7 +162,7 @@ pub fn zero_packed_value(current: U256, offset: usize, bytes: usize) -> Result<U
     }
 
     // we know bytes is less than 32 here because of the invariant above
-    let mask = (U256::ONE << (bytes * 8)) - U256::ONE;
+    let mask =  create_element_mask(bytes);
     let shifted_mask = mask << (offset * 8);
     Ok(current & !shifted_mask)
 }
