@@ -60,17 +60,24 @@ def "main node" [
     # Check for dangling processes
     check-dangling-processes
 
+    # Build first
+    let build_cmd = ["cargo" "build" "--bin" "tempo" "--profile" $profile "--features" $features]
+    print $"Building tempo: `($build_cmd | str join ' ')`..."
+    with-env { RUSTFLAGS: $RUSTFLAGS } {
+        run-external ($build_cmd | first) ...($build_cmd | skip 1)
+    }
+
     if $mode == "dev" {
-        run-dev-node $accounts $samply $reset $profile $features
+        run-dev-node $accounts $samply $reset $profile
     } else if $mode == "consensus" {
-        run-consensus-nodes $nodes $accounts $samply $reset $profile $features $logs $silent
+        run-consensus-nodes $nodes $accounts $samply $reset $profile $logs $silent
     } else {
         print $"Unknown mode: ($mode). Use 'dev' or 'consensus'."
         exit 1
     }
 }
 
-def run-dev-node [accounts: int, samply: bool, reset: bool, profile: string, features: string] {
+def run-dev-node [accounts: int, samply: bool, reset: bool, profile: string] {
     let genesis_path = $"($LOCALNET_DIR)/genesis.json"
     let needs_generation = $reset or (not ($genesis_path | path exists))
 
@@ -84,12 +91,6 @@ def run-dev-node [accounts: int, samply: bool, reset: bool, profile: string, fea
         mkdir $LOCALNET_DIR
         print $"Generating genesis with ($accounts) accounts..."
         cargo run -p tempo-xtask --profile $profile -- generate-genesis --output $LOCALNET_DIR -a $accounts
-    }
-
-    # Build first
-    print "Building tempo..."
-    with-env { RUSTFLAGS: $RUSTFLAGS } {
-        cargo build --bin tempo --profile $profile --features $features
     }
 
     let tempo_bin = $"./target/($profile)/tempo"
@@ -109,7 +110,7 @@ def run-dev-node [accounts: int, samply: bool, reset: bool, profile: string, fea
     }
 }
 
-def run-consensus-nodes [nodes: int, accounts: int, samply: bool, reset: bool, profile: string, features: string, logs: string, silent: bool] {
+def run-consensus-nodes [nodes: int, accounts: int, samply: bool, reset: bool, profile: string, logs: string, silent: bool] {
     # Check if we need to generate localnet
     let needs_generation = $reset or (not ($LOCALNET_DIR | path exists)) or (
         (ls $LOCALNET_DIR | where type == "dir" | get name | where { |d| ($d | path basename) =~ '^\d+\.\d+\.\d+\.\d+:\d+$' } | length) == 0
@@ -152,13 +153,6 @@ def run-consensus-nodes [nodes: int, accounts: int, samply: bool, reset: bool, p
         $logs | split row "," | each { |s| $s | str trim | into int }
     } else {
         []
-    }
-
-    # Build first
-    let build_cmd = ["cargo" "build" "--bin" "tempo" "--profile" $profile "--features" $features]
-    print $"Building tempo: `($build_cmd | str join ' ')`..."
-    with-env { RUSTFLAGS: $RUSTFLAGS } {
-        run-external ($build_cmd | first) ...($build_cmd | skip 1)
     }
 
     let tempo_bin = $"./target/($profile)/tempo"
