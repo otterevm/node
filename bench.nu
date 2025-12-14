@@ -155,35 +155,35 @@ def run-consensus-nodes [nodes: int, accounts: int, samply: bool, reset: bool, p
     }
 
     # Build first
-    print "Building tempo..."
+    let build_cmd = ["cargo" "build" "--bin" "tempo" "--profile" $profile "--features" $features]
+    print $"Building tempo: `($build_cmd | str join ' ')`..."
     with-env { RUSTFLAGS: $RUSTFLAGS } {
-        cargo build --bin tempo --profile $profile --features $features
+        run-external ($build_cmd | first) ...($build_cmd | skip 1)
     }
 
     let tempo_bin = $"./target/($profile)/tempo"
 
-    # Prepare logs directory
-    rm -rf $LOGS_DIR
-    mkdir $LOGS_DIR
-    print $"Logs will be written to ($LOGS_DIR)/"
-
-    # Start all nodes as background jobs
+    # Start background nodes first (all except node 0)
     print $"Starting ($validator_dirs | length) nodes..."
-    for node in ($validator_dirs | enumerate) {
-        let tail_logs = ($node.index in $log_indices)
+    print $"Logs: ($LOGS_DIR)/"
+    print "Press Ctrl+C to stop all nodes."
+
+    let foreground_node = $validator_dirs | first
+    let background_nodes = $validator_dirs | skip 1
+
+    for node in ($background_nodes | enumerate) {
+        let actual_index = $node.index + 1
+        let tail_logs = ($actual_index in $log_indices)
         let show_errors = not $silent
         start-node-job $node.item $genesis_path $trusted_peers $tempo_bin $tail_logs $samply $show_errors
     }
 
-    print "All nodes started. Press Ctrl+C to stop."
-    print $"Logs: ($LOGS_DIR)/"
+    # Run node 0 in foreground
+    let tail_logs = (0 in $log_indices)
+    run-node-foreground $foreground_node $genesis_path $trusted_peers $tempo_bin $tail_logs $samply
 
-    # Wait for interrupt
-    try {
-        loop { sleep 1sec }
-    } catch {
-        print "\nStopping..."
-    }
+    # Foreground node exited, cleanup background jobs
+    print "\nStopping background nodes..."
     cleanup-jobs
 }
 
@@ -201,8 +201,8 @@ def check-dangling-processes [] {
     let pids = (ps | where name =~ "tempo" | where name !~ "tempo-bench" | get pid)
     if ($pids | length) > 0 {
         print $"Found ($pids | length) running tempo process\(es\)."
-        let answer = (input "Kill them? [y/N] " | str trim | str downcase)
-        if $answer == "y" or $answer == "yes" {
+        let answer = (input "Kill them? [Y/n] " | str trim | str downcase)
+        if $answer == "" or $answer == "y" or $answer == "yes" {
             for pid in $pids {
                 kill $pid
             }
@@ -222,41 +222,61 @@ def start-node-job [node_dir: string, genesis_path: string, trusted_peers: strin
 
     let log_dir = $"($LOGS_DIR)/($addr)"
     mkdir $log_dir
-    let args = (build-node-args $node_dir $genesis_path $trusted_peers $port $log_dir)
+
+    # Build args with appropriate log filter
+    let args = (build-node-args $node_dir $genesis_path $trusted_peers $port $log_dir) | append (
+        if $tail_logs { [] }
+        else if $show_errors { ["--log.stdout.filter" "WARN"] }
+        else { ["--log.stdout.filter" "off"] }
+    )
+
+    # Build command (with or without samply)
+    let cmd = if $samply {
+        ["samply" "record" "-o" $"($LOCALNET_DIR)/tempo-($port).samply" "--" $tempo_bin] | append $args
+    } else {
+        [$tempo_bin] | append $args
+    }
 
     if $tail_logs {
-        # Show all logs for this node
         print $"  Node ($addr) -> http://localhost:($http_port) \(logs to stdout\)"
-        if $samply {
-            job spawn {
-                sh -c $"samply record -o ($LOCALNET_DIR)/tempo-($port).samply -- ($tempo_bin) ($args | str join ' ') 2>&1" | lines | each { |line| print $"[($addr)] ($line)" }
-            }
-        } else {
-            job spawn {
-                sh -c $"($tempo_bin) ($args | str join ' ') 2>&1" | lines | each { |line| print $"[($addr)] ($line)" }
-            }
-        }
-    } else if $show_errors {
-        # Show only WARN/ERROR logs
-        print $"  Node ($addr) -> http://localhost:($http_port)"
-        if $samply {
-            job spawn {
-                sh -c $"samply record -o ($LOCALNET_DIR)/tempo-($port).samply -- ($tempo_bin) ($args | str join ' ') 2>&1" | lines | each { |line| if ($line =~ "WARN|ERROR") { print $"[($addr)] ($line)" } }
-            }
-        } else {
-            job spawn {
-                sh -c $"($tempo_bin) ($args | str join ' ') 2>&1" | lines | each { |line| if ($line =~ "WARN|ERROR") { print $"[($addr)] ($line)" } }
-            }
-        }
+        job spawn { sh -c $"($cmd | str join ' ') 2>&1" | lines | each { |line| print $"[($addr)] ($line)" } }
     } else {
-        # Silent mode - no stdout output
         print $"  Node ($addr) -> http://localhost:($http_port)"
-        if $samply {
-            job spawn { samply record -o $"($LOCALNET_DIR)/tempo-($port).samply" -- $tempo_bin ...$args }
-        } else {
-            job spawn { run-external $tempo_bin ...$args }
-        }
+        job spawn { run-external ($cmd | first) ...($cmd | skip 1) }
     }
+}
+
+# Run a node in the foreground (receives Ctrl+C directly)
+def run-node-foreground [node_dir: string, genesis_path: string, trusted_peers: string, tempo_bin: string, tail_logs: bool, samply: bool] {
+    let addr = ($node_dir | path basename)
+    let port = ($addr | split row ":" | get 1 | into int)
+    let node_index = (($port - 8000) / 100 | into int)
+    let http_port = 8545 + $node_index
+
+    let log_dir = $"($LOGS_DIR)/($addr)"
+    mkdir $log_dir
+
+    # Build args with appropriate log filter
+    let args = (build-node-args $node_dir $genesis_path $trusted_peers $port $log_dir) | append (
+        if $tail_logs { [] } else { ["--log.stdout.filter" "off"] }
+    )
+
+    # Build command (with or without samply)
+    let cmd = if $samply {
+        ["samply" "record" "-o" $"($LOCALNET_DIR)/tempo-($port).samply" "--" $tempo_bin] | append $args
+    } else {
+        [$tempo_bin] | append $args
+    }
+    let cmd_str = $cmd | str join " "
+
+    if $tail_logs {
+        print $"  Node ($addr) -> http://localhost:($http_port) \(foreground, logs to stdout\)"
+    } else {
+        print $"  Node ($addr) -> http://localhost:($http_port) \(foreground\)"
+    }
+
+    # Use shell wrapper to print PID then wait
+    sh -c $"($cmd_str) & pid=$!; echo \"  PID: $pid\"; wait $pid"
 }
 
 # Build base node arguments shared between dev and consensus modes
