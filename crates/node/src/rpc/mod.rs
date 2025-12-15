@@ -7,7 +7,7 @@ pub mod policy;
 pub mod token;
 
 pub use admin::{TempoAdminApi, TempoAdminApiServer};
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, Bytes};
 use alloy_rpc_types_eth::{Log, ReceiptWithBloom};
 pub use amm::{TempoAmm, TempoAmmApiServer};
 pub use dex::{TempoDex, api::TempoDexApiServer};
@@ -315,6 +315,16 @@ impl<N: FullNodeTypes<Types = TempoNode>> EthTransactions for TempoEthApi<N> {
 
     fn send_raw_transaction_sync_timeout(&self) -> std::time::Duration {
         self.inner.send_raw_transaction_sync_timeout()
+    }
+
+    async fn recover_raw_transaction(
+        &self,
+        tx: Bytes,
+    ) -> Result<Recovered<TempoTxEnvelope>, Self::Error> {
+        self.inner
+            .recover_raw_transaction(tx)
+            .await
+            .map_err(Into::into)
     }
 
     fn send_transaction(
