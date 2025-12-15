@@ -317,16 +317,6 @@ impl<N: FullNodeTypes<Types = TempoNode>> EthTransactions for TempoEthApi<N> {
         self.inner.send_raw_transaction_sync_timeout()
     }
 
-    async fn recover_raw_transaction(
-        &self,
-        tx: Bytes,
-    ) -> Result<Recovered<TempoTxEnvelope>, Self::Error> {
-        self.inner
-            .recover_raw_transaction(tx)
-            .await
-            .map_err(Into::into)
-    }
-
     fn send_transaction(
         &self,
         tx: WithEncoded<Recovered<PoolPooledTx<Self::Pool>>>,
