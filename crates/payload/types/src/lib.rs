@@ -62,10 +62,6 @@ impl ExecutionPayload for TempoExecutionData {
     fn gas_used(&self) -> u64 {
         self.block.gas_used()
     }
-
-    fn block_access_list(&self) -> Option<&alloy_primitives::Bytes> {
-        None
-    }
 }
 
 impl PayloadTypes for TempoPayloadTypes {

@@ -220,7 +220,7 @@ impl ConfigureEvm for TempoEvmConfig {
                 parent_beacon_block_root: attributes.parent_beacon_block_root,
                 ommers: &[],
                 withdrawals: attributes.inner.withdrawals.map(Cow::Owned),
-                extra_data: attributes.inner.extra_data,
+                extra_data: attributes.inner.extra_data.unwrap_or_default(),
             },
             general_gas_limit: attributes.general_gas_limit,
             shared_gas_limit: attributes.inner.gas_limit

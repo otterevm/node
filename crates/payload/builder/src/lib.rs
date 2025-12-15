@@ -402,7 +402,7 @@ where
                         gas_limit: block_gas_limit,
                         parent_beacon_block_root: attributes.parent_beacon_block_root(),
                         withdrawals: Some(attributes.withdrawals().clone()),
-                        extra_data: attributes.extra_data().clone(),
+                        extra_data: Some(attributes.extra_data().clone()),
                     },
                     general_gas_limit,
                     shared_gas_limit,
