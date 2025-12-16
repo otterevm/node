@@ -222,6 +222,7 @@ where
             epoch::manager::Config {
                 application: application_mailbox.clone(),
                 blocker: self.blocker.clone(),
+                peer_manager: self.peer_manager.clone(),
                 buffer_pool: buffer_pool.clone(),
                 epoch_length,
                 time_for_peer_response: self.time_for_peer_response,
@@ -318,7 +319,7 @@ where
     /// local node.
     marshal: crate::alias::marshal::Actor<TContext>,
 
-    epoch_manager: epoch::manager::Actor<TBlocker, TContext>,
+    epoch_manager: epoch::manager::Actor<TBlocker, TPeerManager, TContext>,
 
     subblocks: subblocks::Actor<TContext>,
 }

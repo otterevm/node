@@ -8,6 +8,8 @@ use eyre::WrapErr as _;
 use futures::channel::mpsc;
 use tracing::{Span, warn};
 
+pub(super) mod boundary_cert_handler;
+
 #[derive(Clone, Debug)]
 pub(crate) struct Mailbox {
     inner: mpsc::UnboundedSender<Message>,

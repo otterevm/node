@@ -44,34 +44,49 @@
 //!
 //! This process is repeated until the node catches up to the current network
 //! epoch.
-use std::{collections::BTreeMap, num::NonZeroUsize};
+use std::{
+    collections::BTreeMap,
+    net::SocketAddr,
+    num::{NonZeroU32, NonZeroUsize},
+    time::Duration,
+};
 
-use bytes::Bytes;
-use commonware_codec::{DecodeExt as _, Encode as _, varint::UInt};
+use commonware_codec::{Encode as _, Read as _};
 use commonware_consensus::{
-    Reporters,
-    simplex::{self, signing_scheme::bls12381_threshold::Scheme, types::Voter},
+    Epochable as _, Reporters,
+    marshal::SchemeProvider,
+    simplex::{
+        self,
+        signing_scheme::{Scheme as _, bls12381_threshold::Scheme},
+        types::Finalization,
+    },
     types::Epoch,
     utils,
 };
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, ed25519::PublicKey};
 use commonware_macros::select;
 use commonware_p2p::{
-    Blocker, Receiver, Recipients, Sender,
-    utils::mux::{Builder as _, GlobalSender, MuxHandle, Muxer},
+    Blocker, Receiver, Sender,
+    utils::mux::{Builder as _, MuxHandle, Muxer},
 };
+use commonware_resolver::Resolver as _;
 use commonware_runtime::{
     Clock, ContextCell, Handle, Metrics as _, Network, Spawner, Storage, spawn_cell,
 };
-use eyre::{WrapErr as _, ensure, eyre};
+use commonware_utils::set::OrderedAssociated;
+use eyre::{WrapErr as _, bail, ensure, eyre};
 use futures::{StreamExt as _, channel::mpsc};
+use governor::Quota;
 use prometheus_client::metrics::{counter::Counter, gauge::Gauge};
 use rand::{CryptoRng, Rng};
-use tracing::{Level, Span, error, error_span, info, instrument, warn, warn_span};
+use tracing::{Level, Span, debug, error, error_span, info, instrument, warn, warn_span};
 
 use crate::{
     consensus::Digest,
-    epoch::manager::ingress::{Enter, Exit},
+    epoch::manager::ingress::{
+        Enter, Exit,
+        boundary_cert_handler::{self, Deliver, Produce, SpanEpoch},
+    },
 };
 
 use super::ingress::Message;
@@ -79,17 +94,21 @@ use super::ingress::Message;
 const REPLAY_BUFFER: NonZeroUsize = NonZeroUsize::new(8 * 1024 * 1024).expect("value is not zero"); // 8MB
 const WRITE_BUFFER: NonZeroUsize = NonZeroUsize::new(1024 * 1024).expect("value is not zero"); // 1MB
 
-pub(crate) struct Actor<TBlocker, TContext> {
+pub(crate) struct Actor<TBlocker, TPeerManager, TContext> {
     active_epochs: BTreeMap<Epoch, Handle<()>>,
-    config: super::Config<TBlocker>,
+    config: super::Config<TBlocker, TPeerManager>,
     context: ContextCell<TContext>,
     mailbox: mpsc::UnboundedReceiver<Message>,
     metrics: Metrics,
 }
 
-impl<TBlocker, TContext> Actor<TBlocker, TContext>
+impl<TBlocker, TPeerManager, TContext> Actor<TBlocker, TPeerManager, TContext>
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
+    TPeerManager: commonware_p2p::Manager<
+            PublicKey = PublicKey,
+            Peers = OrderedAssociated<PublicKey, SocketAddr>,
+        >,
     // TODO(janis): are all of these bounds necessary?
     TContext: Spawner
         + commonware_runtime::Metrics
@@ -101,7 +120,7 @@ where
         + Network,
 {
     pub(super) fn new(
-        config: super::Config<TBlocker>,
+        config: super::Config<TBlocker, TPeerManager>,
         context: TContext,
         mailbox: mpsc::UnboundedReceiver<Message>,
     ) -> Self {
@@ -192,7 +211,7 @@ where
             impl Sender<PublicKey = PublicKey>,
             impl Receiver<PublicKey = PublicKey>,
         ),
-        (mut boundary_certificates_sender, mut boundary_certificates_receiver): (
+        boundary_certificates: (
             impl Sender<PublicKey = PublicKey>,
             impl Receiver<PublicKey = PublicKey>,
         ),
@@ -207,13 +226,12 @@ where
         .build();
         mux.start();
 
-        let (mux, mut recovered_mux, mut recovered_global_sender) = Muxer::builder(
+        let (mux, mut recovered_mux) = Muxer::builder(
             self.context.with_label("recovered_mux"),
             recovered_sender,
             recovered_receiver,
             self.config.mailbox_size,
         )
-        .with_global_sender()
         .build();
         mux.start();
 
@@ -225,6 +243,34 @@ where
         );
         mux.start();
 
+        let (boundary_cert_handler, mut boundary_cert_requests) =
+            crate::epoch::manager::ingress::boundary_cert_handler::new();
+
+        let (boundary_cert_engine, mut boundary_cert_resolver) =
+            commonware_resolver::p2p::Engine::new(
+                self.context.with_label("finalization_resolver"),
+                commonware_resolver::p2p::Config {
+                    manager: self.config.peer_manager.clone(),
+                    blocker: self.config.blocker.clone(),
+                    consumer: boundary_cert_handler.clone(),
+                    producer: boundary_cert_handler,
+                    mailbox_size: 16,
+                    requester_config: commonware_p2p::utils::requester::Config {
+                        me: None,
+                        rate_limit: Quota::per_second(
+                            NonZeroU32::try_from(5).expect("value is not zero"),
+                        ),
+                        initial: Duration::from_secs(1),
+                        timeout: Duration::from_secs(5),
+                    },
+                    fetch_retry_timeout: Duration::from_millis(500),
+                    priority_requests: true,
+                    priority_responses: true,
+                },
+            );
+
+        boundary_cert_engine.start(boundary_certificates);
+
         loop {
             select!(
                 message = pending_backup.next() => {
@@ -235,29 +281,33 @@ where
                         break;
                     };
                     let _: Result<_, _>  = self.handle_msg_for_unregistered_epoch(
-                        &mut boundary_certificates_sender,
-                        their_epoch,
                         from,
+                        their_epoch,
+                        &mut boundary_cert_resolver,
                     ).await;
                 },
 
-                message = boundary_certificates_receiver.recv() => {
-                    let (from, payload) = match message {
-                        Err(error) => {
-                            error_span!("epoch channel closed").in_scope(||
-                                error!(
-                                    error = %eyre::Report::new(error),
-                                    "epoch p2p channel closed; exiting actor",
-                            ));
+                message = boundary_cert_requests.next() => {
+                    let Some(message) = message else {
+                        warn!("boundary cert channel closed; exiting actor");
                         break;
-                        }
-                        Ok(msg) => msg,
                     };
-                    let _: Result<_, _>  = self.handle_boundary_certificate_request(
-                        from,
-                        payload,
-                        &mut recovered_global_sender)
-                    .await;
+                    let cause = message.cause;
+                    match message.action {
+                        boundary_cert_handler::Action::Deliver(deliver) => {
+                            let _ = self.receive_boundary_cert(
+                                cause,
+                                deliver,
+                                &mut boundary_cert_resolver,
+                            ).await;
+                        }
+                        boundary_cert_handler::Action::Produce(produce) => {
+                            let _ = self.produce_boundary_cert(
+                                cause,
+                                produce,
+                            ).await;
+                        }
+                    }
                 },
 
                 msg = self.mailbox.next()=>  {
@@ -434,9 +484,11 @@ where
     #[instrument(skip_all, fields(msg.epoch = their_epoch, msg.from = %from), err(level = Level::INFO))]
     async fn handle_msg_for_unregistered_epoch(
         &mut self,
-        boundary_certificates_sender: &mut impl Sender<PublicKey = PublicKey>,
-        their_epoch: Epoch,
         from: PublicKey,
+        their_epoch: Epoch,
+        boundary_cert_resolver: &mut commonware_resolver::p2p::Mailbox<
+            super::ingress::boundary_cert_handler::SpanEpoch,
+        >,
     ) -> eyre::Result<()> {
         let Some(our_epoch) = self.active_epochs.keys().last().copied() else {
             return Err(eyre!(
@@ -459,36 +511,35 @@ where
             height `{boundary_height}` is already known; no action necessary",
         );
 
-        boundary_certificates_sender
-            .send(
-                Recipients::One(from),
-                UInt(our_epoch).encode().freeze(),
-                true,
-            )
-            .await
-            .wrap_err("failed request for finalization certificate of our epoch")?;
+        debug!(
+            %our_epoch,
+            %boundary_height,
+            ?from,
+            "requesting boundary finalization certificate for our epoch",
+        );
+        // TODO(janis): commonware starts exposing targetted fetches from
+        // https://github.com/commonwarexyz/monorepo/pull/2391, i.e.:
+        // boundary_cert_resolver.fetch_targeted(SpanEpoch(our_epoch), from).await;
+        boundary_cert_resolver.fetch(SpanEpoch(our_epoch)).await;
 
         info!("requested finalization certificate for our epoch");
 
         Ok(())
     }
 
-    #[instrument(skip_all, fields(
-        msg.from = %from,
-        msg.payload_len = bytes.len(),
-        msg.decoded_epoch = tracing::field::Empty,
-    ), err(level = Level::WARN))]
-    async fn handle_boundary_certificate_request(
+    #[instrument(
+        skip_all,
+        parent = &cause,
+        fields(
+            %epoch,
+        ), err(level = Level::WARN)
+    )]
+    async fn produce_boundary_cert(
         &mut self,
-        from: PublicKey,
-        bytes: Bytes,
-        recovered_global_sender: &mut GlobalSender<impl Sender<PublicKey = PublicKey>>,
+        cause: Span,
+        Produce { epoch, response }: Produce,
     ) -> eyre::Result<()> {
-        let requested_epoch = UInt::<Epoch>::decode(bytes.as_ref())
-            .wrap_err("failed decoding epoch channel payload as epoch")?
-            .into();
-        tracing::Span::current().record("msg.decoded_epoch", requested_epoch);
-        let boundary_height = utils::last_block_in_epoch(self.config.epoch_length, requested_epoch);
+        let boundary_height = utils::last_block_in_epoch(self.config.epoch_length, epoch);
         let cert = self
             .config
             .marshal
@@ -496,23 +547,80 @@ where
             .await
             .ok_or_else(|| {
                 eyre!(
-                    "do not have finalization for requested epoch \
-                    `{requested_epoch}`, boundary height `{boundary_height}` \
-                    available locally; cannot serve request"
+                    "do not have finalization for requested epoch `{epoch}`,
+                    boundary height `{boundary_height}` available locally; \
+                    cannot serve request"
                 )
             })?;
-        let message = Voter::<Scheme<PublicKey, MinSig>, Digest>::Finalization(cert);
-        recovered_global_sender
-            .send(
-                requested_epoch,
-                Recipients::One(from),
-                message.encode().freeze(),
-                false,
-            )
-            .await
-            .wrap_err(
-                "failed forwarding finalization certificate to requester via `recovered` channel",
-            )?;
+        let _ = response.send(cert.encode().freeze());
+        Ok(())
+    }
+
+    #[instrument(
+        skip_all,
+        parent = &cause,
+        fields(
+            %epoch,
+        ), err(level = Level::WARN)
+    )]
+    async fn receive_boundary_cert(
+        &mut self,
+        cause: Span,
+        Deliver {
+            epoch,
+            value,
+            response,
+        }: Deliver,
+        boundary_cert_resolver: &mut commonware_resolver::p2p::Mailbox<
+            super::ingress::boundary_cert_handler::SpanEpoch,
+        >,
+    ) -> eyre::Result<()> {
+        // NOTE: commonware uses a reduced scheme in its DKG example, falling
+        // back to the constant term of the polynomial to verify the scheme.
+        let Some(scheme) = self.config.scheme_provider.scheme(epoch) else {
+            let _ = response.send(false);
+            return Err(eyre!(
+                "no scheme for epoch `{epoch}` is known, cannot verify certificate"
+            ));
+        };
+
+        let cert = match Finalization::<Scheme<PublicKey, MinSig>, Digest>::read_cfg(
+            &mut value.as_ref(),
+            &scheme.certificate_codec_config(),
+        )
+        .wrap_err("failed decoding finalization cert")
+        {
+            Ok(cert) => cert,
+            Err(err) => {
+                let _ = response.send(false);
+                return Err(err);
+            }
+        };
+        if cert.epoch() != epoch {
+            let _ = response.send(false);
+            bail!(
+                "epoch of finalization cert `{}` does not match requested epoch `{epoch}`",
+                cert.epoch(),
+            );
+        }
+        // TODO(janis): verifiy that the cert is indeed for the boundary epoch.
+        // Awaiting commonware's decision to make certs "fat":
+        // https://github.com/commonwarexyz/monorepo/pull/2287
+        // https://github.com/commonwarexyz/monorepo/issues/2380
+        //
+        // In its absence: query the marshal actor to return the block corresponding
+        // to the certified digest and check its height. Problem: there is no
+        // guarantee that that ever resolves.
+
+        // FIXME: is this the same namespace as passed to the engine? Very likely yes.
+        if !cert.verify(&mut self.context, &scheme, &crate::config::NAMESPACE) {
+            let _ = response.send(false);
+            bail!("could not verify finalization certificate");
+        }
+
+        self.config.marshal.finalization(cert).wait;
+        boundary_cert_resolver.clear().await;
+
         Ok(())
     }
 }

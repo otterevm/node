@@ -1,10 +1,11 @@
 mod actor;
 pub(super) mod ingress;
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 pub(crate) use actor::Actor;
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, ed25519::PublicKey};
+use commonware_utils::set::OrderedAssociated;
 pub(crate) use ingress::Mailbox;
 
 use commonware_consensus::{marshal, simplex::signing_scheme::bls12381_threshold::Scheme};
@@ -14,9 +15,10 @@ use rand::{CryptoRng, Rng};
 
 use crate::{consensus::block::Block, epoch::scheme_provider::SchemeProvider, subblocks};
 
-pub(crate) struct Config<TBlocker> {
+pub(crate) struct Config<TBlocker, TPeerManager> {
     pub(crate) application: crate::consensus::application::Mailbox,
     pub(crate) blocker: TBlocker,
+    pub(crate) peer_manager: TPeerManager,
     pub(crate) buffer_pool: PoolRef,
     pub(crate) epoch_length: u64,
     pub(crate) time_for_peer_response: Duration,
@@ -32,12 +34,16 @@ pub(crate) struct Config<TBlocker> {
     pub(crate) views_until_leader_skip: u64,
 }
 
-pub(crate) fn init<TBlocker, TContext>(
-    config: Config<TBlocker>,
+pub(crate) fn init<TBlocker, TPeerManager, TContext>(
+    config: Config<TBlocker, TPeerManager>,
     context: TContext,
-) -> (Actor<TBlocker, TContext>, Mailbox)
+) -> (Actor<TBlocker, TPeerManager, TContext>, Mailbox)
 where
     TBlocker: Blocker<PublicKey = PublicKey>,
+    TPeerManager: commonware_p2p::Manager<
+            PublicKey = PublicKey,
+            Peers = OrderedAssociated<PublicKey, SocketAddr>,
+        >,
     TContext:
         Spawner + Metrics + Rng + CryptoRng + Clock + governor::clock::Clock + Storage + Network,
 {
