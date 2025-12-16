@@ -137,7 +137,7 @@ reth-metrics = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
 reth-node-core = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
-reth-network-peers = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
+reth-network-peers = { git = "https://github.com/paradigmxyz/reth", rev = "f71b57f" }
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
 reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab" }
 reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", rev = "25582ab", default-features = false }
