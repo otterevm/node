@@ -1,12 +1,12 @@
 import { QueryClient } from '@tanstack/react-query'
-import { tempoAndantino, tempoLocal, tempoTestnet } from 'tempo.ts/chains'
+import { tempoLocal, tempoTestnet } from 'tempo.ts/chains'
+import { withFeePayer } from 'tempo.ts/viem'
 import { KeyManager, webAuthn } from 'tempo.ts/wagmi'
 import {
   type CreateConfigParameters,
   createConfig,
   createStorage,
   http,
-  noopStorage,
   webSocket,
 } from 'wagmi'
 
@@ -31,15 +31,16 @@ export function getConfig(options: getConfig.Options = {}) {
     ],
     multiInjectedProviderDiscovery,
     storage: createStorage({
-      storage:
-        typeof window !== 'undefined' ? window.localStorage : noopStorage,
+      storage: typeof window !== 'undefined' ? localStorage : undefined,
+      key: 'tempo-docs',
     }),
     transports: {
-      [tempoAndantino.id]: webSocket(
-        'wss://rpc-orchestra.testnet.tempo.xyz/zealous-mayer',
-        {
+      [tempoTestnet.id]: withFeePayer(
+        webSocket('wss://rpc.testnet.tempo.xyz', {
           keepAlive: { interval: 1_000 },
-        },
+        }),
+        http('https://sponsor.testnet.tempo.xyz'),
+        { policy: 'sign-only' },
       ),
       [tempoLocal.id]: http(undefined, {
         batch: true,

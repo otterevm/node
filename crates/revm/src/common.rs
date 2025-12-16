@@ -13,10 +13,10 @@ use tempo_contracts::precompiles::{
 };
 use tempo_precompiles::{
     TIP_FEE_MANAGER_ADDRESS, TIP403_REGISTRY_ADDRESS,
-    storage::{self, Storable, StorableType, double_mapping_slot, slots::mapping_slot},
-    tip_fee_manager,
-    tip20::{self, is_tip20},
-    tip403_registry,
+    storage::{self, StorableType},
+    tip_fee_manager::TipFeeManager,
+    tip20::{self, TIP20Token, is_tip20_prefix},
+    tip403_registry::{self, TIP403Registry},
 };
 use tempo_primitives::TempoTxEnvelope;
 
@@ -46,11 +46,11 @@ impl TempoTx for TempoTxEnv {
     }
 
     fn is_aa(&self) -> bool {
-        self.aa_tx_env.is_some()
+        self.tempo_tx_env.is_some()
     }
 
     fn calls(&self) -> impl Iterator<Item = (TxKind, &Bytes)> {
-        if let Some(aa) = self.aa_tx_env.as_ref() {
+        if let Some(aa) = self.tempo_tx_env.as_ref() {
             Either::Left(aa.aa_calls.iter().map(|call| (call.to, &call.input)))
         } else {
             Either::Right(core::iter::once((self.inner.kind, &self.inner.data)))
@@ -119,7 +119,8 @@ pub trait TempoStateAccess<T> {
             return Ok(call.token);
         }
 
-        let user_slot = mapping_slot(fee_payer, tip_fee_manager::slots::USER_TOKENS);
+        let user_slot = TipFeeManager::new().user_tokens.at(fee_payer).slot();
+
         // ensure TIP_FEE_MANAGER_ADDRESS is loaded
         self.basic(TIP_FEE_MANAGER_ADDRESS)?;
         let stored_user_token = self
@@ -166,7 +167,8 @@ pub trait TempoStateAccess<T> {
         } else {
             // Pre-allegretto fall back to the validator fee token preference or the default to the
             // first TIP20 deployed after PathUSD
-            let validator_slot = mapping_slot(validator, tip_fee_manager::slots::VALIDATOR_TOKENS);
+            let validator_slot = TipFeeManager::new().validator_tokens.at(validator).slot();
+
             let validator_fee_token = self
                 .sload(TIP_FEE_MANAGER_ADDRESS, validator_slot)?
                 .into_address();
@@ -186,7 +188,7 @@ pub trait TempoStateAccess<T> {
         spec: TempoHardfork,
     ) -> Result<bool, Self::Error> {
         // Ensure it's a TIP20
-        if !is_tip20(fee_token) {
+        if !is_tip20_prefix(fee_token) {
             return Ok(false);
         }
 
@@ -208,12 +210,12 @@ pub trait TempoStateAccess<T> {
         fee_payer: Address,
     ) -> Result<bool, Self::Error> {
         // Ensure it's a TIP20
-        if !is_tip20(fee_token) {
+        if !is_tip20_prefix(fee_token) {
             return Ok(false);
         }
 
         // Ensure the fee payer is not blacklisted
-        let Ok(transfer_policy_id) = storage::packing::extract_packed_value::<1, u64>(
+        let Ok(transfer_policy_id) = storage::packing::extract_packed_value::<u64>(
             self.sload(fee_token, tip20::slots::TRANSFER_POLICY_ID)?,
             tip20::slots::TRANSFER_POLICY_ID_OFFSET,
             <u64 as StorableType>::BYTES,
@@ -232,34 +234,26 @@ pub trait TempoStateAccess<T> {
                 return Ok(transfer_policy_id == 1);
             }
 
-            let policy_data_word = self.sload(
-                TIP403_REGISTRY_ADDRESS,
-                mapping_slot(
-                    transfer_policy_id.to_be_bytes(),
-                    tip403_registry::slots::POLICY_DATA,
-                ),
-            )?;
-            let Ok(data) = tip403_registry::PolicyData::from_evm_words([policy_data_word]) else {
-                tracing::warn!(
-                    transfer_policy_id,
-                    "failed to parse PolicyData from storage"
-                );
-                return Ok(false);
-            };
+            let policy_data_slot = TIP403Registry::new()
+                .policy_data
+                .at(transfer_policy_id)
+                .base_slot();
+
+            let policy_data_word = self.sload(TIP403_REGISTRY_ADDRESS, policy_data_slot)?;
+            let data = tip403_registry::PolicyData::decode_from_slot(policy_data_word);
             let Ok(policy_type) = data.policy_type.try_into() else {
                 tracing::warn!(transfer_policy_id, policy_type = ?data.policy_type, "invalid policy type");
                 return Ok(false);
             };
 
+            let policy_set_slot = TIP403Registry::new()
+                .policy_set
+                .at(transfer_policy_id)
+                .at(fee_payer)
+                .slot();
+
             let is_in_set = self
-                .sload(
-                    TIP403_REGISTRY_ADDRESS,
-                    double_mapping_slot(
-                        transfer_policy_id.to_be_bytes(),
-                        fee_payer,
-                        tip403_registry::slots::POLICY_SET,
-                    ),
-                )?
+                .sload(TIP403_REGISTRY_ADDRESS, policy_set_slot)?
                 .to::<bool>();
 
             match policy_type {
@@ -273,9 +267,14 @@ pub trait TempoStateAccess<T> {
     }
 
     /// Returns the balance of the given token for the given account.
+    ///
+    /// IMPORTANT: the caller must ensure `token` is a valid TIP20Token address.
     fn get_token_balance(&mut self, token: Address, account: Address) -> Result<U256, Self::Error> {
+        // Address has already been validated
+        let token_id = tip20::address_to_token_id_unchecked(token);
+
         // Query the user's balance in the determined fee token's TIP20 contract
-        let balance_slot = mapping_slot(account, tip20::slots::BALANCES);
+        let balance_slot = TIP20Token::new(token_id).balances.at(account).slot();
         // Load fee token account to ensure that we can load storage for it.
         self.basic(token)?;
         self.sload(token, balance_slot)
@@ -325,7 +324,7 @@ impl<T: reth_storage_api::StateProvider> TempoStateAccess<((), (), ())> for T {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use revm::{context::TxEnv, database::EmptyDB};
+    use revm::{context::TxEnv, database::EmptyDB, interpreter::instructions::utility::IntoU256};
 
     #[test]
     fn test_get_fee_token_fee_token_set() -> eyre::Result<()> {
@@ -374,6 +373,27 @@ mod tests {
     }
 
     #[test]
+    fn test_get_fee_token_user_token_set() -> eyre::Result<()> {
+        let caller = Address::random();
+        let user_token = Address::random();
+
+        // Set user stored token preference in the FeeManager
+        let mut db = revm::database::CacheDB::new(EmptyDB::default());
+        let user_slot = TipFeeManager::new().user_tokens.at(caller).slot();
+        db.insert_account_storage(TIP_FEE_MANAGER_ADDRESS, user_slot, user_token.into_u256())
+            .unwrap();
+
+        let result_token = db.get_fee_token(
+            TempoTxEnv::default(),
+            Address::ZERO,
+            caller,
+            TempoHardfork::default(),
+        )?;
+        assert_eq!(result_token, user_token);
+        Ok(())
+    }
+
+    #[test]
     fn test_get_fee_token_tip20() -> eyre::Result<()> {
         let caller = Address::random();
         let tip20_token = Address::random();
@@ -397,7 +417,44 @@ mod tests {
     }
 
     #[test]
-    fn test_get_fee_token_fallback() -> eyre::Result<()> {
+    fn test_get_fee_token_fallback_pre_allegretto() -> eyre::Result<()> {
+        let caller = Address::random();
+        let validator = Address::random();
+        let validator_token = Address::random();
+
+        let tx_env = TxEnv {
+            caller,
+            ..Default::default()
+        };
+        let tx = TempoTxEnv {
+            inner: tx_env,
+            ..Default::default()
+        };
+
+        // Validator has a token preference set
+        let mut db = revm::database::CacheDB::new(EmptyDB::default());
+        let validator_slot = TipFeeManager::new().validator_tokens.at(validator).slot();
+        db.insert_account_storage(
+            TIP_FEE_MANAGER_ADDRESS,
+            validator_slot,
+            validator_token.into_u256(),
+        )
+        .unwrap();
+
+        let result_token =
+            db.get_fee_token(tx.clone(), validator, caller, TempoHardfork::Adagio)?;
+        assert_eq!(result_token, validator_token);
+
+        // Validator token is not set
+        let mut db2 = EmptyDB::default();
+        let result_token2 = db2.get_fee_token(tx, Address::ZERO, caller, TempoHardfork::Adagio)?;
+        assert_eq!(result_token2, DEFAULT_FEE_TOKEN_PRE_ALLEGRETTO);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_fee_token_fallback_post_allegretto() -> eyre::Result<()> {
         let caller = Address::random();
         let tx_env = TxEnv {
             caller,
@@ -417,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_fee_token_stablecoin_exchange() -> eyre::Result<()> {
+    fn test_get_fee_token_stablecoin_exchange_post_allegretto() -> eyre::Result<()> {
         let caller = Address::random();
         // Use PathUSD as token_in since it's a known valid USD fee token
         let token_in = DEFAULT_FEE_TOKEN_POST_ALLEGRETTO;
