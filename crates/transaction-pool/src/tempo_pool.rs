@@ -27,6 +27,7 @@ use reth_transaction_pool::{
 use revm::database::BundleAccount;
 use std::{collections::HashSet, sync::Arc, time::Instant};
 use tempo_chainspec::TempoChainSpec;
+use tracing::instrument;
 
 /// Tempo transaction pool that routes based on nonce_key
 pub struct TempoTransactionPool<Client> {
@@ -81,6 +82,7 @@ where
             .notify_on_transaction_updates(promoted, Vec::new());
     }
 
+    #[instrument(skip_all, fields(num_transactions = %transactions.len()))]
     fn add_validated_transactions(
         &self,
         origin: TransactionOrigin,
@@ -105,6 +107,7 @@ where
             .add_transactions(origin, transactions)
     }
 
+    #[instrument(skip_all, fields(tx_hash = %transaction.tx_hash()))]
     fn add_validated_transaction(
         &self,
         origin: TransactionOrigin,
@@ -243,6 +246,7 @@ where
             .ok_or_else(|| PoolError::new(res.hash, PoolErrorKind::DiscardedOnInsert))
     }
 
+    #[instrument(skip_all, fields(tx_hash = %transaction.hash()))]
     async fn add_transaction(
         &self,
         origin: TransactionOrigin,
@@ -256,6 +260,7 @@ where
         self.add_validated_transaction(origin, tx)
     }
 
+    #[instrument(skip_all, fields(num_transactions = %transactions.len()))]
     async fn add_transactions(
         &self,
         origin: TransactionOrigin,

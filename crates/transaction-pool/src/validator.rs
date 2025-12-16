@@ -21,6 +21,7 @@ use tempo_precompiles::{
 };
 use tempo_primitives::{subblock::has_sub_block_nonce_key_prefix, transaction::TempoTransaction};
 use tempo_revm::TempoStateAccess;
+use tracing::instrument;
 
 // Reject AA txs where `valid_before` is too close to current time (or already expired) to prevent block invalidation.
 const AA_VALID_BEFORE_MIN_SECS: u64 = 3;
@@ -68,6 +69,7 @@ where
     /// - ValidateKeychain: Need to validate the keychain authorization
     /// - Skip: No validation needed (not a keychain signature, or same-tx auth is valid)
     /// - Reject: Transaction should be rejected with the given reason
+    #[instrument(skip_all, fields(tx_hash = %transaction.hash()))]
     fn validate_against_keychain(
         &self,
         transaction: &TempoPooledTransaction,
@@ -203,6 +205,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all, fields(tx_hash = %transaction.hash()))]
     fn validate_one(
         &self,
         origin: TransactionOrigin,
@@ -425,6 +428,7 @@ where
 {
     type Transaction = TempoPooledTransaction;
 
+    #[instrument(skip_all, fields(tx_hash = %transaction.hash()))]
     async fn validate_transaction(
         &self,
         origin: TransactionOrigin,
@@ -440,6 +444,7 @@ where
         self.validate_one(origin, transaction, state_provider)
     }
 
+    #[instrument(skip_all, fields(num_transactions = %transactions.len()))]
     async fn validate_transactions(
         &self,
         transactions: Vec<(TransactionOrigin, Self::Transaction)>,
@@ -462,6 +467,7 @@ where
             .collect()
     }
 
+    #[instrument(skip_all)]
     async fn validate_transactions_with_origin(
         &self,
         origin: TransactionOrigin,
