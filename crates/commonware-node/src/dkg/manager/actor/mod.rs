@@ -613,7 +613,7 @@ where
                 deferred one exists",
             );
             self.gaps = gaps;
-            return;
+            return ControlFlow::Continue(());
         }
 
         let mut tx = DkgReadWriteTransaction::new(self.db.read_write());
@@ -654,7 +654,7 @@ where
             return ControlFlow::Break(());
         }
 
-        acknowledgment.acknowledge();
+        acknowledgement.acknowledge();
         ControlFlow::Continue(())
     }
 
@@ -912,7 +912,7 @@ where
     ///
     /// Called after each finalized block to check if we've reached the target epoch boundary.
     /// Returns `ControlFlow::Break` if the actor should exit (without acknowledging).
-    async fn maybe_export_and_shutdown(&self, block_height: u64) -> ControlFlow<()> {
+    async fn maybe_export_and_shutdown(&mut self, block_height: u64) -> ControlFlow<()> {
         tracing::debug!(
             block_height,
             exit_after_epoch = ?self.config.exit.args.exit_after_epoch,
@@ -936,7 +936,7 @@ where
 
     /// Optionally exports signing share to file and signals shutdown.
     async fn export_and_shutdown(
-        &self,
+        &mut self,
         tx: &DkgReadWriteTransaction<ContextCell<TContext>>,
         block_height: u64,
         epoch: u64,
