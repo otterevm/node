@@ -78,15 +78,13 @@
 
 ## Transaction Pool (+4.5k net)
 
-| File | Description |
-|------|-------------|
-| `tt_2d_pool.rs` | New 2D nonce pool (+2,326 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006)) |
-| `tempo_pool.rs` | Pool wrapper (+718 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006)) |
-| `amm.rs` | AMM for fee estimation (+233 lines) ([#1115](https://github.com/tempoxyz/tempo/pull/1115)) |
-| `best.rs` | Best transaction iterator (+274 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006)) |
-| `maintain.rs` | Pool maintenance (+140 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006)) |
-| `metrics.rs` | Pool metrics (+75 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006)) |
-| `validator.rs` | Fee payer blacklist check ([#1114](https://github.com/tempoxyz/tempo/pull/1114)), protocol nonces ([#1218](https://github.com/tempoxyz/tempo/pull/1218)) |
+- New 2D nonce pool `tt_2d_pool.rs` (+2,326 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006))
+- Pool wrapper `tempo_pool.rs` (+718 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006))
+- AMM for fee estimation `amm.rs` (+233 lines) ([#1115](https://github.com/tempoxyz/tempo/pull/1115))
+- Best transaction iterator `best.rs` (+274 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006))
+- Pool maintenance `maintain.rs` (+140 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006))
+- Pool metrics `metrics.rs` (+75 lines) ([#1006](https://github.com/tempoxyz/tempo/pull/1006))
+- Fee payer blacklist check in `validator.rs` ([#1114](https://github.com/tempoxyz/tempo/pull/1114)), protocol nonces ([#1218](https://github.com/tempoxyz/tempo/pull/1218))
 
 ---
 
