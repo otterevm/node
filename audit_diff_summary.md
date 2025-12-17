@@ -8,7 +8,7 @@
 
 ---
 
-## Precompiles (+4k net, 42 files)
+## Precompiles (+4k net)
 
 ### stablecoin_exchange
 - Remove system tx ([#1509](https://github.com/tempoxyz/tempo/pull/1509))
@@ -76,7 +76,7 @@
 
 ---
 
-## Transaction Pool (+4.5k net, 9 files)
+## Transaction Pool (+4.5k net)
 
 | File | Description |
 |------|-------------|
@@ -90,7 +90,7 @@
 
 ---
 
-## REVM / Handler (+800 net, 7 files)
+## REVM / Handler (+800 net)
 
 - Gas refund support in precompiles ([#806](https://github.com/tempoxyz/tempo/pull/806))
 - Fee token selection logic update ([#1022](https://github.com/tempoxyz/tempo/pull/1022))
@@ -101,7 +101,7 @@
 
 ---
 
-## Primitives (+1.5k net, 11 files)
+## Primitives (+1.5k net)
 
 ### Renames
 - `TxAA` → `TempoTransaction` ([#1171](https://github.com/tempoxyz/tempo/pull/1171))
@@ -122,7 +122,7 @@
 
 ---
 
-## Commonware-node (+3.7k net, 29 files)
+## Commonware-node (+3.7k net)
 
 ### DKG
 - Ceremony refactor with tree structure ([#1039](https://github.com/tempoxyz/tempo/pull/1039))
@@ -152,7 +152,7 @@
 
 ---
 
-## Chainspec (+700 net, 4 files)
+## Chainspec (+700 net)
 
 - AllegroModerato hardfork ([#1193](https://github.com/tempoxyz/tempo/pull/1193))
 - Allegretto hardfork ([#976](https://github.com/tempoxyz/tempo/pull/976))
@@ -161,7 +161,7 @@
 
 ---
 
-## EVM / Block Building (+200 net, 7 files)
+## EVM / Block Building (+200 net)
 
 - `engine.rs` — New engine abstraction ([#1086](https://github.com/tempoxyz/tempo/pull/1086))
 - `block.rs` — Block building changes, system tx execution ([#1509](https://github.com/tempoxyz/tempo/pull/1509), [#1537](https://github.com/tempoxyz/tempo/pull/1537))
@@ -169,7 +169,7 @@
 
 ---
 
-## Payload Builder (+200 net, 4 files)
+## Payload Builder (+200 net)
 
 - Duration metrics for system transactions ([#1058](https://github.com/tempoxyz/tempo/pull/1058))
 - Gas used / gas per second metrics ([#1190](https://github.com/tempoxyz/tempo/pull/1190))
@@ -178,7 +178,7 @@
 
 ---
 
-## Node (+200 net, 20 files)
+## Node (+200 net)
 
 ### RPC
 - Custom revert errors ([#1073](https://github.com/tempoxyz/tempo/pull/1073))
@@ -192,7 +192,7 @@
 
 ---
 
-## Alloy (+450 net, 11 files)
+## Alloy (+450 net)
 
 - Random 2D nonce filler ([#1138](https://github.com/tempoxyz/tempo/pull/1138), [#1158](https://github.com/tempoxyz/tempo/pull/1158))
 - Provider extensions ([#1138](https://github.com/tempoxyz/tempo/pull/1138))
