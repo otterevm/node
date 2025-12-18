@@ -163,15 +163,6 @@ pub struct PauseArgs {
     pub pause_export_share: Option<PathBuf>,
 }
 
-/// Runtime configuration for pause behavior (includes shutdown token).
-#[derive(Clone, Debug)]
-pub struct PauseConfig {
-    /// CLI arguments for pause behavior.
-    pub args: PauseArgs,
-    /// Shutdown token to signal graceful shutdown.
-    pub shutdown_token: tokio_util::sync::CancellationToken,
-}
-
 impl Args {
     /// Returns the signing key loaded from specified file.
     pub(crate) fn signing_key(&self) -> eyre::Result<Option<SigningKey>> {

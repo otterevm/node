@@ -787,7 +787,7 @@ where
         tx.set_validators(epoch_state.epoch(), new_validator_state.clone());
 
         // Skip entering the epoch if we're pausing at the previous epoch boundary
-        if let Some(pause_epoch) = self.config.pause.args.pause_after_epoch
+        if let Some(pause_epoch) = self.config.pause.pause_after_epoch
             && epoch_state.epoch() == pause_epoch + 1
         {
             info!(
@@ -914,7 +914,7 @@ where
     /// Called after each finalized block. The node will naturally stop making progress
     /// since we don't enter the next epoch when `pause_after_epoch` is configured.
     async fn handle_pause_after_epoch(&mut self, block_height: u64) {
-        let Some(target_epoch) = self.config.pause.args.pause_after_epoch else {
+        let Some(target_epoch) = self.config.pause.pause_after_epoch else {
             return;
         };
         let Some(block_epoch) =
@@ -926,7 +926,7 @@ where
             return;
         }
 
-        if let Some(export_path) = &self.config.pause.args.pause_export_share {
+        if let Some(export_path) = &self.config.pause.pause_export_share {
             let tx = DkgReadWriteTransaction::new(self.db.read_write());
             let Ok(Some(epoch_state)) = tx.get_epoch::<post_allegretto::EpochState>().await else {
                 error!("failed to read epoch state for share export");

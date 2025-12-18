@@ -28,7 +28,7 @@ use tempo_node::TempoFullNode;
 use tracing::info;
 
 use crate::{
-    args::PauseConfig,
+    args::PauseArgs,
     config::{BLOCKS_FREEZER_TABLE_INITIAL_SIZE_BYTES, MARSHAL_LIMIT},
     consensus::application,
     dkg,
@@ -90,7 +90,7 @@ pub struct Builder<TBlocker, TContext, TPeerManager> {
     pub time_to_build_subblock: Duration,
     pub subblock_broadcast_interval: Duration,
 
-    pub pause: PauseConfig,
+    pub pause: PauseArgs,
 }
 
 impl<TBlocker, TContext, TPeerManager> Builder<TBlocker, TContext, TPeerManager>

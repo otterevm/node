@@ -11,10 +11,10 @@ use futures::channel::mpsc;
 use rand_core::CryptoRngCore;
 use tempo_node::TempoFullNode;
 
-use crate::args::PauseConfig;
+use crate::args::PauseArgs;
 
 mod actor;
-pub mod export;
+pub(crate) mod export;
 mod ingress;
 mod migrate;
 pub(super) mod read_write_transaction;
@@ -90,5 +90,5 @@ pub(crate) struct Config<TPeerManager> {
     pub(crate) peer_manager: TPeerManager,
 
     /// Pause configuration for coordinated shutdown at epoch boundaries.
-    pub(crate) pause: PauseConfig,
+    pub(crate) pause: PauseArgs,
 }

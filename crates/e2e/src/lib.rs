@@ -19,7 +19,7 @@ use commonware_cryptography::{
 };
 use commonware_p2p::simulated::{self, Link, Network, Oracle};
 use std::path::PathBuf;
-use tempo_commonware_node::{PauseArgs, PauseConfig};
+use tempo_commonware_node::PauseArgs;
 
 use commonware_runtime::{
     Clock, Metrics as _, Runner as _,
@@ -309,10 +309,7 @@ pub async fn setup_validators(
             new_payload_wait_time: Duration::from_millis(200),
             time_to_build_subblock: Duration::from_millis(100),
             subblock_broadcast_interval: Duration::from_millis(50),
-            pause: PauseConfig {
-                args: pause_args.clone(),
-                shutdown_token: tokio_util::sync::CancellationToken::new(),
-            },
+            pause: pause_args.clone(),
         };
 
         nodes.push(TestingNode::new(
