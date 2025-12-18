@@ -13,15 +13,14 @@ use tempo_node::TempoFullNode;
 
 use crate::args::PauseConfig;
 
-pub mod actor;
+mod actor;
 pub mod export;
 mod ingress;
 mod migrate;
 pub(super) mod read_write_transaction;
-pub mod validators;
+mod validators;
 
 pub(crate) use actor::Actor;
-pub use actor::DkgOutcome;
 pub(crate) use ingress::Mailbox;
 pub(crate) use validators::ValidatorState;
 
