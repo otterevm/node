@@ -319,8 +319,14 @@ where
                         height = block.height(),
                         "gaps filled; processing deferred finalized block now",
                     );
-                    self.handle_finalized_block(cause, block, ack, &mut ceremony, &mut ceremony_mux)
-                        .await;
+                    self.handle_finalized_block(
+                        cause,
+                        block,
+                        ack,
+                        &mut ceremony,
+                        &mut ceremony_mux,
+                    )
+                    .await;
                 }
             }
 
