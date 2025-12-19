@@ -5,7 +5,7 @@ import { join, relative } from 'node:path'
  * Truncates description to exactly 160 characters max, ensuring it ends with a period
  * and doesn't cut off mid-word or mid-sentence. Prefers the first complete sentence.
  */
-function truncateDescription(description: string, maxLength: number = 160): string {
+export function truncateDescription(description: string, maxLength: number = 160): string {
   let result = description.trim()
   
   // First, try to find the first complete sentence (ending with period) that fits within maxLength
@@ -121,7 +121,7 @@ function truncateDescription(description: string, maxLength: number = 160): stri
 /**
  * Appends "• Tempo" to title if not already present
  */
-function appendTempoBranding(title: string): string {
+export function appendTempoBranding(title: string): string {
   const tempoSuffix = ' • Tempo'
   // Check if title already ends with "• Tempo" (with or without the bullet point character)
   if (title.endsWith(tempoSuffix) || title.endsWith(' • Tempo') || title.endsWith(' · Tempo')) {
