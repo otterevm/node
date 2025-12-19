@@ -168,6 +168,49 @@ pub trait StorableType {
     fn handle(slot: U256, ctx: LayoutCtx, address: Address) -> Self::Handler;
 }
 
+/// Trait for types that can be stored in a `DirectAddressMap`.
+///
+/// This trait enables per-field SPACE offset computation for struct values.
+/// Primitives use the default implementation which pre-computes the slot.
+/// Structs override this with a generated `SpaceHandler` type.
+pub trait StorableInSpace: StorableType {
+    /// The handler type for DirectAddressMap-based access.
+    ///
+    /// For primitives, this is `Self::Handler` (same as regular handler).
+    /// For structs, this is a generated handler (e.g., `MyStructSpaceHandler`)
+    /// that computes per-field slots using SPACE offsets.
+    type SpaceHandler;
+
+    /// Creates a handler for DirectAddressMap-based access.
+    ///
+    /// For primitives: pre-computes the slot as `[space][key][zeros]`.
+    /// For structs: creates a SpaceHandler with per-field SPACE offsets.
+    fn handle_in_space(
+        space: u8,
+        key: Address,
+        ctx: LayoutCtx,
+        address: Address,
+    ) -> Self::SpaceHandler;
+}
+
+/// Blanket implementation for all `Packable` types (primitives).
+///
+/// For primitives, the SpaceHandler is the same as Handler - we just pre-compute
+/// the slot and delegate to the regular `handle()` method.
+impl<T: Packable> StorableInSpace for T {
+    type SpaceHandler = Self::Handler;
+
+    #[inline]
+    fn handle_in_space(
+        space: u8,
+        key: Address,
+        ctx: LayoutCtx,
+        address: Address,
+    ) -> Self::SpaceHandler {
+        Self::handle(compute_direct_slot(space, key), ctx, address)
+    }
+}
+
 /// Abstracts reading, writing, and deleting values for [`Storable`] types.
 pub trait Handler<T: Storable> {
     /// Reads the value from storage.

@@ -95,9 +95,14 @@ pub(crate) fn derive_impl(input: DeriveInput) -> syn::Result<TokenStream> {
     let handler_struct = gen_handler_struct(strukt, &layout_fields, &mod_ident);
     let handler_name = format_ident!("{}Handler", strukt);
 
+    // Generate space handler struct for DirectAddressMap access
+    let space_handler_struct = gen_space_handler_struct(strukt, &layout_fields, &mod_ident);
+    let space_handler_name = format_ident!("{}SpaceHandler", strukt);
+
     let expanded = quote! {
         #packing_module
         #handler_struct
+        #space_handler_struct
 
         // impl `StorableType` for layout information
         impl #impl_generics crate::storage::StorableType for #strukt #ty_generics #where_clause {
@@ -113,6 +118,20 @@ pub(crate) fn derive_impl(input: DeriveInput) -> syn::Result<TokenStream> {
 
             fn handle(slot: ::alloy::primitives::U256, _ctx: crate::storage::LayoutCtx, address: ::alloy::primitives::Address) -> Self::Handler {
                 #handler_name::new(slot, address)
+            }
+        }
+
+        // impl `StorableInSpace` for DirectAddressMap access
+        impl #impl_generics crate::storage::StorableInSpace for #strukt #ty_generics #where_clause {
+            type SpaceHandler = #space_handler_name;
+
+            fn handle_in_space(
+                space: u8,
+                key: ::alloy::primitives::Address,
+                _ctx: crate::storage::LayoutCtx,
+                address: ::alloy::primitives::Address
+            ) -> Self::SpaceHandler {
+                #space_handler_name::new(space, key, address)
             }
         }
 
@@ -290,6 +309,131 @@ fn gen_handler_struct(
             #[inline]
             fn t_delete(&mut self) -> crate::error::Result<()> {
                 self.as_slot().t_delete()
+            }
+        }
+    }
+}
+
+/// Generate a space handler struct for DirectAddressMap access.
+///
+/// This handler pre-computes slots using `[SPACE + offset][key][zeros]` format,
+/// enabling efficient storage access without hashing.
+fn gen_space_handler_struct(
+    struct_name: &Ident,
+    fields: &[LayoutField<'_>],
+    mod_ident: &Ident,
+) -> TokenStream {
+    let space_handler_name = format_ident!("{}SpaceHandler", struct_name);
+
+    // Generate public handler fields (same types as regular handler)
+    let handler_fields = fields.iter().map(gen_handler_field_decl);
+
+    // Generate field initializations using compute_direct_slot
+    let field_inits = fields.iter().enumerate().map(|(idx, field)| {
+        let field_name = field.name;
+        let ty = field.ty;
+        let loc_const = PackingConstants::new(field_name).location();
+
+        // Calculate neighbor slot references for packing detection
+        let (prev_slot_const_ref, next_slot_const_ref) =
+            packing::get_neighbor_slot_refs(idx, fields, mod_ident, |f| f.name);
+
+        // Calculate LayoutCtx for proper packing (same as regular handler)
+        let layout_ctx = packing::gen_layout_ctx_expr(
+            ty,
+            false, // storable fields are always auto-allocated
+            quote! { #mod_ident::#loc_const.offset_slots },
+            quote! { #mod_ident::#loc_const.offset_bytes },
+            prev_slot_const_ref,
+            next_slot_const_ref,
+        );
+
+        // For DirectAddressMap, we compute slot as [base_space + slot_offset][key][zeros]
+        // The slot_offset comes from the packing layout (same as regular handler)
+        quote! {
+            #field_name: <#ty as crate::storage::StorableType>::handle(
+                crate::storage::compute_direct_slot(
+                    base_space.checked_add(#mod_ident::#loc_const.offset_slots as u8)
+                        .expect("SPACE overflow: struct requires too many slots"),
+                    key
+                ),
+                #layout_ctx,
+                address
+            )
+        }
+    });
+
+    quote! {
+        /// Space-aware handler for accessing `#struct_name` in DirectAddressMap storage.
+        ///
+        /// Each field's slot is computed as `[base_space + field_offset][key][zeros]`,
+        /// enabling O(1) address-based lookups without hashing.
+        #[derive(Debug, Clone)]
+        pub struct #space_handler_name {
+            address: ::alloy::primitives::Address,
+            base_space: u8,
+            key: ::alloy::primitives::Address,
+            #(#handler_fields,)*
+        }
+
+        impl #space_handler_name {
+            /// Creates a new space handler for the struct.
+            ///
+            /// Each field gets a pre-computed slot: `[base_space + field_offset][key][zeros]`
+            #[inline]
+            pub fn new(base_space: u8, key: ::alloy::primitives::Address, address: ::alloy::primitives::Address) -> Self {
+                Self {
+                    base_space,
+                    key,
+                    #(#field_inits,)*
+                    address,
+                }
+            }
+
+            /// Returns the base storage space for this struct.
+            #[inline]
+            pub fn base_space(&self) -> u8 {
+                self.base_space
+            }
+
+            /// Returns the key address used for slot computation.
+            #[inline]
+            pub fn key(&self) -> ::alloy::primitives::Address {
+                self.key
+            }
+        }
+
+        impl crate::storage::Handler<#struct_name> for #space_handler_name {
+            #[inline]
+            fn read(&self) -> crate::error::Result<#struct_name> {
+                // SpaceHandler doesn't support whole-struct read/write
+                // Individual fields should be accessed directly
+                unimplemented!("SpaceHandler does not support whole-struct read; access fields directly")
+            }
+
+            #[inline]
+            fn write(&mut self, _value: #struct_name) -> crate::error::Result<()> {
+                unimplemented!("SpaceHandler does not support whole-struct write; access fields directly")
+            }
+
+            #[inline]
+            fn delete(&mut self) -> crate::error::Result<()> {
+                unimplemented!("SpaceHandler does not support whole-struct delete; access fields directly")
+            }
+
+            #[inline]
+            fn t_read(&self) -> crate::error::Result<#struct_name> {
+                unimplemented!("SpaceHandler does not support whole-struct t_read; access fields directly")
+            }
+
+            #[inline]
+            fn t_write(&mut self, _value: #struct_name) -> crate::error::Result<()> {
+                unimplemented!("SpaceHandler does not support whole-struct t_write; access fields directly")
+            }
+
+            #[inline]
+            fn t_delete(&mut self) -> crate::error::Result<()> {
+                unimplemented!("SpaceHandler does not support whole-struct t_delete; access fields directly")
             }
         }
     }

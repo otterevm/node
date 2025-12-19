@@ -4,7 +4,7 @@
 //! including auto-assignment, explicit slots, base_slot, and string literal slots.
 
 use super::*;
-use tempo_precompiles::storage::{Mapping, UserMapping};
+use tempo_precompiles::storage::{DirectAddressMap, Mapping, MappingInner, UserMapping};
 
 #[test]
 fn test_mixed_slot_allocation() {
@@ -376,6 +376,161 @@ fn test_user_mapping_with_struct_value() -> eyre::Result<()> {
         assert_eq!(layout.users.at(user2).owner.read()?, Address::ZERO);
         assert!(!layout.users.at(user2).active.read()?);
         assert_eq!(layout.users.at(user2).balance.read()?, U256::ZERO);
+
+        Ok(())
+    })
+}
+
+// -- SPACE-BASED STORAGE TESTS (DirectAddressMap with multi-slot structs) -------------------------
+
+#[test]
+fn test_user_mapping_with_test_block_space_offsets() -> eyre::Result<()> {
+    use tempo_precompiles::storage::compute_direct_slot;
+
+    #[contract]
+    pub struct Layout {
+        pub blocks: UserMapping<TestBlock>,
+    }
+
+    let (mut storage, address) = setup_storage();
+    let layout = Layout::__new(address);
+
+    StorageCtx::enter(&mut storage, || {
+        let user = Address::random();
+        let (field1, field2, field3) = (U256::random(), U256::random(), 42u64);
+
+        // Write to each field of the TestBlock
+        layout.blocks.at(user).field1.write(field1)?;
+        layout.blocks.at(user).field2.write(field2)?;
+        layout.blocks.at(user).field3.write(field3)?;
+
+        // Read back and verify
+        assert_eq!(layout.blocks.at(user).field1.read()?, field1);
+        assert_eq!(layout.blocks.at(user).field2.read()?, field2);
+        assert_eq!(layout.blocks.at(user).field3.read()?, field3);
+
+        // Verify each field gets a different SPACE-based slot
+        // UserMapping uses SPACE=1, so:
+        // - field1 at slot offset 0 -> SPACE=1
+        // - field2 at slot offset 1 -> SPACE=2
+        // - field3 at slot offset 2 -> SPACE=3
+        let handler = layout.blocks.at(user);
+        assert_eq!(handler.field1.slot(), compute_direct_slot(1, user));
+        assert_eq!(handler.field2.slot(), compute_direct_slot(2, user));
+        assert_eq!(handler.field3.slot(), compute_direct_slot(3, user));
+
+        // Verify slots are different
+        assert_ne!(handler.field1.slot(), handler.field2.slot());
+        assert_ne!(handler.field2.slot(), handler.field3.slot());
+
+        Ok(())
+    })
+}
+
+#[test]
+fn test_user_mapping_multi_user_isolation() -> eyre::Result<()> {
+    use tempo_precompiles::storage::compute_direct_slot;
+
+    #[contract]
+    pub struct Layout {
+        pub blocks: UserMapping<TestBlock>,
+    }
+
+    let (mut storage, address) = setup_storage();
+    let layout = Layout::__new(address);
+
+    StorageCtx::enter(&mut storage, || {
+        let user1 = Address::random();
+        let user2 = Address::random();
+
+        // Write different values for each user
+        layout.blocks.at(user1).field1.write(U256::from(100))?;
+        layout.blocks.at(user1).field2.write(U256::from(200))?;
+
+        layout.blocks.at(user2).field1.write(U256::from(999))?;
+        layout.blocks.at(user2).field2.write(U256::from(888))?;
+
+        // Verify isolation - each user has independent storage
+        assert_eq!(layout.blocks.at(user1).field1.read()?, U256::from(100));
+        assert_eq!(layout.blocks.at(user1).field2.read()?, U256::from(200));
+        assert_eq!(layout.blocks.at(user2).field1.read()?, U256::from(999));
+        assert_eq!(layout.blocks.at(user2).field2.read()?, U256::from(888));
+
+        // Verify slots differ by user address, not just SPACE
+        let h1 = layout.blocks.at(user1);
+        let h2 = layout.blocks.at(user2);
+        assert_ne!(h1.field1.slot(), h2.field1.slot());
+        assert_ne!(h1.field2.slot(), h2.field2.slot());
+
+        // But same SPACE offset pattern for both users
+        assert_eq!(h1.field1.slot(), compute_direct_slot(1, user1));
+        assert_eq!(h2.field1.slot(), compute_direct_slot(1, user2));
+
+        Ok(())
+    })
+}
+
+#[test]
+fn test_user_mapping_space_handler_accessors() -> eyre::Result<()> {
+    #[contract]
+    pub struct Layout {
+        pub blocks: UserMapping<TestBlock>,
+    }
+
+    let (mut storage, address) = setup_storage();
+    let layout = Layout::__new(address);
+
+    StorageCtx::enter(&mut storage, || {
+        let user = Address::random();
+        let handler = layout.blocks.at(user);
+
+        // Verify SpaceHandler accessor methods
+        assert_eq!(handler.base_space(), 1); // UserMapping uses SPACE=1
+        assert_eq!(handler.key(), user);
+
+        Ok(())
+    })
+}
+
+#[test]
+fn test_multiple_user_mappings_different_spaces() -> eyre::Result<()> {
+    use tempo_precompiles::storage::compute_direct_slot;
+
+    // Define a contract with multiple DirectAddressMap fields using different SPACE values
+    #[contract]
+    pub struct Layout {
+        pub balances: UserMapping<U256>,                           // SPACE=1
+        pub blocks: MappingInner<DirectAddressMap<5>, TestBlock>,  // SPACE=5,6,7
+    }
+
+    let (mut storage, address) = setup_storage();
+    let layout = Layout::__new(address);
+
+    StorageCtx::enter(&mut storage, || {
+        let user = Address::random();
+
+        // Write to balances (SPACE=1)
+        layout.balances.at(user).write(U256::from(1000))?;
+
+        // Write to blocks (SPACE=5,6,7)
+        layout.blocks.at(user).field1.write(U256::from(111))?;
+        layout.blocks.at(user).field2.write(U256::from(222))?;
+        layout.blocks.at(user).field3.write(333u64)?;
+
+        // Read back and verify
+        assert_eq!(layout.balances.at(user).read()?, U256::from(1000));
+        assert_eq!(layout.blocks.at(user).field1.read()?, U256::from(111));
+        assert_eq!(layout.blocks.at(user).field2.read()?, U256::from(222));
+        assert_eq!(layout.blocks.at(user).field3.read()?, 333u64);
+
+        // Verify SPACE separation
+        assert_eq!(layout.balances.at(user).slot(), compute_direct_slot(1, user));
+        assert_eq!(layout.blocks.at(user).field1.slot(), compute_direct_slot(5, user));
+        assert_eq!(layout.blocks.at(user).field2.slot(), compute_direct_slot(6, user));
+        assert_eq!(layout.blocks.at(user).field3.slot(), compute_direct_slot(7, user));
+
+        // Verify no collision between different mappings
+        assert_ne!(layout.balances.at(user).slot(), layout.blocks.at(user).field1.slot());
 
         Ok(())
     })

@@ -3,7 +3,7 @@
 use alloy::primitives::{Address, U256, keccak256};
 use std::marker::PhantomData;
 
-use crate::storage::{Layout, LayoutCtx, Storable, StorableType, StorageKey};
+use crate::storage::{Layout, LayoutCtx, Storable, StorableInSpace, StorableType, StorageKey};
 
 // -- HASH STRATEGY TRAIT ------------------------------------------------------
 
@@ -68,16 +68,26 @@ impl<K: StorageKey> HashStrategy for Keccak256<K> {
 /// to coexist without slot collisions.
 pub struct DirectAddressMap<const SPACE: u8>;
 
+/// Compute a direct storage slot from space and key address.
+///
+/// Slot format: `[space][key (20 bytes)][11 zero bytes]`
+///
+/// This is a standalone helper for use in generated struct handlers.
+#[inline]
+pub fn compute_direct_slot(space: u8, key: Address) -> U256 {
+    let mut slot = [0u8; 32];
+    slot[0] = space;
+    slot[1..21].copy_from_slice(key.as_slice());
+    U256::from_be_bytes(slot)
+}
+
 impl<const SPACE: u8> HashStrategy for DirectAddressMap<SPACE> {
     type Key = Address;
     const STORAGE_SPACE: u8 = SPACE;
 
     #[inline]
     fn compute_slot(key: &Address, _base_slot: U256) -> U256 {
-        let mut slot = [0u8; 32];
-        slot[0] = SPACE;
-        slot[1..21].copy_from_slice(key.as_slice());
-        U256::from_be_bytes(slot)
+        compute_direct_slot(SPACE, *key)
     }
 }
 
@@ -185,18 +195,15 @@ impl<K: StorageKey, V: StorableInMapping<0>> StorableType for MappingInner<Kecca
 /// - Storage spaces must be unique per contract
 pub type UserMapping<V> = MappingInner<DirectAddressMap<1>, V>;
 
-impl<V: StorableInMapping<SPACE> + StorableType, const SPACE: u8>
+impl<V: StorableInMapping<SPACE> + StorableInSpace, const SPACE: u8>
     MappingInner<DirectAddressMap<SPACE>, V>
 {
-    /// Returns a `Handler` for the given user address.
+    /// Returns a `SpaceHandler` for the given user address.
     ///
-    /// The storage slot is directly derived from the user address without hashing.
-    pub fn at(&self, user: Address) -> V::Handler {
-        V::handle(
-            DirectAddressMap::<SPACE>::compute_slot(&user, self.base_slot),
-            LayoutCtx::FULL,
-            self.address,
-        )
+    /// The storage slot is computed as `[SPACE][user][zeros]` without hashing.
+    /// For struct values, each field gets its own SPACE offset.
+    pub fn at(&self, user: Address) -> V::SpaceHandler {
+        V::handle_in_space(SPACE, user, LayoutCtx::FULL, self.address)
     }
 }
 
