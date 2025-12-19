@@ -209,10 +209,7 @@ fn main() -> eyre::Result<()> {
 
     cli.run_with_components::<TempoNode>(components, async move |builder, args| {
         let faucet_args = args.faucet_args.clone();
-        let validator_key = args
-            .consensus
-            .public_key()?
-            .map(|key| B256::from_slice(key.as_ref()));
+        let validator_key = B256::from_slice(args.consensus.public_key()?.as_ref());
 
         // Initialize Pyroscope profiling if enabled
         #[cfg(feature = "pyroscope")]
@@ -246,7 +243,7 @@ fn main() -> eyre::Result<()> {
             node,
             node_exit_future,
         } = builder
-            .node(TempoNode::new(&args.node_args, validator_key))
+            .node(TempoNode::new(&args.node_args, Some(validator_key)))
             .apply(|mut builder: WithLaunchContext<_>| {
                 if let Some(follow_url) = &args.follow {
                     builder.config_mut().debug.rpc_consensus_url = Some(follow_url.clone());

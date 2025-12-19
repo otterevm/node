@@ -38,23 +38,19 @@ pub async fn run_consensus_stack(
     config: Args,
     execution_node: TempoFullNode,
 ) -> eyre::Result<()> {
-    let share = config
-        .signing_share
-        .as_ref()
-        .map(|share| {
-            SigningShare::read_from_file(share).wrap_err_with(|| {
-                format!(
-                    "failed reading private bls12-381 key share from file `{}`",
-                    share.display()
-                )
-            })
-        })
-        .transpose()?
-        .map(|signing_share| signing_share.into_inner());
+    let share = if let Some(path) = &config.signing_share {
+        Some(SigningShare::read_from_file(path).wrap_err_with(|| {
+            format!(
+                "failed reading private bls12-381 key share from file `{}`",
+                path.display()
+            )
+        })?)
+    } else {
+        SigningShare::read_from_env("CONSENSUS_SIGNING_SHARE").ok()
+    }
+    .map(|s| s.into_inner());
 
-    let signing_key = config
-        .signing_key()?
-        .ok_or_eyre("required option `consensus.signing-key` not set")?;
+    let signing_key = config.signing_key()?;
 
     let (mut network, oracle) = instantiate_network(
         context,

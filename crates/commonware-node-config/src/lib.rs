@@ -195,6 +195,11 @@ impl SigningKey {
         Self::try_from_hex(&hex)
     }
 
+    pub fn read_from_env(var_name: &str) -> Result<Self, SigningKeyError> {
+        let hex = std::env::var(var_name).map_err(SigningKeyErrorKind::Env)?;
+        Self::try_from_hex(&hex)
+    }
+
     pub fn try_from_hex(hex: &str) -> Result<Self, SigningKeyError> {
         let bytes = const_hex::decode(hex).map_err(SigningKeyErrorKind::Hex)?;
         let inner = PrivateKey::decode(&bytes[..]).map_err(SigningKeyErrorKind::Parse)?;
@@ -240,6 +245,8 @@ enum SigningKeyErrorKind {
     Read(#[source] std::io::Error),
     #[error("failed writing to file")]
     Write(#[source] std::io::Error),
+    #[error("failed reading environment variable")]
+    Env(#[source] std::env::VarError),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -254,6 +261,11 @@ impl SigningShare {
 
     pub fn read_from_file<P: AsRef<Path>>(path: P) -> Result<Self, SigningShareError> {
         let hex = std::fs::read_to_string(path).map_err(SigningShareErrorKind::Read)?;
+        Self::try_from_hex(&hex)
+    }
+
+    pub fn read_from_env(var_name: &str) -> Result<Self, SigningShareError> {
+        let hex = std::env::var(var_name).map_err(SigningShareErrorKind::Env)?;
         Self::try_from_hex(&hex)
     }
 
@@ -298,6 +310,8 @@ enum SigningShareErrorKind {
     Read(#[source] std::io::Error),
     #[error("failed writing to file")]
     Write(#[source] std::io::Error),
+    #[error("failed reading environment variable")]
+    Env(#[source] std::env::VarError),
 }
 
 // Reverses the operation C::SIZE * self.0.len() from

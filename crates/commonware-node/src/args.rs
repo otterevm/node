@@ -11,13 +11,12 @@ const DEFAULT_MAX_MESSAGE_SIZE_BYTES: usize = reth_consensus_common::validation:
 #[derive(Debug, Clone, PartialEq, Eq, clap::Args)]
 pub struct Args {
     /// The file containing the ed25519 signing key for p2p communication.
-    #[arg(
-        long = "consensus.signing-key",
-        required_unless_present_any = ["follow", "dev"],
-    )]
+    /// Can also be provided via the CONSENSUS_SIGNING_KEY environment variable.
+    #[arg(long = "consensus.signing-key")]
     signing_key: Option<PathBuf>,
 
     /// The file containing a share of the bls12-381 threshold signing key.
+    /// Can also be provided via the CONSENSUS_SIGNING_SHARE environment variable.
     #[arg(long = "consensus.signing-share")]
     pub signing_share: Option<PathBuf>,
 
@@ -142,34 +141,36 @@ pub struct Args {
 }
 
 impl Args {
-    /// Returns the signing key loaded from specified file.
-    pub(crate) fn signing_key(&self) -> eyre::Result<Option<SigningKey>> {
+    /// Returns the signing key loaded from specified file or CONSENSUS_SIGNING_KEY env var.
+    pub(crate) fn signing_key(&self) -> eyre::Result<SigningKey> {
         if let Some(signing_key) = self.loaded_signing_key.get() {
-            return Ok(signing_key.clone());
+            return signing_key.clone().ok_or_else(|| {
+                eyre::eyre!(
+                    "signing key not available; provide --consensus.signing-key or set CONSENSUS_SIGNING_KEY"
+                )
+            });
         }
 
-        let signing_key = self
-            .signing_key
-            .as_ref()
-            .map(|path| {
-                SigningKey::read_from_file(path).wrap_err_with(|| {
-                    format!(
-                        "failed reading private ed25519 signing key share from file `{}`",
-                        path.display()
-                    )
-                })
-            })
-            .transpose()?;
+        let signing_key = if let Some(path) = &self.signing_key {
+            SigningKey::read_from_file(path).wrap_err_with(|| {
+                format!(
+                    "failed reading private ed25519 signing key from file `{}`",
+                    path.display()
+                )
+            })?
+        } else {
+            SigningKey::read_from_env("CONSENSUS_SIGNING_KEY").wrap_err(
+                "signing key not available; provide --consensus.signing-key or set CONSENSUS_SIGNING_KEY",
+            )?
+        };
 
-        let _ = self.loaded_signing_key.set(signing_key.clone());
+        let _ = self.loaded_signing_key.set(Some(signing_key.clone()));
 
         Ok(signing_key)
     }
 
-    /// Returns the public key derived from the configured signing key, if any.
-    pub fn public_key(&self) -> eyre::Result<Option<PublicKey>> {
-        Ok(self
-            .signing_key()?
-            .map(|signing_key| signing_key.public_key()))
+    /// Returns the public key derived from the configured signing key.
+    pub fn public_key(&self) -> eyre::Result<PublicKey> {
+        Ok(self.signing_key()?.public_key())
     }
 }
