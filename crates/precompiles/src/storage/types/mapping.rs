@@ -60,12 +60,16 @@ impl<K: StorageKey> HashStrategy for Keccak256<K> {
     }
 }
 
+/// Sentinel value indicating the `#[contract]` macro should auto-allocate the SPACE.
+pub const AUTO_ALLOCATE_SPACE: u8 = 0;
+
 /// Direct bytes strategy, parameterized by storage space, for cheap address lookups.
 ///
 /// Slot computation: `[SPACE][address][zeros]`
 ///
 /// The const generic `SPACE` parameter allows multiple `DirectAddressMap`-based mappings
-/// to coexist without slot collisions.
+/// to coexist without slot collisions. When `SPACE = 0` (default), the `#[contract]` macro
+/// automatically allocates non-overlapping SPACE values based on field order and value type sizes.
 pub struct DirectAddressMap<const SPACE: u8>;
 
 /// Compute a direct storage slot from space and key address.
@@ -75,6 +79,8 @@ pub struct DirectAddressMap<const SPACE: u8>;
 /// This is a standalone helper for use in generated struct handlers.
 #[inline]
 pub fn compute_direct_slot(space: u8, key: Address) -> U256 {
+    debug_assert!(space != 0, "SPACE = 0 is reserved");
+
     let mut slot = [0u8; 32];
     slot[0] = space;
     slot[1..21].copy_from_slice(key.as_slice());
@@ -87,6 +93,7 @@ impl<const SPACE: u8> HashStrategy for DirectAddressMap<SPACE> {
 
     #[inline]
     fn compute_slot(key: &Address, _base_slot: U256) -> U256 {
+        debug_assert!(SPACE != 0, "SPACE = 0 is reserved");
         compute_direct_slot(SPACE, *key)
     }
 }
@@ -187,13 +194,13 @@ impl<K: StorageKey, V: StorableInMapping<0>> StorableType for MappingInner<Kecca
 /// # Constraints
 ///
 /// Enforced by the type system:
-/// - Cannot be nested inside other mappings (`Mapping<K, UserMapping<V>>` is forbidden)
-/// - Value type cannot be a mapping (`UserMapping<Mapping<K, V>>` is forbidden)
+/// - Cannot be nested inside other mappings (`Mapping<K, AddressMapping<V>>` is forbidden)
+/// - Value type cannot be a mapping (`AddressMapping<Mapping<K, V>>` is forbidden)
 /// - Key type must be `Address` (enforced by `DirectAddressMap::Key = Address`)
 ///
-/// Enforced by `#[contract]` macro:
-/// - Storage spaces must be unique per contract
-pub type UserMapping<V> = MappingInner<DirectAddressMap<1>, V>;
+/// Enforced by `#[contract]` macro using automatic allocation:
+/// - Storage spaces must be unique per address and stored word
+pub type AddressMapping<V> = MappingInner<DirectAddressMap<AUTO_ALLOCATE_SPACE>, V>;
 
 impl<V: StorableInMapping<SPACE> + StorableInSpace, const SPACE: u8>
     MappingInner<DirectAddressMap<SPACE>, V>
@@ -468,7 +475,7 @@ mod tests {
     fn test_user_mapping_slot_is_direct() {
         let user = Address::random();
         let contract_addr = Address::random();
-        let mapping = UserMapping::<U256>::new(U256::ZERO, contract_addr);
+        let mapping = AddressMapping::<U256>::new(U256::ZERO, contract_addr);
 
         let handler = mapping.at(user);
 
@@ -484,7 +491,7 @@ mod tests {
     #[test]
     fn test_user_mapping_different_addresses_different_slots() {
         let contract_addr = Address::random();
-        let mapping = UserMapping::<U256>::new(U256::ZERO, contract_addr);
+        let mapping = AddressMapping::<U256>::new(U256::ZERO, contract_addr);
 
         let addr1 = Address::random();
         let addr2 = Address::random();
@@ -495,7 +502,7 @@ mod tests {
     #[test]
     fn test_user_mapping_deterministic() {
         let contract_addr = Address::random();
-        let mapping = UserMapping::<U256>::new(U256::ZERO, contract_addr);
+        let mapping = AddressMapping::<U256>::new(U256::ZERO, contract_addr);
         let user = Address::random();
 
         // Same user always gets same slot
@@ -506,11 +513,11 @@ mod tests {
     fn test_user_mapping_storable_type() {
         // Verify `StorableType` implementation
         assert_eq!(
-            <UserMapping<U256> as crate::storage::StorableType>::SLOTS,
+            <AddressMapping<U256> as crate::storage::StorableType>::SLOTS,
             1
         );
         assert_eq!(
-            <UserMapping<U256> as crate::storage::StorableType>::LAYOUT,
+            <AddressMapping<U256> as crate::storage::StorableType>::LAYOUT,
             crate::storage::Layout::Slots(1)
         );
     }
@@ -542,5 +549,35 @@ mod tests {
         assert_eq!(bytes1[0], 1);
         assert_eq!(bytes2[0], 2);
         assert_eq!(bytes1[1..], bytes2[1..]);
+    }
+
+    // --- COMPUTE_DIRECT_SLOT TESTS ---------------------------------------------
+
+    #[test]
+    fn test_compute_direct_slot_space_offset() {
+        let addr = Address::random();
+
+        // Consecutive spaces should produce slots that differ only in first byte
+        let slot1 = compute_direct_slot(1, addr);
+        let slot2 = compute_direct_slot(2, addr);
+        let slot3 = compute_direct_slot(3, addr);
+
+        // Verify format: [space][address][11 zeros]
+        let bytes1 = slot1.to_be_bytes::<32>();
+        let bytes2 = slot2.to_be_bytes::<32>();
+        let bytes3 = slot3.to_be_bytes::<32>();
+
+        // All should have same address and zeros
+        assert_eq!(&bytes1[1..], &bytes2[1..]);
+        assert_eq!(&bytes2[1..], &bytes3[1..]);
+
+        // Verify address and zeroes
+        assert_eq!(&bytes[1..21], addr.as_slice(),);
+        assert_eq!(&bytes[21..], &[0u8; 11]);
+
+        // Only first byte differs
+        assert_eq!(bytes1[0], 1);
+        assert_eq!(bytes2[0], 2);
+        assert_eq!(bytes3[0], 3);
     }
 }

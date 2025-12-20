@@ -11,7 +11,7 @@ use crate::{
     PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     account_keychain::AccountKeychain,
     error::{Result, TempoPrecompileError},
-    storage::{Handler, Mapping, StorageCtx, UserMapping},
+    storage::{AddressMapping, Handler, Mapping, StorageCtx},
     tip20::{
         rewards::{RewardStream, UserRewardInfo},
         roles::DEFAULT_ADMIN_ROLE,
@@ -78,9 +78,9 @@ pub struct TIP20Token {
     // TIP20 Token
     total_supply: U256,
 
-    // Migrated to `users` to leverage `UserMapping` and avoid hashing. Used to be slot 9.
+    // Migrated to `users` to leverage `AddressMapping` and avoid hashing. Used to be slot 9.
     // balances: Mapping<Address, U256>,
-    users: UserMapping<UserInfo>,
+    users: AddressMapping<UserInfo>,
 
     allowances: Mapping<Address, Mapping<Address, U256>>,
     nonces: Mapping<Address, U256>,
@@ -96,7 +96,7 @@ pub struct TIP20Token {
     next_stream_id: u64,
     streams: Mapping<u64, RewardStream>,
     scheduled_rate_decrease: Mapping<u128, U256>,
-    // Migrated to `users` to leverage `UserMapping` and avoid hashing. Used to be slot 21.
+    // Migrated to `users` to leverage `AddressMapping` and avoid hashing. Used to be slot 21.
     // user_reward_info: Mapping<Address, UserRewardInfo>,
 
     // Fee recipient

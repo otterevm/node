@@ -1,6 +1,7 @@
 use crate::{
     FieldKind,
     packing::{self, LayoutField, PackingConstants, SlotAssignment},
+    utils::extract_direct_address_map_info,
 };
 use quote::{format_ident, quote};
 use syn::{Expr, Ident, Visibility};
@@ -8,6 +9,23 @@ use syn::{Expr, Ident, Visibility};
 /// Generates a public handler field declaration for a storage field
 pub(crate) fn gen_handler_field_decl(field: &LayoutField<'_>) -> proc_macro2::TokenStream {
     let field_name = field.name;
+
+    // Check if this is a DirectAddressMap field with auto-allocation
+    if let Some(info) = extract_direct_address_map_info(field.ty) {
+        if info.is_auto {
+            let space_const = format_ident!("{}_SPACE", field_name.to_string().to_uppercase());
+            let value_ty = info.value_ty;
+
+            // The handler type is the mapping itself with the allocated SPACE
+            return quote! {
+                pub #field_name: crate::storage::MappingInner<
+                    crate::storage::DirectAddressMap<{ slots::#space_const }>,
+                    #value_ty
+                >
+            };
+        }
+    }
+
     let handler_type = match &field.kind {
         FieldKind::Direct(ty) => {
             quote! { <#ty as crate::storage::StorableType>::Handler }
@@ -53,6 +71,24 @@ pub(crate) fn gen_handler_field_init(
     } else {
         quote! { base_slot.saturating_add(::alloy::primitives::U256::from_limbs([#const_mod::#loc_const.offset_slots as u64, 0, 0, 0])) }
     };
+
+    // Check if this is a DirectAddressMap field with auto-allocation
+    if is_contract {
+        if let Some(info) = extract_direct_address_map_info(field.ty) {
+            if info.is_auto {
+                // Use the auto-allocated SPACE constant from the slots module
+                let space_const = format_ident!("{}_SPACE", field_name.to_string().to_uppercase());
+                let value_ty = info.value_ty;
+
+                return quote! {
+                    #field_name: crate::storage::MappingInner::<
+                        crate::storage::DirectAddressMap<{ slots::#space_const }>,
+                        #value_ty
+                    >::new(::alloy::primitives::U256::ZERO, address)
+                };
+            }
+        }
+    }
 
     match &field.kind {
         FieldKind::Direct(ty) => {
@@ -217,15 +253,59 @@ pub(crate) fn gen_slots_module(allocated_fields: &[LayoutField<'_>]) -> proc_mac
     // Generate constants and collision check functions
     let constants = packing::gen_constants_from_ir(allocated_fields, false);
     let collision_checks = gen_collision_checks(allocated_fields);
+    let space_constants = gen_space_constants(allocated_fields);
 
     quote! {
         pub mod slots {
             use super::*;
 
             #constants
+            #space_constants
             #collision_checks
         }
     }
+}
+
+/// Generate SPACE constants for DirectAddressMap fields that use auto-allocation.
+///
+/// Generates chained constants where each field's SPACE is computed from the previous:
+/// ```ignore
+/// pub const USERS_SPACE: u8 = 1;
+/// pub const TOKENS_SPACE: u8 = USERS_SPACE + <UserInfo as StorableType>::SLOTS as u8;
+/// ```
+fn gen_space_constants(fields: &[LayoutField<'_>]) -> proc_macro2::TokenStream {
+    let mut constants = proc_macro2::TokenStream::new();
+    let mut prev_space_const: Option<(Ident, &syn::Type)> = None;
+
+    for field in fields {
+        // Check if this is a DirectAddressMap field that needs auto-allocation
+        if let Some(info) = extract_direct_address_map_info(field.ty) {
+            if info.is_auto {
+                let field_name = field.name;
+                let space_const = format_ident!("{}_SPACE", field_name.to_string().to_uppercase());
+                let value_ty = info.value_ty;
+
+                let space_expr = if let Some((prev_const, prev_value_ty)) = &prev_space_const {
+                    // Chain from previous: PREV_SPACE + <PrevType as StorableType>::SLOTS
+                    quote! {
+                        #prev_const + <#prev_value_ty as crate::storage::StorableType>::SLOTS as u8
+                    }
+                } else {
+                    // First DirectAddressMap starts at SPACE 1 (0 is reserved for keccak)
+                    quote! { 1u8 }
+                };
+
+                constants.extend(quote! {
+                    /// Auto-allocated SPACE for DirectAddressMap field `#field_name`.
+                    pub const #space_const: u8 = #space_expr;
+                });
+
+                prev_space_const = Some((space_const, value_ty));
+            }
+        }
+    }
+
+    constants
 }
 
 /// Generate collision check functions for all fields
