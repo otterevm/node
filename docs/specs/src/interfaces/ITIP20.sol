@@ -61,9 +61,7 @@ interface ITIP20 {
     event PauseStateUpdate(address indexed updater, bool isPaused);
     event QuoteTokenUpdate(address indexed updater, ITIP20 indexed newQuoteToken);
     event RewardRecipientSet(address indexed holder, address indexed recipient);
-    event RewardScheduled(
-        address indexed funder, uint64 indexed id, uint256 amount, uint32 durationSeconds
-    );
+    event RewardDistributed(address indexed funder, uint256 amount);
 
     /// @notice Emitted when the supply cap is updated.
     /// @param updater The address that initiated the supply cap update.

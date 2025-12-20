@@ -722,8 +722,8 @@ export default defineConfig({
                       link: '/sdk/typescript/viem/reward.watchRewardRecipientSet',
                     },
                     {
-                      text: 'watchRewardScheduled',
-                      link: '/sdk/typescript/viem/reward.watchRewardScheduled',
+                      text: 'watchRewardDistributed',
+                      link: '/sdk/typescript/viem/reward.watchRewardDistributed',
                     },
                   ],
                 },
@@ -1092,8 +1092,8 @@ export default defineConfig({
                       link: '/sdk/typescript/wagmi/actions/reward.watchRewardRecipientSet',
                     },
                     {
-                      text: 'watchRewardScheduled',
-                      link: '/sdk/typescript/wagmi/actions/reward.watchRewardScheduled',
+                      text: 'watchRewardDistributed',
+                      link: '/sdk/typescript/wagmi/actions/reward.watchRewardDistributed',
                     },
                   ],
                 },
@@ -1439,8 +1439,8 @@ export default defineConfig({
                       link: '/sdk/typescript/wagmi/hooks/reward.useWatchRewardRecipientSet',
                     },
                     {
-                      text: 'useWatchRewardScheduled',
-                      link: '/sdk/typescript/wagmi/hooks/reward.useWatchRewardScheduled',
+                      text: 'useWatchRewardDistributed',
+                      link: '/sdk/typescript/wagmi/hooks/reward.useWatchRewardDistributed',
                     },
                   ],
                 },

@@ -451,7 +451,7 @@ contract TIP20 is ITIP20, TIP20RolesAuth {
         }
         uint256 deltaRPT = (amount * ACC_PRECISION) / optedInSupply;
         globalRewardPerToken += deltaRPT;
-        emit RewardScheduled(msg.sender, 0, amount, 0);
+        emit RewardDistributed(msg.sender, amount);
     }
 
     function setRewardRecipient(address newRewardRecipient) external virtual notPaused {

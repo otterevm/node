@@ -1,6 +1,6 @@
-# `reward.watchRewardScheduled`
+# `reward.watchRewardDistributed`
 
-Watches for reward scheduled events when new reward streams are started.
+Watches for reward distributed events when rewards are distributed to opted-in holders.
 
 ## Usage
 
@@ -10,12 +10,10 @@ Watches for reward scheduled events when new reward streams are started.
 import { Actions } from 'tempo.ts/wagmi'
 import { config } from './wagmi.config'
 
-const unwatch = Actions.reward.watchRewardScheduled(config, {
-  onRewardScheduled: (args, log) => {
-    console.log('Stream ID:', args.id)
+const unwatch = Actions.reward.watchRewardDistributed(config, {
+  onRewardDistributed: (args, log) => {
     console.log('Funder:', args.funder)
     console.log('Amount:', args.amount)
-    console.log('Duration:', args.durationSeconds, 'seconds')
   },
   token: '0x20c0000000000000000000000000000000000000',
 })
@@ -41,26 +39,22 @@ Returns a function to unsubscribe from the event.
 
 ## Parameters
 
-### onRewardScheduled
+### onRewardDistributed
 
 - **Type:** `function`
 
 ```ts
-declare function onRewardScheduled(args: Args, log: Log): void
+declare function onRewardDistributed(args: Args, log: Log): void
 
 type Args = {
-  /** Total amount allocated to the stream */
+  /** Total amount distributed */
   amount: bigint
-  /** Duration of the stream in seconds (0 for immediate distributions) */
-  durationSeconds: number
-  /** Address that funded the stream */
+  /** Address that funded the distribution */
   funder: Address
-  /** Unique stream ID (0 for immediate distributions) */
-  id: bigint
 }
 ```
 
-Callback to invoke when a reward stream is scheduled.
+Callback to invoke when rewards are distributed.
 
 ### token
 
@@ -76,9 +70,8 @@ Address of the TIP-20 token to watch.
 type Args = {
   /** Filter by funder address */
   funder?: Address | Address[]
-  /** Filter by stream ID */
-  id?: bigint | bigint[]
 }
 ```
 
-Optional filters to narrow down events by funder address or stream ID.
+Optional filters to narrow down events by funder address.
+

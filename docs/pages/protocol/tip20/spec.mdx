@@ -271,17 +271,10 @@ interface ITIP20 {
     /// @param recipient The address that will receive claimed rewards
     event RewardRecipientSet(address indexed holder, address indexed recipient);
 
-    /// @notice Emitted when a reward distribution is scheduled
+    /// @notice Emitted when rewards are distributed to opted-in token holders
     /// @param funder The account funding the reward distribution
-    /// @param id The identifier of the reward (0 for instant distributions)
-    /// @param amount The total amount of tokens allocated to the reward
-    /// @param durationSeconds The duration in seconds (must be 0 in current version)
-    event RewardScheduled(
-        address indexed funder,
-        uint64 indexed id,
-        uint256 amount,
-        uint32 durationSeconds
-    );
+    /// @param amount The total amount of tokens distributed
+    event RewardDistributed(address indexed funder, uint256 amount);
 
     /// @notice Emitted when the token's supply cap is updated
     /// @param updater The account that updated the supply cap
