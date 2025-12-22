@@ -40,57 +40,15 @@ hardfork!(
     #[derive(Default)]
     TempoHardfork {
         /// Placeholder representing the baseline (pre-hardfork) state.
-        Adagio,
-        /// Testnet hardforks for Andantino. To be removed before mainnet launch.
-        Moderato,
-        /// Allegretto hardfork.
         #[default]
-        Allegretto,
-        /// Allegro-Moderato hardfork.
         AllegroModerato,
     }
 );
-
-impl TempoHardfork {
-    /// Returns `true` if this hardfork is Moderato or later.
-    #[inline]
-    pub fn is_moderato(self) -> bool {
-        self >= Self::Moderato
-    }
-
-    /// Returns `true` if this hardfork is Allegretto or later.
-    pub fn is_allegretto(self) -> bool {
-        self >= Self::Allegretto
-    }
-
-    /// Returns `true` if this hardfork is Allegro-Moderato or later.
-    pub fn is_allegro_moderato(self) -> bool {
-        self >= Self::AllegroModerato
-    }
-}
 
 /// Trait for querying Tempo-specific hardfork activations.
 pub trait TempoHardforks: EthereumHardforks {
     /// Retrieves activation condition for a Tempo-specific hardfork
     fn tempo_fork_activation(&self, fork: TempoHardfork) -> ForkCondition;
-
-    /// Convenience method to check if Adagio hardfork is active at a given timestamp
-    fn is_adagio_active_at_timestamp(&self, timestamp: u64) -> bool {
-        self.tempo_fork_activation(TempoHardfork::Adagio)
-            .active_at_timestamp(timestamp)
-    }
-
-    /// Convenience method to check if Andantino hardfork is active at a given timestamp
-    fn is_moderato_active_at_timestamp(&self, timestamp: u64) -> bool {
-        self.tempo_fork_activation(TempoHardfork::Moderato)
-            .active_at_timestamp(timestamp)
-    }
-
-    /// Convenience method to check if Allegretto hardfork is active at a given timestamp
-    fn is_allegretto_active_at_timestamp(&self, timestamp: u64) -> bool {
-        self.tempo_fork_activation(TempoHardfork::Allegretto)
-            .active_at_timestamp(timestamp)
-    }
 
     /// Convenience method to check if Allegro-Moderato hardfork is active at a given timestamp
     fn is_allegro_moderato_active_at_timestamp(&self, timestamp: u64) -> bool {
@@ -102,12 +60,8 @@ pub trait TempoHardforks: EthereumHardforks {
     fn tempo_hardfork_at(&self, timestamp: u64) -> TempoHardfork {
         if self.is_allegro_moderato_active_at_timestamp(timestamp) {
             TempoHardfork::AllegroModerato
-        } else if self.is_allegretto_active_at_timestamp(timestamp) {
-            TempoHardfork::Allegretto
-        } else if self.is_moderato_active_at_timestamp(timestamp) {
-            TempoHardfork::Moderato
         } else {
-            TempoHardfork::Adagio
+            unreachable!("only 'AllegroModerato' hardfork is configured")
         }
     }
 }
@@ -115,9 +69,6 @@ pub trait TempoHardforks: EthereumHardforks {
 impl From<TempoHardfork> for SpecId {
     fn from(value: TempoHardfork) -> Self {
         match value {
-            TempoHardfork::Adagio => Self::OSAKA,
-            TempoHardfork::Moderato => Self::OSAKA,
-            TempoHardfork::Allegretto => Self::OSAKA,
             TempoHardfork::AllegroModerato => Self::OSAKA,
         }
     }
@@ -132,12 +83,8 @@ impl From<SpecId> for TempoHardfork {
     fn from(spec: SpecId) -> Self {
         if spec.is_enabled_in(SpecId::from(Self::AllegroModerato)) {
             Self::AllegroModerato
-        } else if spec.is_enabled_in(SpecId::from(Self::Allegretto)) {
-            Self::Allegretto
-        } else if spec.is_enabled_in(SpecId::from(Self::Moderato)) {
-            Self::Moderato
         } else {
-            Self::Adagio
+            unreachable!("only 'AllegroModerato' hardfork is configured")
         }
     }
 }
@@ -148,14 +95,14 @@ mod tests {
     use reth_chainspec::Hardfork;
 
     #[test]
-    fn test_adagio_hardfork_name() {
-        let fork = TempoHardfork::Adagio;
-        assert_eq!(fork.name(), "Adagio");
+    fn test_hardfork_name() {
+        let fork = TempoHardfork::AllegroModerato;
+        assert_eq!(fork.name(), "AllegroModerato");
     }
 
     #[test]
     fn test_hardfork_trait_implementation() {
-        let fork = TempoHardfork::Adagio;
+        let fork = TempoHardfork::AllegroModerato;
         // Should implement Hardfork trait
         let _name: &str = Hardfork::name(&fork);
     }
@@ -163,45 +110,14 @@ mod tests {
     #[test]
     #[cfg(feature = "serde")]
     fn test_tempo_hardfork_serde() {
-        let fork = TempoHardfork::Adagio;
+        let fork = TempoHardfork::AllegroModerato;
 
         // Serialize to JSON
         let json = serde_json::to_string(&fork).unwrap();
-        assert_eq!(json, "\"Adagio\"");
+        assert_eq!(json, "\"AllegroModerato\"");
 
         // Deserialize from JSON
         let deserialized: TempoHardfork = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, fork);
-    }
-
-    #[test]
-    fn test_is_moderato() {
-        assert!(!TempoHardfork::Adagio.is_moderato());
-        assert!(TempoHardfork::Moderato.is_moderato());
-        assert!(TempoHardfork::Allegretto.is_moderato());
-        assert!(TempoHardfork::AllegroModerato.is_moderato());
-    }
-
-    #[test]
-    fn test_is_allegretto() {
-        assert!(!TempoHardfork::Adagio.is_allegretto());
-        assert!(!TempoHardfork::Moderato.is_allegretto());
-
-        assert!(TempoHardfork::Allegretto.is_allegretto());
-        assert!(TempoHardfork::AllegroModerato.is_allegretto());
-
-        assert!(TempoHardfork::Allegretto.is_moderato());
-    }
-
-    #[test]
-    fn test_is_allegro_moderato() {
-        assert!(!TempoHardfork::Adagio.is_allegro_moderato());
-        assert!(!TempoHardfork::Moderato.is_allegro_moderato());
-        assert!(!TempoHardfork::Allegretto.is_allegro_moderato());
-
-        assert!(TempoHardfork::AllegroModerato.is_allegro_moderato());
-
-        assert!(TempoHardfork::AllegroModerato.is_allegretto());
-        assert!(TempoHardfork::AllegroModerato.is_moderato());
     }
 }
