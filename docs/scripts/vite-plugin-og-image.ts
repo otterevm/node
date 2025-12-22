@@ -56,9 +56,23 @@ export function ogImagePlugin(): Plugin {
     name: 'vite-plugin-og-image',
     enforce: 'post', // Run after Vocs processes files
     transformIndexHtml(html: string, ctx: IndexHtmlTransformContext) {
+      // Debug: log that plugin is running
+      const isDev = process.env['NODE_ENV'] !== 'production'
+      if (isDev) {
+        console.log('[OG Plugin] transformIndexHtml called')
+        console.log('[OG Plugin] Context keys:', Object.keys(ctx))
+      }
+
       // Only process pages (not API routes, etc.)
       const path = 'path' in ctx ? ctx.path : undefined
+      if (isDev) {
+        console.log('[OG Plugin] Path from context:', path)
+      }
+      
       if (!path || path.startsWith('/api/')) {
+        if (isDev) {
+          console.log('[OG Plugin] Skipping - no path or API route')
+        }
         return html
       }
 
@@ -74,8 +88,10 @@ export function ogImagePlugin(): Plugin {
         return html
       }
 
-      if (process.env['NODE_ENV'] !== 'production') {
+      if (isDev) {
         console.log(`[OG Plugin] Processing path: ${path} -> ${mdxPath}`)
+        console.log(`[OG Plugin] HTML length: ${html.length}`)
+        console.log(`[OG Plugin] HTML contains </head>: ${html.includes('</head>')}`)
       }
 
       try {
@@ -84,8 +100,9 @@ export function ogImagePlugin(): Plugin {
         // Extract frontmatter - handle various formats
         const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
         if (!frontmatterMatch) {
-          if (process.env['NODE_ENV'] !== 'production') {
+          if (isDev) {
             console.log(`[OG Plugin] No frontmatter found in ${mdxPath}`)
+            console.log(`[OG Plugin] File content preview: ${content.substring(0, 200)}`)
           }
           return html
         }
