@@ -5,11 +5,11 @@
 //!
 //! # Naming Conventions
 //!
-//! - `trait Interface` → generates SolCall structs + SolInterface enum
-//! - `enum Error` → generates SolError structs + SolInterface enum
-//! - `enum Event` → generates SolEvent structs + IntoLogData enum
-//! - Other enums → unit enums only, encoded as u8
-//! - Structs → generate SolStruct, SolType, SolValue, EventTopic
+//! - Structs generate `SolStruct`, `SolType`, `SolValue`, `EventTopic`.
+//! - Trait `Interface` generates `SolCall` structs + `SolInterface` enum.
+//! - Enum `Error` generates `SolError` structs + `SolInterface` enum.
+//! - Enum `Event` generates `SolEvent` structs + `IntoLogData` enum.
+//! - Other enums, which must be unit enums, are encoded as u8.
 
 use crate::utils::to_camel_case;
 use proc_macro2::{Ident, TokenStream};
@@ -18,10 +18,6 @@ use syn::{
     Attribute, Fields, FnArg, GenericArgument, Item, ItemEnum, ItemMod, ItemStruct, ItemTrait,
     ItemUse, Pat, PathArguments, ReturnType, Signature, TraitItem, Type, Visibility,
 };
-
-// ============================================================================
-// Intermediate Representation (IR) Types
-// ============================================================================
 
 /// Parsed content of a `#[solidity]` module.
 #[derive(Debug)]
@@ -44,6 +40,98 @@ pub(super) struct SolidityModule {
     pub interface: Option<InterfaceDef>,
     /// Other items passed through unchanged
     pub other_items: Vec<Item>,
+}
+
+impl SolidityModule {
+    /// Parse a module decorated with `#[solidity]` into IR.
+    pub(super) fn parse(item: ItemMod) -> syn::Result<Self> {
+        let name = item.ident.clone();
+        let vis = item.vis.clone();
+
+        let content = item.content.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(&item, "#[solidity] requires a module with body")
+        })?;
+
+        let mut imports = Vec::new();
+        let mut structs = Vec::new();
+        let mut unit_enums = Vec::new();
+        let mut error: Option<SolEnumDef> = None;
+        let mut event: Option<SolEnumDef> = None;
+        let mut interface: Option<InterfaceDef> = None;
+        let mut other_items = Vec::new();
+
+        for item in &content.1 {
+            match item {
+                Item::Use(use_item) => {
+                    imports.push(use_item.clone());
+                }
+                Item::Struct(struct_item) => {
+                    structs.push(SolStructDef::parse(struct_item)?);
+                }
+                Item::Enum(enum_item) => {
+                    let enum_name = enum_item.ident.to_string();
+                    match enum_name.as_str() {
+                        "Error" => {
+                            if error.is_some() {
+                                return Err(syn::Error::new_spanned(
+                                    enum_item,
+                                    "duplicate `Error` enum",
+                                ));
+                            }
+                            error = Some(SolEnumDef::parse(enum_item, SolEnumKind::Error)?);
+                        }
+                        "Event" => {
+                            if event.is_some() {
+                                return Err(syn::Error::new_spanned(
+                                    enum_item,
+                                    "duplicate `Event` enum",
+                                ));
+                            }
+                            event = Some(SolEnumDef::parse(enum_item, SolEnumKind::Event)?);
+                        }
+                        _ => {
+                            unit_enums.push(UnitEnumDef::parse(enum_item)?);
+                        }
+                    }
+                }
+                Item::Trait(trait_item) => {
+                    if trait_item.ident == "Interface" {
+                        if interface.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                trait_item,
+                                "duplicate `Interface` trait",
+                            ));
+                        }
+                        interface = Some(InterfaceDef::parse(trait_item)?);
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            &trait_item.ident,
+                            format!(
+                                "only a single trait named `Interface` is supported in `#[solidity]` modules; \
+                                 found `{}`; other traits should be defined outside the module",
+                                trait_item.ident
+                            ),
+                        ));
+                    }
+                }
+                _ => {
+                    other_items.push(item.clone());
+                }
+            }
+        }
+
+        Ok(Self {
+            name,
+            vis,
+            imports,
+            structs,
+            unit_enums,
+            error,
+            event,
+            interface,
+            other_items,
+        })
+    }
 }
 
 /// Struct definition for SolStruct generation.
@@ -69,6 +157,46 @@ pub(super) struct SolStructDef {
 }
 
 impl SolStructDef {
+    fn parse(item: &ItemStruct) -> syn::Result<Self> {
+        check_generics(&item.generics)?;
+
+        let fields = match &item.fields {
+            Fields::Named(named) => named
+                .named
+                .iter()
+                .map(|f| {
+                    let name = f
+                        .ident
+                        .clone()
+                        .ok_or_else(|| syn::Error::new_spanned(f, "expected named field"))?;
+                    Ok(FieldDef {
+                        name,
+                        ty: f.ty.clone(),
+                        indexed: false,
+                        vis: f.vis.clone(),
+                    })
+                })
+                .collect::<syn::Result<Vec<_>>>()?,
+            Fields::Unit => Vec::new(),
+            Fields::Unnamed(_) => {
+                return Err(syn::Error::new_spanned(
+                    item,
+                    "tuple structs are not supported in #[solidity] modules",
+                ));
+            }
+        };
+
+        let (derives, other_attrs) = extract_derive_attrs(&item.attrs);
+
+        Ok(Self {
+            name: item.ident.clone(),
+            fields,
+            derives,
+            attrs: other_attrs,
+            vis: item.vis.clone(),
+        })
+    }
+
     /// Extract field names as a Vec of Idents.
     pub(super) fn field_names(&self) -> Vec<Ident> {
         self.fields.iter().map(|f| f.name.clone()).collect()
@@ -119,6 +247,50 @@ pub(super) struct UnitEnumDef {
     pub vis: Visibility,
 }
 
+impl UnitEnumDef {
+    fn parse(item: &ItemEnum) -> syn::Result<Self> {
+        check_generics(&item.generics)?;
+
+        let mut variants = Vec::new();
+
+        for variant in &item.variants {
+            if !matches!(variant.fields, Fields::Unit) {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "enums in `#[solidity]` modules must be one of:\n\
+                     - `enum Error { ... }` with named-field variants for custom errors\n\
+                     - `enum Event { ... }` with named-field variants for events\n\
+                     - unit-only enums (no fields) encoded as uint8",
+                ));
+            }
+            variants.push(variant.ident.clone());
+        }
+
+        if variants.is_empty() {
+            return Err(syn::Error::new_spanned(
+                item,
+                "unit enum must have at least one variant",
+            ));
+        }
+
+        if variants.len() > 256 {
+            return Err(syn::Error::new_spanned(
+                item,
+                "enum cannot have more than 256 variants (must fit in u8)",
+            ));
+        }
+
+        let (_, other_attrs) = extract_derive_attrs(&item.attrs);
+
+        Ok(Self {
+            name: item.ident.clone(),
+            variants,
+            attrs: other_attrs,
+            vis: item.vis.clone(),
+        })
+    }
+}
+
 /// Error or Event enum definition.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -133,6 +305,38 @@ pub(super) struct SolEnumDef {
     pub vis: Visibility,
 }
 
+impl SolEnumDef {
+    fn parse(item: &ItemEnum, kind: SolEnumKind) -> syn::Result<Self> {
+        check_generics(&item.generics)?;
+
+        let variants = item
+            .variants
+            .iter()
+            .map(|v| EnumVariantDef::parse(v, kind))
+            .collect::<syn::Result<Vec<_>>>()?;
+
+        if variants.is_empty() {
+            let kind_name = match kind {
+                SolEnumKind::Error => "Error",
+                SolEnumKind::Event => "Event",
+            };
+            return Err(syn::Error::new_spanned(
+                item,
+                format!("`{kind_name}` enum must have at least one variant"),
+            ));
+        }
+
+        let (_, other_attrs) = extract_derive_attrs(&item.attrs);
+
+        Ok(Self {
+            name: item.ident.clone(),
+            variants,
+            attrs: other_attrs,
+            vis: item.vis.clone(),
+        })
+    }
+}
+
 /// Enum variant definition.
 #[derive(Debug, Clone)]
 pub(super) struct EnumVariantDef {
@@ -143,6 +347,56 @@ pub(super) struct EnumVariantDef {
 }
 
 impl EnumVariantDef {
+    fn parse(variant: &syn::Variant, kind: SolEnumKind) -> syn::Result<Self> {
+        let fields = match &variant.fields {
+            Fields::Named(named) => named
+                .named
+                .iter()
+                .map(|f| {
+                    let name = f
+                        .ident
+                        .clone()
+                        .ok_or_else(|| syn::Error::new_spanned(f, "expected named field"))?;
+                    let indexed = kind == SolEnumKind::Event && has_indexed_attr(&f.attrs);
+                    Ok(FieldDef {
+                        name,
+                        ty: f.ty.clone(),
+                        indexed,
+                        vis: f.vis.clone(),
+                    })
+                })
+                .collect::<syn::Result<Vec<_>>>()?,
+            Fields::Unit => Vec::new(),
+            Fields::Unnamed(_) => {
+                let kind_name = match kind {
+                    SolEnumKind::Error => "Error",
+                    SolEnumKind::Event => "Event",
+                };
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    format!(
+                        "`{kind_name}` variants must use named fields (e.g., `Variant {{ field: Type }}`) or be unit variants"
+                    ),
+                ));
+            }
+        };
+
+        if kind == SolEnumKind::Event {
+            let indexed_count = fields.iter().filter(|f| f.indexed).count();
+            if indexed_count > 3 {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "events can have at most 3 indexed fields (plus the signature hash makes 4 topics total)",
+                ));
+            }
+        }
+
+        Ok(Self {
+            name: variant.ident.clone(),
+            fields,
+        })
+    }
+
     /// Extract field names as a Vec of Idents.
     pub(super) fn field_names(&self) -> Vec<Ident> {
         self.fields.iter().map(|f| f.name.clone()).collect()
@@ -180,6 +434,48 @@ pub(super) struct InterfaceDef {
     pub vis: Visibility,
 }
 
+impl InterfaceDef {
+    fn parse(item: &ItemTrait) -> syn::Result<Self> {
+        check_generics(&item.generics)?;
+
+        if item.ident != "Interface" {
+            return Err(syn::Error::new_spanned(
+                &item.ident,
+                "interface trait must be named `Interface`",
+            ));
+        }
+
+        let methods: Vec<MethodDef> = item
+            .items
+            .iter()
+            .filter_map(|trait_item| {
+                if let TraitItem::Fn(method) = trait_item {
+                    Some(method)
+                } else {
+                    None
+                }
+            })
+            .map(|method| MethodDef::parse(&method.sig))
+            .collect::<syn::Result<_>>()?;
+
+        if methods.is_empty() {
+            return Err(syn::Error::new_spanned(
+                item,
+                "`Interface` trait must have at least one method",
+            ));
+        }
+
+        let (_, other_attrs) = extract_derive_attrs(&item.attrs);
+
+        Ok(Self {
+            name: item.ident.clone(),
+            methods,
+            attrs: other_attrs,
+            vis: item.vis.clone(),
+        })
+    }
+}
+
 /// Method definition from trait.
 #[derive(Debug, Clone)]
 pub(super) struct MethodDef {
@@ -196,6 +492,49 @@ pub(super) struct MethodDef {
 }
 
 impl MethodDef {
+    fn parse(sig: &Signature) -> syn::Result<Self> {
+        let sol_name = to_camel_case(&sig.ident.to_string());
+
+        let mut is_mutable = false;
+        let mut params = Vec::new();
+
+        for (i, arg) in sig.inputs.iter().enumerate() {
+            match arg {
+                FnArg::Receiver(receiver) => {
+                    if i != 0 {
+                        return Err(syn::Error::new_spanned(
+                            receiver,
+                            "self must be the first parameter",
+                        ));
+                    }
+                    is_mutable = receiver.mutability.is_some();
+                }
+                FnArg::Typed(pat_type) => {
+                    let param_name = extract_param_name(&pat_type.pat)?;
+
+                    if param_name == "msg_sender" {
+                        return Err(syn::Error::new_spanned(
+                            pat_type,
+                            "`msg_sender` is a reserved name and is auto-injected for `&mut self` methods",
+                        ));
+                    }
+
+                    params.push((param_name, (*pat_type.ty).clone()));
+                }
+            }
+        }
+
+        let return_type = extract_result_inner_type(&sig.output)?;
+
+        Ok(Self {
+            name: sig.ident.to_owned(),
+            sol_name,
+            params,
+            return_type,
+            is_mutable,
+        })
+    }
+
     /// Extract parameter names.
     pub(super) fn param_names(&self) -> Vec<Ident> {
         self.params.iter().map(|(n, _)| n.clone()).collect()
@@ -217,150 +556,6 @@ impl MethodDef {
     }
 }
 
-// ============================================================================
-// Parser Implementation
-// ============================================================================
-
-/// Parse a module decorated with `#[solidity]` into IR.
-pub(super) fn parse_solidity_module(item: ItemMod) -> syn::Result<SolidityModule> {
-    let name = item.ident.clone();
-    let vis = item.vis.clone();
-
-    let content = item
-        .content
-        .as_ref()
-        .ok_or_else(|| syn::Error::new_spanned(&item, "#[solidity] requires a module with body"))?;
-
-    let mut imports = Vec::new();
-    let mut structs = Vec::new();
-    let mut unit_enums = Vec::new();
-    let mut error: Option<SolEnumDef> = None;
-    let mut event: Option<SolEnumDef> = None;
-    let mut interface: Option<InterfaceDef> = None;
-    let mut other_items = Vec::new();
-
-    for item in &content.1 {
-        match item {
-            Item::Use(use_item) => {
-                imports.push(use_item.clone());
-            }
-            Item::Struct(struct_item) => {
-                structs.push(parse_struct(struct_item)?);
-            }
-            Item::Enum(enum_item) => {
-                let enum_name = enum_item.ident.to_string();
-                match enum_name.as_str() {
-                    "Error" => {
-                        if error.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                enum_item,
-                                "duplicate `Error` enum",
-                            ));
-                        }
-                        error = Some(parse_sol_enum(enum_item, SolEnumKind::Error)?);
-                    }
-                    "Event" => {
-                        if event.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                enum_item,
-                                "duplicate `Event` enum",
-                            ));
-                        }
-                        event = Some(parse_sol_enum(enum_item, SolEnumKind::Event)?);
-                    }
-                    _ => {
-                        unit_enums.push(parse_unit_enum(enum_item)?);
-                    }
-                }
-            }
-            Item::Trait(trait_item) => {
-                if trait_item.ident == "Interface" {
-                    if interface.is_some() {
-                        return Err(syn::Error::new_spanned(
-                            trait_item,
-                            "duplicate `Interface` trait",
-                        ));
-                    }
-                    interface = Some(parse_interface(trait_item)?);
-                } else {
-                    return Err(syn::Error::new_spanned(
-                        &trait_item.ident,
-                        format!(
-                            "only a single trait named `Interface` is supported in `#[solidity]` modules; \
-                             found `{}`; other traits should be defined outside the module",
-                            trait_item.ident
-                        ),
-                    ));
-                }
-            }
-            _ => {
-                other_items.push(item.clone());
-            }
-        }
-    }
-
-    Ok(SolidityModule {
-        name,
-        vis,
-        imports,
-        structs,
-        unit_enums,
-        error,
-        event,
-        interface,
-        other_items,
-    })
-}
-
-// ============================================================================
-// Struct Parsing
-// ============================================================================
-
-fn parse_struct(item: &ItemStruct) -> syn::Result<SolStructDef> {
-    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(
-            &item.generics,
-            "`#[solidity]` structs do not support generics",
-        ));
-    }
-
-    let fields = match &item.fields {
-        Fields::Named(named) => named
-            .named
-            .iter()
-            .map(|f| {
-                let name = f
-                    .ident
-                    .clone()
-                    .ok_or_else(|| syn::Error::new_spanned(f, "expected named field"))?;
-                Ok(FieldDef {
-                    name,
-                    ty: f.ty.clone(),
-                    indexed: false,
-                    vis: f.vis.clone(),
-                })
-            })
-            .collect::<syn::Result<Vec<_>>>()?,
-        Fields::Unit => Vec::new(),
-        Fields::Unnamed(_) => {
-            return Err(syn::Error::new_spanned(
-                item,
-                "tuple structs are not supported in #[solidity] modules",
-            ));
-        }
-    };
-
-    let (derives, other_attrs) = extract_derive_attrs(&item.attrs);
-
-    Ok(SolStructDef {
-        name: item.ident.clone(),
-        fields,
-        derives,
-        attrs: other_attrs,
-        vis: item.vis.clone(),
-    })
-}
-
 /// Extract #[derive(...)] attributes from other attributes.
 fn extract_derive_attrs(attrs: &[Attribute]) -> (Vec<Attribute>, Vec<Attribute>) {
     let mut derives = Vec::new();
@@ -377,9 +572,16 @@ fn extract_derive_attrs(attrs: &[Attribute]) -> (Vec<Attribute>, Vec<Attribute>)
     (derives, others)
 }
 
-// ============================================================================
-// Enum Parsing
-// ============================================================================
+/// Reject generics on solidity-annotated items.
+fn check_generics(generics: &syn::Generics) -> syn::Result<()> {
+    if !generics.params.is_empty() || generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            generics,
+            "generics are not supported in `#[solidity]` modules",
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SolEnumKind {
@@ -387,233 +589,8 @@ pub(super) enum SolEnumKind {
     Event,
 }
 
-fn parse_sol_enum(item: &ItemEnum, kind: SolEnumKind) -> syn::Result<SolEnumDef> {
-    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(
-            &item.generics,
-            "`#[solidity]` enums do not support generics",
-        ));
-    }
-
-    let variants = item
-        .variants
-        .iter()
-        .map(|v| parse_enum_variant(v, kind))
-        .collect::<syn::Result<Vec<_>>>()?;
-
-    if variants.is_empty() {
-        let kind_name = match kind {
-            SolEnumKind::Error => "Error",
-            SolEnumKind::Event => "Event",
-        };
-        return Err(syn::Error::new_spanned(
-            item,
-            format!("`{kind_name}` enum must have at least one variant"),
-        ));
-    }
-
-    let (_, other_attrs) = extract_derive_attrs(&item.attrs);
-
-    Ok(SolEnumDef {
-        name: item.ident.clone(),
-        variants,
-        attrs: other_attrs,
-        vis: item.vis.clone(),
-    })
-}
-
-fn parse_enum_variant(variant: &syn::Variant, kind: SolEnumKind) -> syn::Result<EnumVariantDef> {
-    let fields = match &variant.fields {
-        Fields::Named(named) => named
-            .named
-            .iter()
-            .map(|f| {
-                let name = f
-                    .ident
-                    .clone()
-                    .ok_or_else(|| syn::Error::new_spanned(f, "expected named field"))?;
-                let indexed = kind == SolEnumKind::Event && has_indexed_attr(&f.attrs);
-                Ok(FieldDef {
-                    name,
-                    ty: f.ty.clone(),
-                    indexed,
-                    vis: f.vis.clone(),
-                })
-            })
-            .collect::<syn::Result<Vec<_>>>()?,
-        Fields::Unit => Vec::new(),
-        Fields::Unnamed(_) => {
-            let kind_name = match kind {
-                SolEnumKind::Error => "Error",
-                SolEnumKind::Event => "Event",
-            };
-            return Err(syn::Error::new_spanned(
-                variant,
-                format!(
-                    "`{kind_name}` variants must use named fields (e.g., `Variant {{ field: Type }}`) or be unit variants"
-                ),
-            ));
-        }
-    };
-
-    if kind == SolEnumKind::Event {
-        let indexed_count = fields.iter().filter(|f| f.indexed).count();
-        if indexed_count > 3 {
-            return Err(syn::Error::new_spanned(
-                variant,
-                "events can have at most 3 indexed fields (plus the signature hash makes 4 topics total)",
-            ));
-        }
-    }
-
-    Ok(EnumVariantDef {
-        name: variant.ident.clone(),
-        fields,
-    })
-}
-
-fn parse_unit_enum(item: &ItemEnum) -> syn::Result<UnitEnumDef> {
-    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(
-            &item.generics,
-            "`#[solidity]` enums do not support generics",
-        ));
-    }
-
-    let mut variants = Vec::new();
-
-    for variant in &item.variants {
-        if !matches!(variant.fields, Fields::Unit) {
-            return Err(syn::Error::new_spanned(
-                variant,
-                "enums in `#[solidity]` modules must be one of:\n\
-                 - `enum Error { ... }` with named-field variants for custom errors\n\
-                 - `enum Event { ... }` with named-field variants for events\n\
-                 - unit-only enums (no fields) encoded as uint8",
-            ));
-        }
-        variants.push(variant.ident.clone());
-    }
-
-    if variants.is_empty() {
-        return Err(syn::Error::new_spanned(
-            item,
-            "unit enum must have at least one variant",
-        ));
-    }
-
-    if variants.len() > 256 {
-        return Err(syn::Error::new_spanned(
-            item,
-            "enum cannot have more than 256 variants (must fit in u8)",
-        ));
-    }
-
-    let (_, other_attrs) = extract_derive_attrs(&item.attrs);
-
-    Ok(UnitEnumDef {
-        name: item.ident.clone(),
-        variants,
-        attrs: other_attrs,
-        vis: item.vis.clone(),
-    })
-}
-
 fn has_indexed_attr(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| attr.path().is_ident("indexed"))
-}
-
-// ============================================================================
-// Interface Parsing
-// ============================================================================
-
-fn parse_interface(item: &ItemTrait) -> syn::Result<InterfaceDef> {
-    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(
-            &item.generics,
-            "`#[solidity]` Interface trait does not support generics",
-        ));
-    }
-
-    if item.ident != "Interface" {
-        return Err(syn::Error::new_spanned(
-            &item.ident,
-            "interface trait must be named `Interface`",
-        ));
-    }
-
-    let methods: Vec<MethodDef> = item
-        .items
-        .iter()
-        .filter_map(|trait_item| {
-            if let TraitItem::Fn(method) = trait_item {
-                Some(method)
-            } else {
-                None
-            }
-        })
-        .map(|method| parse_method(&method.sig))
-        .collect::<syn::Result<_>>()?;
-
-    if methods.is_empty() {
-        return Err(syn::Error::new_spanned(
-            item,
-            "`Interface` trait must have at least one method",
-        ));
-    }
-
-    let (_, other_attrs) = extract_derive_attrs(&item.attrs);
-
-    Ok(InterfaceDef {
-        name: item.ident.clone(),
-        methods,
-        attrs: other_attrs,
-        vis: item.vis.clone(),
-    })
-}
-
-fn parse_method(sig: &Signature) -> syn::Result<MethodDef> {
-    let name = sig.ident.clone();
-    let sol_name = to_camel_case(&name.to_string());
-
-    let mut is_mutable = false;
-    let mut params = Vec::new();
-
-    for (i, arg) in sig.inputs.iter().enumerate() {
-        match arg {
-            FnArg::Receiver(receiver) => {
-                if i != 0 {
-                    return Err(syn::Error::new_spanned(
-                        receiver,
-                        "self must be the first parameter",
-                    ));
-                }
-                is_mutable = receiver.mutability.is_some();
-            }
-            FnArg::Typed(pat_type) => {
-                let param_name = extract_param_name(&pat_type.pat)?;
-
-                if param_name == "msg_sender" {
-                    return Err(syn::Error::new_spanned(
-                        pat_type,
-                        "`msg_sender` is a reserved name and is auto-injected for `&mut self` methods",
-                    ));
-                }
-
-                params.push((param_name, (*pat_type.ty).clone()));
-            }
-        }
-    }
-
-    let return_type = extract_result_inner_type(&sig.output)?;
-
-    Ok(MethodDef {
-        name,
-        sol_name,
-        params,
-        return_type,
-        is_mutable,
-    })
 }
 
 fn extract_param_name(pat: &Pat) -> syn::Result<Ident> {
@@ -668,7 +645,7 @@ mod tests {
 
     fn parse_module(tokens: proc_macro2::TokenStream) -> syn::Result<SolidityModule> {
         let item: ItemMod = syn::parse2(tokens)?;
-        parse_solidity_module(item)
+        SolidityModule::parse(item)
     }
 
     #[test]

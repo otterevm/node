@@ -222,10 +222,6 @@ impl TypeRegistry {
         Ok(())
     }
 
-    // ========================================================================
-    // Public Query Methods
-    // ========================================================================
-
     /// Resolve a Rust type to its Solidity ABI representation.
     ///
     /// - If the type is a registered unit enum, returns "uint8"
@@ -325,10 +321,6 @@ impl TypeRegistry {
         }
         false
     }
-
-    // ========================================================================
-    // EIP-712 Component Support
-    // ========================================================================
 
     /// Get all transitive struct dependencies for a struct (for EIP-712 encodeType).
     ///

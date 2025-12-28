@@ -65,7 +65,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::ItemMod;
 
-use parser::parse_solidity_module;
+use parser::SolidityModule;
 use registry::TypeRegistry;
 
 /// Main expansion entry point for `#[solidity]` attribute macro.
@@ -75,7 +75,7 @@ use registry::TypeRegistry;
 /// 2. Builds a type registry for ABI resolution
 /// 3. Generates code for all types with full type knowledge
 pub(crate) fn expand(item: ItemMod) -> syn::Result<TokenStream> {
-    let module = parse_solidity_module(item)?;
+    let module = SolidityModule::parse(item)?;
     let registry = TypeRegistry::from_module(&module)?;
 
     let mod_name = &module.name;
@@ -164,7 +164,7 @@ mod tests {
             }
         })?;
 
-        let module = parse_solidity_module(item)?;
+        let module = SolidityModule::parse(item)?;
         let registry = TypeRegistry::from_module(&module)?;
 
         assert_eq!(
