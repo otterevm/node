@@ -186,12 +186,11 @@ pub(super) fn generate_variant_enum(
     registry: &TypeRegistry,
     kind: VariantEnumKind,
 ) -> syn::Result<TokenStream> {
-    let variant_impls: syn::Result<Vec<TokenStream>> = def
+    let variant_impls = def
         .variants
         .iter()
         .map(|v| generate_variant(v, registry, kind))
-        .collect();
-    let variant_impls = variant_impls?;
+        .collect::<syn::Result<Vec<_>>>()?;
 
     let container_name = match kind {
         VariantEnumKind::Error => format_ident!("Error"),
@@ -229,7 +228,7 @@ fn generate_variant(
         VariantEnumKind::Event => "Event",
     };
     let doc = common::signature_doc(doc_kind, &signature);
-    let field_pairs: Vec<_> = variant.fields.iter().map(|f| (&f.name, &f.ty)).collect();
+    let field_pairs: Vec<_> = variant.fields().collect();
     let variant_struct = common::generate_simple_struct(struct_name, &field_pairs, &doc);
     let from_tuple = expand_from_into_tuples_simple(struct_name, &field_names, &field_types);
 

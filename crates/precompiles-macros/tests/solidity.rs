@@ -127,7 +127,7 @@ type Result<T> = core::result::Result<T, ()>;
 mod e2e {
     use super::*;
 
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct TokenInfo {
         pub name: B256,
         pub decimals: U256,
@@ -208,7 +208,6 @@ fn test_error_enum_selectors() {
     assert_eq!(insufficient.available, decoded.available);
 }
 
-#[allow(dead_code)]
 struct TestToken {
     info: e2e::TokenInfo,
     paused: bool,
@@ -218,7 +217,7 @@ struct TestToken {
 
 impl e2e::Interface for TestToken {
     fn info(&self) -> Result<e2e::TokenInfo> {
-        Ok(self.info.clone())
+        Ok(self.info)
     }
 
     fn is_paused(&self) -> Result<bool> {

@@ -81,16 +81,16 @@ pub(super) fn generate_error_container(
     registry: &TypeRegistry,
 ) -> syn::Result<TokenStream> {
     let names: Vec<Ident> = variants.iter().map(|v| v.name.clone()).collect();
-    let signatures: syn::Result<Vec<String>> = variants
+    let signatures = variants
         .iter()
         .map(|v| registry.compute_signature_from_fields(&v.name.to_string(), &v.fields))
-        .collect();
+        .collect::<syn::Result<Vec<_>>>()?;
     let field_counts: Vec<usize> = variants.iter().map(|v| v.fields.len()).collect();
     Ok(generate_sol_interface_container(
         "Error",
         &names,
         &names,
-        &signatures?,
+        &signatures,
         &field_counts,
         SolInterfaceKind::Error,
     ))

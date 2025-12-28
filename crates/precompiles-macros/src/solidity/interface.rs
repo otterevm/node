@@ -22,12 +22,11 @@ pub(super) fn generate_interface(
     def: &InterfaceDef,
     registry: &TypeRegistry,
 ) -> syn::Result<TokenStream> {
-    let method_impls: syn::Result<Vec<TokenStream>> = def
+    let method_impls = def
         .methods
         .iter()
         .map(|m| generate_method_code(m, registry))
-        .collect();
-    let method_impls = method_impls?;
+        .collect::<syn::Result<Vec<_>>>()?;
 
     let calls_enum = generate_calls_enum(&def.methods, registry)?;
 
@@ -98,7 +97,7 @@ fn generate_method_code(method: &MethodDef, registry: &TypeRegistry) -> syn::Res
 
     let doc = common::signature_doc("Function", &signature);
 
-    let call_fields: Vec<_> = method.params.iter().map(|(n, ty)| (n, ty)).collect();
+    let call_fields: Vec<_> = method.fields().collect();
     let call_struct = common::generate_simple_struct(&call_name, &call_fields, &doc);
 
     let (return_struct, return_from_tuple, return_sol_tuple, return_info) =

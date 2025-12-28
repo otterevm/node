@@ -83,12 +83,11 @@ pub(crate) fn expand(item: ItemMod) -> syn::Result<TokenStream> {
 
     let imports: Vec<TokenStream> = module.imports.iter().map(|i| quote! { #i }).collect();
 
-    let struct_impls: syn::Result<Vec<TokenStream>> = module
+    let struct_impls = module
         .structs
         .iter()
         .map(|def| structs::generate_struct(def, &registry))
-        .collect();
-    let struct_impls = struct_impls?;
+        .collect::<syn::Result<Vec<_>>>()?;
 
     let unit_enum_impls: Vec<TokenStream> = module
         .unit_enums

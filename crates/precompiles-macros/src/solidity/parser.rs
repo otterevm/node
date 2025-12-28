@@ -181,31 +181,29 @@ impl SolStructDef {
     fn parse(item: &ItemStruct) -> syn::Result<Self> {
         check_generics(&item.generics)?;
 
-        let fields = match &item.fields {
-            Fields::Named(named) => named
-                .named
-                .iter()
-                .map(|f| {
-                    let name = f
-                        .ident
-                        .clone()
-                        .ok_or_else(|| syn::Error::new_spanned(f, "expected named field"))?;
-                    Ok(FieldDef {
-                        name,
-                        ty: f.ty.clone(),
-                        indexed: false,
-                        vis: f.vis.clone(),
-                    })
-                })
-                .collect::<syn::Result<Vec<_>>>()?,
-            Fields::Unit => Vec::new(),
-            Fields::Unnamed(_) => {
-                return Err(syn::Error::new_spanned(
-                    item,
-                    "tuple structs are not supported in #[solidity] modules",
-                ));
-            }
+        let Fields::Named(named) = &item.fields else {
+            return Err(syn::Error::new_spanned(
+                item,
+                "only structs with named fields are supported in #[solidity] modules",
+            ));
         };
+
+        let fields = named
+            .named
+            .iter()
+            .map(|f| {
+                let name = f
+                    .ident
+                    .clone()
+                    .ok_or_else(|| syn::Error::new_spanned(f, "expected named field"))?;
+                Ok(FieldDef {
+                    name,
+                    ty: f.ty.clone(),
+                    indexed: false,
+                    vis: f.vis.clone(),
+                })
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
 
         let (derives, other_attrs) = extract_derive_attrs(&item.attrs);
 
@@ -239,6 +237,14 @@ pub(super) struct FieldDef {
 }
 
 /// Unit enum definition (encoded as u8).
+///
+/// # Invariants
+///
+/// - All variants must be unit variants.
+/// - Must have at least one variant.
+/// - Must fit in u8.
+/// - Generics are not supported.
+/// - Visibility is preserved from the original enum.
 #[derive(Debug, Clone)]
 pub(super) struct UnitEnumDef {
     /// Enum name
@@ -296,6 +302,14 @@ impl UnitEnumDef {
 }
 
 /// Error or Event enum definition.
+///
+/// # Invariants
+///
+/// - Must be named `Error` or `Event`.
+/// - Must have at least one variant.
+/// - Variants must either use named fields or be unit variants (tuple variants are forbidden).
+/// - Generics are not supported.
+/// - For `Event`: variants can have, at most, 3 `#[indexed]` fields.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub(super) struct SolEnumDef {
@@ -342,6 +356,12 @@ impl SolEnumDef {
 }
 
 /// Enum variant definition.
+///
+/// # Invariants
+///
+/// - Only named fields or unit variants (tuple variants rejected).
+/// - Field types must be valid `SolType` values or registered structs/unit enums.
+/// - For `Event` variants: at most 3 fields may be marked `#[indexed]`.
 #[derive(Debug, Clone)]
 pub(super) struct EnumVariantDef {
     /// Variant name
@@ -472,6 +492,14 @@ impl InterfaceDef {
 }
 
 /// Method definition from trait.
+///
+/// # Invariants
+///
+/// - Must have `&self` or `&mut self` as first parameter.
+/// - Must return `Result<T, E>`.
+/// - Parameter patterns must be identifiers.
+/// - Parameter name `msg_sender` is reserved and rejected.
+/// - Method name is auto-converted from snake_case to camelCase for Solidity ABI.
 #[derive(Debug, Clone)]
 pub(super) struct MethodDef {
     /// Rust method name (snake_case)
