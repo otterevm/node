@@ -8,13 +8,13 @@
 use alloy_sol_macro_expander::{
     ReturnInfo, SolCallData, SolInterfaceKind, expand_from_into_tuples_simple,
 };
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::utils::SolType;
 
 use super::common;
-use super::parser::{InterfaceDef, MethodDef};
+use super::parser::{FieldAccessors, InterfaceDef, MethodDef};
 use super::registry::TypeRegistry;
 
 /// Generate code for the Interface trait.
@@ -85,9 +85,9 @@ fn generate_method_code(method: &MethodDef, registry: &TypeRegistry) -> syn::Res
     let call_name = format_ident!("{}Call", method.sol_name);
     let return_name = format_ident!("{}Return", method.sol_name);
 
-    let param_names = method.param_names();
-    let param_types = method.param_types();
-    let param_tys = method.raw_param_types();
+    let param_names = method.field_names();
+    let param_types = method.field_types();
+    let param_tys = method.field_raw_types();
 
     let common::EncodedParams {
         param_tuple,
@@ -162,25 +162,26 @@ fn generate_method_code(method: &MethodDef, registry: &TypeRegistry) -> syn::Res
 
 /// Generate the container enum for all calls.
 fn generate_calls_enum(methods: &[MethodDef], registry: &TypeRegistry) -> syn::Result<TokenStream> {
-    let variants: Vec<Ident> = methods
-        .iter()
-        .map(|m| format_ident!("{}", m.sol_name))
-        .collect();
-    let types: Vec<Ident> = methods
-        .iter()
-        .map(|m| format_ident!("{}Call", m.sol_name))
-        .collect();
-    let signatures: syn::Result<Vec<String>> = methods
-        .iter()
-        .map(|m| registry.compute_signature(&m.sol_name, &m.raw_param_types()))
-        .collect();
-    let field_counts: Vec<usize> = methods.iter().map(|m| m.params.len()).collect();
+    fn vec<T>(capacity: usize) -> Vec<T> {
+        Vec::with_capacity(capacity)
+    }
+
+    let cap = methods.len();
+    let (mut variants, mut types, mut signatures, mut field_counts) =
+        (vec(cap), vec(cap), vec(cap), vec(cap));
+
+    for m in methods {
+        variants.push(format_ident!("{}", m.sol_name));
+        types.push(format_ident!("{}Call", m.sol_name));
+        signatures.push(registry.compute_signature(&m.sol_name, &m.field_raw_types())?);
+        field_counts.push(m.params.len());
+    }
 
     Ok(common::generate_sol_interface_container(
         "Calls",
         &variants,
         &types,
-        &signatures?,
+        &signatures,
         &field_counts,
         SolInterfaceKind::Call,
     ))

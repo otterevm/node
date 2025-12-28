@@ -13,7 +13,7 @@ use quote::{format_ident, quote};
 use crate::utils::{SolType, to_snake_case};
 
 use super::common;
-use super::parser::{EnumVariantDef, SolEnumDef, UnitEnumDef};
+use super::parser::{EnumVariantDef, FieldAccessors, SolEnumDef, UnitEnumDef};
 use super::registry::TypeRegistry;
 
 // ============================================================================
@@ -26,25 +26,15 @@ pub(super) fn generate_unit_enum(def: &UnitEnumDef) -> TokenStream {
     let vis = &def.vis;
     let attrs = &def.attrs;
 
-    let variants_with_discriminants: Vec<TokenStream> = def
+    let (variants_with_discriminants, from_u8_arms): (Vec<_>, Vec<_>) = def
         .variants
         .iter()
         .enumerate()
         .map(|(i, v)| {
             let idx = i as u8;
-            quote! { #v = #idx }
+            (quote! { #v = #idx }, quote! { #idx => Ok(Self::#v) })
         })
-        .collect();
-
-    let from_u8_arms: Vec<TokenStream> = def
-        .variants
-        .iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let idx = i as u8;
-            quote! { #idx => Ok(Self::#v) }
-        })
-        .collect();
+        .unzip();
 
     let enum_def = quote! {
         #(#attrs)*
@@ -261,7 +251,7 @@ fn generate_sol_error_impl(variant: &EnumVariantDef, signature: &str) -> syn::Re
     let common::EncodedParams {
         param_tuple,
         tokenize_impl,
-    } = common::encode_params(&variant.field_names(), &variant.raw_types())?;
+    } = common::encode_params(&variant.field_names(), &variant.field_raw_types())?;
 
     Ok(SolErrorData {
         param_tuple,

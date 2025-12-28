@@ -19,6 +19,27 @@ use syn::{
     ItemUse, Pat, PathArguments, ReturnType, Signature, TraitItem, Type, Visibility,
 };
 
+/// Trait for types that expose a list of (name, type) pairs.
+pub(super) trait FieldAccessors {
+    /// Returns an iterator over (name, type) pairs.
+    fn fields(&self) -> impl Iterator<Item = (&Ident, &Type)>;
+
+    /// Extract field/param names as a Vec of Idents.
+    fn field_names(&self) -> Vec<Ident> {
+        self.fields().map(|(n, _)| n.clone()).collect()
+    }
+
+    /// Extract field/param types as quoted TokenStreams.
+    fn field_types(&self) -> Vec<TokenStream> {
+        self.fields().map(|(_, ty)| quote! { #ty }).collect()
+    }
+
+    /// Extract raw syn Types.
+    fn field_raw_types(&self) -> Vec<Type> {
+        self.fields().map(|(_, ty)| ty.clone()).collect()
+    }
+}
+
 /// Parsed content of a `#[solidity]` module.
 #[derive(Debug)]
 pub(super) struct SolidityModule {
@@ -196,20 +217,11 @@ impl SolStructDef {
             vis: item.vis.clone(),
         })
     }
+}
 
-    /// Extract field names as a Vec of Idents.
-    pub(super) fn field_names(&self) -> Vec<Ident> {
-        self.fields.iter().map(|f| f.name.clone()).collect()
-    }
-
-    /// Extract field types as quoted TokenStreams.
-    pub(super) fn field_types(&self) -> Vec<TokenStream> {
-        self.fields.iter().map(|f| f.quoted_type()).collect()
-    }
-
-    /// Extract raw syn Types.
-    pub(super) fn raw_types(&self) -> Vec<Type> {
-        self.fields.iter().map(|f| f.ty.clone()).collect()
+impl FieldAccessors for SolStructDef {
+    fn fields(&self) -> impl Iterator<Item = (&Ident, &Type)> {
+        self.fields.iter().map(|f| (&f.name, &f.ty))
     }
 }
 
@@ -224,14 +236,6 @@ pub(super) struct FieldDef {
     pub indexed: bool,
     /// Field visibility
     pub vis: Visibility,
-}
-
-impl FieldDef {
-    /// Convert the field type to a quoted TokenStream.
-    fn quoted_type(&self) -> TokenStream {
-        let ty = &self.ty;
-        quote! { #ty }
-    }
 }
 
 /// Unit enum definition (encoded as u8).
@@ -329,10 +333,10 @@ impl SolEnumDef {
         let (_, other_attrs) = extract_derive_attrs(&item.attrs);
 
         Ok(Self {
-            name: item.ident.clone(),
+            name: item.ident.to_owned(),
             variants,
             attrs: other_attrs,
-            vis: item.vis.clone(),
+            vis: item.vis.to_owned(),
         })
     }
 }
@@ -396,20 +400,11 @@ impl EnumVariantDef {
             fields,
         })
     }
+}
 
-    /// Extract field names as a Vec of Idents.
-    pub(super) fn field_names(&self) -> Vec<Ident> {
-        self.fields.iter().map(|f| f.name.clone()).collect()
-    }
-
-    /// Extract field types as quoted TokenStreams.
-    pub(super) fn field_types(&self) -> Vec<TokenStream> {
-        self.fields.iter().map(|f| f.quoted_type()).collect()
-    }
-
-    /// Extract raw syn Types.
-    pub(super) fn raw_types(&self) -> Vec<Type> {
-        self.fields.iter().map(|f| f.ty.clone()).collect()
+impl FieldAccessors for EnumVariantDef {
+    fn fields(&self) -> impl Iterator<Item = (&Ident, &Type)> {
+        self.fields.iter().map(|f| (&f.name, &f.ty))
     }
 }
 
@@ -534,25 +529,11 @@ impl MethodDef {
             is_mutable,
         })
     }
+}
 
-    /// Extract parameter names.
-    pub(super) fn param_names(&self) -> Vec<Ident> {
-        self.params.iter().map(|(n, _)| n.clone()).collect()
-    }
-
-    /// Extract parameter types as quoted TokenStreams.
-    pub(super) fn param_types(&self) -> Vec<TokenStream> {
-        self.params
-            .iter()
-            .map(|(_, ty)| {
-                quote! { #ty }
-            })
-            .collect()
-    }
-
-    /// Extract raw syn Types.
-    pub(super) fn raw_param_types(&self) -> Vec<Type> {
-        self.params.iter().map(|(_, t)| t.clone()).collect()
+impl FieldAccessors for MethodDef {
+    fn fields(&self) -> impl Iterator<Item = (&Ident, &Type)> {
+        self.params.iter().map(|(n, ty)| (n, ty))
     }
 }
 
@@ -633,10 +614,6 @@ fn extract_result_inner_type(return_type: &ReturnType) -> syn::Result<Option<Typ
 fn is_unit_type(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

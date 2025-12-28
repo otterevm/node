@@ -10,7 +10,7 @@ use quote::quote;
 use crate::utils::{SolType, to_camel_case};
 
 use super::common;
-use super::parser::SolStructDef;
+use super::parser::{FieldAccessors, SolStructDef};
 use super::registry::TypeRegistry;
 
 /// Generate code for a single struct definition.
@@ -21,7 +21,7 @@ pub(super) fn generate_struct(
     let struct_name = &def.name;
     let field_names = def.field_names();
     let rust_types = def.field_types();
-    let sol_types = common::types_to_sol_types(&def.raw_types())?;
+    let sol_types = common::types_to_sol_types(&def.field_raw_types())?;
 
     let eip712_signature = build_eip712_signature(struct_name, def)?;
 

@@ -12,15 +12,6 @@ use crate::utils::SolType;
 use super::parser::EnumVariantDef;
 use super::registry::TypeRegistry;
 
-/// Generate param tuple from sol_types.
-pub(super) fn make_param_tuple(sol_types: &[TokenStream]) -> TokenStream {
-    if sol_types.is_empty() {
-        quote! { () }
-    } else {
-        quote! { (#(#sol_types,)*) }
-    }
-}
-
 /// Convert types to sol_data types.
 pub(super) fn types_to_sol_types(types: &[syn::Type]) -> syn::Result<Vec<TokenStream>> {
     types
@@ -38,7 +29,7 @@ pub(super) struct EncodedParams {
 /// Encode parameters for ABI generation.
 pub(super) fn encode_params(names: &[Ident], types: &[Type]) -> syn::Result<EncodedParams> {
     let sol_types = types_to_sol_types(types)?;
-    let param_tuple = make_param_tuple(&sol_types);
+    let param_tuple = quote! { (#(#sol_types,)*) };
     let tokenize_impl = expand_tokenize_simple(names, &sol_types);
     Ok(EncodedParams {
         param_tuple,
