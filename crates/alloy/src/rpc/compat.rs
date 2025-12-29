@@ -116,6 +116,7 @@ impl TryIntoTxEnv<TempoTxEnv, TempoBlockEnv> for TempoTransactionRequest {
                 || nonce_key.is_some()
                 || key_authorization.is_some()
                 || key_id.is_some()
+                || fee_token.is_some()
             {
                 // Create mock signature for gas estimation
                 // If key_type is not provided, default to secp256k1
