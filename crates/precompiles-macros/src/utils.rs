@@ -200,16 +200,16 @@ impl SolType {
         }
     }
 
-    /// Returns whether this type is dynamically sized in ABI encoding.
-    pub(crate) fn is_dynamic(&self) -> bool {
+    /// Returns whether this type is guaranteed to fit in a single EVM word.
+    pub(crate) fn is_value_type(&self) -> bool {
         match self {
-            Self::Bool | Self::Address | Self::Uint(_) | Self::Int(_) | Self::FixedBytes(_) => {
-                false
-            }
-            Self::Bytes | Self::String | Self::Array(_) => true,
-            Self::FixedArray(inner, _) => inner.is_dynamic(),
-            Self::Tuple(elems) => elems.iter().any(|e| e.is_dynamic()),
-            Self::Struct(_) => true, // Structs are always dynamic
+            Self::Bool | Self::Address | Self::Uint(_) | Self::Int(_) | Self::FixedBytes(_) => true,
+            Self::Bytes
+            | Self::String
+            | Self::Array(_)
+            | Self::FixedArray(_, _)
+            | Self::Tuple(_)
+            | Self::Struct(_) => false,
         }
     }
 
@@ -560,11 +560,7 @@ mod tests {
             "string"
         );
         assert_eq!(SolType::from_syn(&parse_quote!(Bytes))?.sol_name(), "bytes");
-        Ok(())
-    }
 
-    #[test]
-    fn test_sol_type_sol_name_arrays() -> syn::Result<()> {
         // Dynamic array: Vec<T> → "T[]"
         assert_eq!(
             SolType::from_syn(&parse_quote!(Vec<Address>))?.sol_name(),
@@ -584,11 +580,8 @@ mod tests {
             SolType::from_syn(&parse_quote!([Address; 10]))?.sol_name(),
             "address[10]"
         );
-        Ok(())
-    }
 
-    #[test]
-    fn test_sol_type_sol_name_tuples() -> syn::Result<()> {
+        // Tuples
         assert_eq!(
             SolType::from_syn(&parse_quote!((Address, U256)))?.sol_name(),
             "(address,uint256)"
@@ -598,11 +591,8 @@ mod tests {
             "(bool,address,uint256)"
         );
         assert_eq!(SolType::from_syn(&parse_quote!(()))?.sol_name(), "()");
-        Ok(())
-    }
 
-    #[test]
-    fn test_sol_type_sol_name_nested() -> syn::Result<()> {
+        // Nested
         assert_eq!(
             SolType::from_syn(&parse_quote!(Vec<Vec<U256>>))?.sol_name(),
             "uint256[][]"
@@ -623,55 +613,28 @@ mod tests {
     }
 
     #[test]
-    fn test_sol_type_is_dynamic_primitives() -> syn::Result<()> {
+    fn test_sol_type_is_value_type() -> syn::Result<()> {
         // Static primitives
-        assert!(!SolType::from_syn(&parse_quote!(Address))?.is_dynamic());
-        assert!(!SolType::from_syn(&parse_quote!(U256))?.is_dynamic());
-        assert!(!SolType::from_syn(&parse_quote!(bool))?.is_dynamic());
-        assert!(!SolType::from_syn(&parse_quote!(B256))?.is_dynamic());
+        assert!(SolType::Address.is_value_type());
+        assert!(SolType::Uint(256).is_value_type());
+        assert!(SolType::Bool.is_value_type());
+        assert!(SolType::FixedBytes(32).is_value_type());
 
         // Dynamic primitives
-        assert!(SolType::from_syn(&parse_quote!(String))?.is_dynamic());
-        assert!(SolType::from_syn(&parse_quote!(Bytes))?.is_dynamic());
-        Ok(())
-    }
+        assert!(!SolType::String.is_value_type());
+        assert!(!SolType::Bytes.is_value_type());
 
-    #[test]
-    fn test_sol_type_is_dynamic_arrays() -> syn::Result<()> {
-        // Dynamic arrays are always dynamic
-        assert!(SolType::from_syn(&parse_quote!(Vec<U256>))?.is_dynamic());
-        assert!(SolType::from_syn(&parse_quote!(Vec<Address>))?.is_dynamic());
+        // Dynamic arrays
+        assert!(!SolType::Array(Box::new(SolType::Uint(256))).is_value_type());
+        assert!(!SolType::Array(Box::new(SolType::Address)).is_value_type());
 
-        // Fixed arrays of static types are static
-        assert!(!SolType::from_syn(&parse_quote!([U256; 3]))?.is_dynamic());
-        assert!(!SolType::from_syn(&parse_quote!([Address; 10]))?.is_dynamic());
+        // Fixed arrays
+        assert!(!SolType::FixedArray(Box::new(SolType::Uint(256)), 1).is_value_type());
+        assert!(!SolType::FixedArray(Box::new(SolType::Address), 2).is_value_type());
 
-        // Fixed arrays of dynamic types are dynamic
-        assert!(SolType::from_syn(&parse_quote!([String; 2]))?.is_dynamic());
-        assert!(SolType::from_syn(&parse_quote!([Vec<U256>; 2]))?.is_dynamic());
-        Ok(())
-    }
-
-    #[test]
-    fn test_sol_type_is_dynamic_tuples() -> syn::Result<()> {
-        // Tuple of static types is static
-        assert!(!SolType::from_syn(&parse_quote!((Address, U256)))?.is_dynamic());
-        assert!(!SolType::from_syn(&parse_quote!((bool, B256, U256)))?.is_dynamic());
-
-        // Tuple containing any dynamic type is dynamic
-        assert!(SolType::from_syn(&parse_quote!((Address, String)))?.is_dynamic());
-        assert!(SolType::from_syn(&parse_quote!((Vec<U256>, bool)))?.is_dynamic());
-
-        // Empty tuple is static
-        assert!(!SolType::from_syn(&parse_quote!(()))?.is_dynamic());
-        Ok(())
-    }
-
-    #[test]
-    fn test_sol_type_is_dynamic_nested() -> syn::Result<()> {
-        assert!(SolType::from_syn(&parse_quote!(Vec<Vec<U256>>))?.is_dynamic());
-        assert!(SolType::from_syn(&parse_quote!((Address, (String, U256))))?.is_dynamic());
-        assert!(SolType::from_syn(&parse_quote!([(Address, Bytes); 3]))?.is_dynamic());
+        // Tuples
+        assert!(!SolType::Tuple(vec![SolType::Address, SolType::Bool]).is_value_type());
+        assert!(!SolType::Tuple(vec![SolType::Bool]).is_value_type());
         Ok(())
     }
 
@@ -681,19 +644,19 @@ mod tests {
         let ty: Type = parse_quote!(MyCustomStruct);
         let sol_ty = SolType::from_syn(&ty)?;
         assert_eq!(sol_ty.sol_name(), "MyCustomStruct");
-        assert!(sol_ty.is_dynamic()); // Structs are always dynamic
+        assert!(!sol_ty.is_value_type());
 
         // Array of custom struct
         let ty: Type = parse_quote!(Vec<MyCustomStruct>);
         let sol_ty = SolType::from_syn(&ty)?;
         assert_eq!(sol_ty.sol_name(), "MyCustomStruct[]");
-        assert!(sol_ty.is_dynamic());
+        assert!(!sol_ty.is_value_type());
 
         // Fixed array of custom struct
         let ty: Type = parse_quote!([MyCustomStruct; 5]);
         let sol_ty = SolType::from_syn(&ty)?;
         assert_eq!(sol_ty.sol_name(), "MyCustomStruct[5]");
-        assert!(sol_ty.is_dynamic()); // Contains dynamic type
+        assert!(!sol_ty.is_value_type());
         Ok(())
     }
 }

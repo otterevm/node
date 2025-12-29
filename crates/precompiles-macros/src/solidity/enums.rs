@@ -272,7 +272,7 @@ fn generate_sol_event_impl(variant: &EnumVariantDef, signature: &str) -> syn::Re
                 name: f.name.clone(),
                 sol_type: sol_ty.to_sol_data(),
                 is_indexed: f.indexed,
-                indexed_as_hash: f.indexed && sol_ty.is_dynamic(),
+                indexed_as_hash: f.indexed && !sol_ty.is_value_type(),
             })
         })
         .collect();
