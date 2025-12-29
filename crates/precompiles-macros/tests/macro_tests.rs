@@ -1,7 +1,10 @@
 //! Integration tests for the `#[solidity]` macro.
+//!
+//! This file contains general macro integration tests. EIP-712 specific tests
+//! are in the `solidity/` test module.
 
 use alloy::primitives::{Address, B256, U256, keccak256};
-use alloy::sol_types::{SolCall, SolError, SolEvent, SolInterface, SolStruct, SolValue};
+use alloy::sol_types::{SolCall, SolError, SolEvent, SolInterface, SolValue};
 use std::collections::HashMap;
 use tempo_precompiles_macros::solidity;
 
@@ -16,17 +19,6 @@ mod structs {
         pub amount: U256,
         pub approved: bool,
         pub hash: B256,
-    }
-
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct Inner {
-        pub value: U256,
-    }
-
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct Outer {
-        pub inner: Inner,
-        pub extra: Address,
     }
 }
 
@@ -46,46 +38,6 @@ fn test_struct_encoding_decoding() {
     let encoded = transfer.abi_encode();
     let decoded = Transfer::abi_decode(&encoded).unwrap();
     assert_eq!(transfer, decoded);
-
-    // Verify EIP-712 root type format
-    let root_type = Transfer::eip712_root_type();
-    assert_eq!(
-        root_type.as_ref(),
-        "Transfer(address from,address to,uint256 amount,bool approved,bytes32 hash)"
-    );
-}
-
-#[test]
-fn test_nested_struct_eip712() {
-    use structs::{Inner, Outer};
-
-    // Verify Inner roundtrip
-    let inner = Inner {
-        value: U256::random(),
-    };
-    let encoded = inner.abi_encode();
-    let decoded = Inner::abi_decode(&encoded).unwrap();
-    assert_eq!(inner, decoded);
-
-    // Verify Outer roundtrip with nested struct
-    let outer = Outer {
-        inner,
-        extra: Address::random(),
-    };
-    let outer_encoded = outer.abi_encode();
-    let outer_decoded = Outer::abi_decode(&outer_encoded).unwrap();
-    assert_eq!(outer, outer_decoded);
-
-    // Verify EIP-712 signatures
-    assert_eq!(Inner::eip712_root_type().as_ref(), "Inner(uint256 value)");
-    assert_eq!(
-        Outer::eip712_root_type().as_ref(),
-        "Outer(Inner inner,address extra)"
-    );
-
-    // Verify components include dependency
-    let components = Outer::eip712_components();
-    assert!(components.iter().any(|c| c.as_ref().starts_with("Inner(")));
 }
 
 #[solidity]

@@ -625,4 +625,185 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_eip712_components_alphabetical_order() -> syn::Result<()> {
+        // EIP-712 requires components to be sorted alphabetically
+        // Test with structs named Z, A, M where M depends on both
+        let mut module = empty_module();
+        module.structs.push(make_struct(
+            "Z",
+            vec![make_field("value", parse_quote!(U256))],
+        ));
+        module.structs.push(make_struct(
+            "A",
+            vec![make_field("value", parse_quote!(U256))],
+        ));
+        module.structs.push(make_struct(
+            "M",
+            vec![
+                make_field("z", parse_quote!(Z)),
+                make_field("a", parse_quote!(A)),
+            ],
+        ));
+        let registry = TypeRegistry::from_module(&module)?;
+
+        // Dependencies should be alphabetically sorted: A, Z (not Z, A)
+        let deps = registry.get_transitive_dependencies("M");
+        assert_eq!(deps, vec!["A", "Z"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_eip712_diamond_dependency_dedup() -> syn::Result<()> {
+        // Diamond: D depends on B and C, both depend on A
+        // A should appear only once in D's dependencies
+        let mut module = empty_module();
+        module.structs.push(make_struct(
+            "A",
+            vec![make_field("value", parse_quote!(U256))],
+        ));
+        module.structs.push(make_struct(
+            "B",
+            vec![
+                make_field("a", parse_quote!(A)),
+                make_field("b_field", parse_quote!(bool)),
+            ],
+        ));
+        module.structs.push(make_struct(
+            "C",
+            vec![
+                make_field("a", parse_quote!(A)),
+                make_field("c_field", parse_quote!(Address)),
+            ],
+        ));
+        module.structs.push(make_struct(
+            "D",
+            vec![
+                make_field("b", parse_quote!(B)),
+                make_field("c", parse_quote!(C)),
+            ],
+        ));
+        let registry = TypeRegistry::from_module(&module)?;
+
+        let deps = registry.get_transitive_dependencies("D");
+
+        // Should have A, B, C (not A, A, B, C)
+        assert_eq!(deps.len(), 3);
+        assert!(deps.contains(&"A".to_string()));
+        assert!(deps.contains(&"B".to_string()));
+        assert!(deps.contains(&"C".to_string()));
+
+        // Verify alphabetical order
+        assert_eq!(deps, vec!["A", "B", "C"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_eip712_duplicate_field_type_dedup() -> syn::Result<()> {
+        // Line has two Point fields - Point should only appear once in dependencies
+        let mut module = empty_module();
+        module.structs.push(make_struct(
+            "Point",
+            vec![
+                make_field("x", parse_quote!(U256)),
+                make_field("y", parse_quote!(U256)),
+            ],
+        ));
+        module.structs.push(make_struct(
+            "Line",
+            vec![
+                make_field("start", parse_quote!(Point)),
+                make_field("end", parse_quote!(Point)),
+            ],
+        ));
+        let registry = TypeRegistry::from_module(&module)?;
+
+        let deps = registry.get_transitive_dependencies("Line");
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0], "Point");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_eip712_deep_nesting_order() -> syn::Result<()> {
+        // Level3 -> Level2 -> Level1
+        // All transitive deps should be included and sorted
+        let mut module = empty_module();
+        module.structs.push(make_struct(
+            "Level1",
+            vec![make_field("value", parse_quote!(U256))],
+        ));
+        module.structs.push(make_struct(
+            "Level2",
+            vec![make_field("level1", parse_quote!(Level1))],
+        ));
+        module.structs.push(make_struct(
+            "Level3",
+            vec![
+                make_field("level2", parse_quote!(Level2)),
+                make_field("extra", parse_quote!(bool)),
+            ],
+        ));
+        let registry = TypeRegistry::from_module(&module)?;
+
+        assert!(registry.get_transitive_dependencies("Level1").is_empty());
+        assert_eq!(
+            registry.get_transitive_dependencies("Level2"),
+            vec!["Level1"]
+        );
+        // Level3 depends on Level2 which depends on Level1 - both included, sorted
+        assert_eq!(
+            registry.get_transitive_dependencies("Level3"),
+            vec!["Level1", "Level2"]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_eip712_array_of_structs_dependency() -> syn::Result<()> {
+        // Container has Vec<Item> - Item should be a dependency
+        let mut module = empty_module();
+        module.structs.push(make_struct(
+            "Item",
+            vec![make_field("id", parse_quote!(U256))],
+        ));
+        module.structs.push(make_struct(
+            "Container",
+            vec![make_field("items", parse_quote!(Vec<Item>))],
+        ));
+        let registry = TypeRegistry::from_module(&module)?;
+
+        let deps = registry.get_transitive_dependencies("Container");
+        assert_eq!(deps, vec!["Item"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_eip712_unit_enum_not_in_dependencies() -> syn::Result<()> {
+        // Unit enums are primitives (uint8), not struct dependencies
+        let mut module = empty_module();
+        module
+            .unit_enums
+            .push(make_unit_enum("Status", vec!["Active", "Inactive"]));
+        module.structs.push(make_struct(
+            "Order",
+            vec![
+                make_field("id", parse_quote!(U256)),
+                make_field("status", parse_quote!(Status)),
+            ],
+        ));
+        let registry = TypeRegistry::from_module(&module)?;
+
+        // Status is a unit enum, not a struct - should not appear in dependencies
+        let deps = registry.get_transitive_dependencies("Order");
+        assert!(deps.is_empty());
+
+        Ok(())
+    }
 }

@@ -25,11 +25,11 @@ pub(super) fn generate_struct(
 
     let eip712_signature = build_eip712_signature(struct_name, def)?;
 
-    let components_impl = registry.generate_eip712_components(struct_name);
     let has_deps = !registry
         .get_transitive_dependencies(&struct_name.to_string())
         .is_empty();
 
+    // encode_type_impl: `None` lets alloy infer from `components_impl`
     let sol_struct_impl = SolStructData {
         field_names,
         rust_types,
@@ -37,7 +37,7 @@ pub(super) fn generate_struct(
         eip712: Eip712Options {
             signature: eip712_signature,
             components_impl: if has_deps {
-                Some(components_impl)
+                Some(registry.generate_eip712_components(struct_name))
             } else {
                 None
             },
