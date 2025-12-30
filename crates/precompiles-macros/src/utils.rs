@@ -121,11 +121,8 @@ fn extract_generic_type_arg(type_path: &TypePath) -> Option<&Type> {
 /// Extract size N from `FixedBytes<N>` type path.
 fn extract_fixed_bytes_size(type_path: &TypePath) -> Option<usize> {
     let seg = type_path.path.segments.last()?;
-    if seg.ident != "FixedBytes" {
-        return None;
-    }
-
-    if let PathArguments::AngleBracketed(args) = &seg.arguments
+    if seg.ident == "FixedBytes"
+        && let PathArguments::AngleBracketed(args) = &seg.arguments
         && let Some(GenericArgument::Const(expr)) = args.args.first()
         && let syn::Expr::Lit(syn::ExprLit {
             lit: syn::Lit::Int(int),
@@ -134,7 +131,8 @@ fn extract_fixed_bytes_size(type_path: &TypePath) -> Option<usize> {
     {
         return int.base10_parse().ok();
     }
-    Some(32) // default
+
+    None
 }
 
 /// Extract array length from a syn::Expr (for [T; N] arrays)
