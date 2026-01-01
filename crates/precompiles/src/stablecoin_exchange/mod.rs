@@ -2274,6 +2274,79 @@ mod tests {
         })
     }
 
+    /// Test that exactOut for full escrow from a bid order fully fills the order.
+    /// This tests the case where ceil(floor(x) * inverse) < x due to rounding.
+    /// At tick = -2000 (price = 0.98), with base = 51:
+    /// - escrow = ceil(51 * 0.98) = 50
+    /// - If taker asks for exactOut of 49 (floor), baseNeeded = ceil(49 / 0.98) = 50
+    /// - Without +1 fix: only 50 base consumed, order has 1 remaining
+    /// - With +1 fix: 51 base consumed, order fully filled
+    #[test]
+    fn test_bid_exactout_full_escrow_fully_fills_order() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        StorageCtx::enter(&mut storage, || {
+            let mut exchange = StablecoinExchange::new();
+            exchange.initialize()?;
+
+            let alice = Address::random();
+            let bob = Address::random();
+            let admin = Address::random();
+
+            // Specific values that trigger the rounding issue
+            // base = 100_000_051, tick = -2000 (price = 0.98)
+            // 100_000_051 * 0.98 = 98_000_049.98
+            // escrow = ceil(98_000_049.98) = 98_000_050
+            // release = floor(98_000_049.98) = 98_000_049
+            // baseNeeded = ceil(98_000_049 / 0.98) = ceil(99_999_999.98) = 100_000_000
+            // So baseNeeded (100_000_000) < base (100_000_051) - the bug!
+            let base_amount = 100_000_051u128;
+            let tick = -2000i16; // price = 98000, p = 0.98
+
+            let price = orderbook::tick_to_price(tick) as u128;
+            let escrow = (base_amount * price).div_ceil(orderbook::PRICE_SCALE as u128);
+            let release = (base_amount * price) / orderbook::PRICE_SCALE as u128;
+
+            // Verify our math
+            assert_eq!(escrow, 98_000_050, "Escrow should be 98_000_050");
+            assert_eq!(release, 98_000_049, "Release should be 98_000_049");
+
+            let (base_token, quote_token) =
+                setup_test_tokens(admin, alice, exchange.address, escrow * 2)?;
+            exchange.create_pair(base_token)?;
+
+            // Alice places a bid for 51 base, escrowing 50 quote
+            let order_id = exchange.place(alice, base_token, base_amount, true, tick)?;
+
+            // Bob has enough base to sell
+            exchange.set_balance(bob, base_token, base_amount * 2)?;
+
+            // Bob does exactOut for the full release amount (98_000_049 quote)
+            let base_in = exchange.swap_exact_amount_out(
+                bob,
+                base_token,
+                quote_token,
+                release, // 98_000_049 quote
+                u128::MAX,
+            )?;
+
+            // CRITICAL: The order should be fully filled (all 51 base consumed)
+            // Without the +1 fix, base_in would be 50, leaving 1 base in the order
+            assert_eq!(
+                base_in, base_amount,
+                "Order should be fully filled when taker takes all available quote. Got {base_in}, expected {base_amount}"
+            );
+
+            // Verify order is removed from the book
+            let order_result = exchange.get_order(order_id);
+            assert!(
+                order_result.is_err(),
+                "Order should be removed after full fill"
+            );
+
+            Ok(())
+        })
+    }
+
     #[test]
     fn test_flip_order_execution() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
