@@ -471,7 +471,7 @@ impl<'b> BookIterator<'b> {
             order: None,
             starting_order,
             orderbook,
-            handler: StablecoinExchange::new().books.at(book_key),
+            handler: StablecoinExchange::new().books[book_key].clone(),
             storage: StorageCtx::default(),
         }
     }
@@ -496,15 +496,15 @@ impl<'b> BookIterator<'b> {
     /// Get a TickLevel from a tick
     pub fn get_price_level(&self, tick: i16) -> Result<TickLevel, DexApiError> {
         self.handler
-            .get_tick_level_handler(tick, self.bids)
+            .tick_level_handler(tick, self.bids)
             .read()
             .map_err(DexApiError::Precompile)
     }
 
     /// Get the next initialized tick after the given tick
-    /// Returns None if there are no more ticks
+    /// Returns None if there are no more ticks or on error
     pub fn get_next_tick(&mut self, tick: i16) -> Option<i16> {
-        let (next_tick, more_ticks) = self.handler.next_initialized_tick(tick, self.bids);
+        let (next_tick, more_ticks) = self.handler.next_initialized_tick(tick, self.bids).ok()?;
 
         if more_ticks { Some(next_tick) } else { None }
     }

@@ -2,7 +2,7 @@
 
 use std::{cmp::Ordering, fmt::Debug};
 
-use alloy_primitives::{Address, B256, U256, b256};
+use alloy_primitives::{Address, U256};
 use reth_evm::EvmError;
 use revm::{
     Database,
@@ -27,11 +27,9 @@ use revm::{
         interpreter::EthInterpreter,
     },
     primitives::eip7702,
-    state::Bytecode,
 };
-use tempo_contracts::{
-    DEFAULT_7702_DELEGATE_ADDRESS,
-    precompiles::{IAccountKeychain::SignatureType as PrecompileSignatureType, TIPFeeAMMError},
+use tempo_contracts::precompiles::{
+    IAccountKeychain::SignatureType as PrecompileSignatureType, TIPFeeAMMError,
 };
 use tempo_precompiles::{
     account_keychain::{AccountKeychain, TokenLimit, authorizeKeyCall},
@@ -39,10 +37,10 @@ use tempo_precompiles::{
     nonce::{INonce::getNonceCall, NonceManager},
     storage::StorageCtx,
     tip_fee_manager::TipFeeManager,
-    tip20::{self, ITIP20::InsufficientBalance, TIP20Error, TIP20Token},
+    tip20::{ITIP20::InsufficientBalance, TIP20Error, TIP20Token},
 };
 use tempo_primitives::transaction::{
-    PrimitiveSignature, SignatureType, TempoSignature, calc_gas_balance_spending,
+    PrimitiveSignature, SignatureType, TempoSignature, calc_gas_balance_spending, validate_calls,
 };
 
 use crate::{
@@ -74,10 +72,6 @@ const EXISTING_NONCE_KEY_GAS: u64 = COLD_SLOAD_COST + WARM_SSTORE_RESET;
 /// Gas cost for using a new 2D nonce key (cold SLOAD + SSTORE set for 0 -> non-zero)
 const NEW_NONCE_KEY_GAS: u64 = COLD_SLOAD_COST + SSTORE_SET;
 
-/// Hashed account code of default 7702 delegate deployment
-const DEFAULT_7702_DELEGATE_CODE_HASH: B256 =
-    b256!("e7b3e4597bdbdd0cc4eb42f9b799b580f23068f54e472bb802cb71efb1570482");
-
 /// Calculates the gas cost for verifying a primitive signature.
 ///
 /// Returns the additional gas required beyond the base transaction cost:
@@ -99,24 +93,14 @@ fn primitive_signature_verification_gas(signature: &PrimitiveSignature) -> u64 {
 /// Calculates the gas cost for verifying an AA signature.
 ///
 /// For Keychain signatures, adds key validation overhead to the inner signature cost
-/// (only post-AllegroModerato hardfork).
 /// Returns the additional gas required beyond the base transaction cost.
 #[inline]
-fn tempo_signature_verification_gas(
-    signature: &TempoSignature,
-    spec: tempo_chainspec::hardfork::TempoHardfork,
-) -> u64 {
+fn tempo_signature_verification_gas(signature: &TempoSignature) -> u64 {
     match signature {
         TempoSignature::Primitive(prim_sig) => primitive_signature_verification_gas(prim_sig),
         TempoSignature::Keychain(keychain_sig) => {
             // Keychain = inner signature + key validation overhead (SLOAD + processing)
-            // Post-AllegroModerato: add KEYCHAIN_VALIDATION_GAS for key validation
-            let base_gas = primitive_signature_verification_gas(&keychain_sig.signature);
-            if spec.is_allegro_moderato() {
-                base_gas + KEYCHAIN_VALIDATION_GAS
-            } else {
-                base_gas
-            }
+            primitive_signature_verification_gas(&keychain_sig.signature) + KEYCHAIN_VALIDATION_GAS
         }
     }
 }
@@ -148,7 +132,7 @@ fn calculate_key_authorization_gas(
 
 /// Calculates the gas cost for 2D nonce usage.
 ///
-/// Gas schedule (post-AllegroModerato):
+/// Gas schedule:
 /// - Protocol nonce (key 0): 0 gas (no additional cost)
 /// - Existing user key (nonce > 0): 5,000 gas (cold SLOAD + warm SSTORE reset)
 /// - New user key (nonce == 0): 22,100 gas (cold SLOAD + SSTORE set)
@@ -212,14 +196,14 @@ impl<DB: alloy_evm::Database, I> TempoEvmHandler<DB, I> {
         self.fee_payer = ctx.tx.fee_payer()?;
         self.fee_token = ctx
             .journaled_state
-            .get_fee_token(&ctx.tx, ctx.block.beneficiary, self.fee_payer, ctx.cfg.spec)
+            .get_fee_token(&ctx.tx, self.fee_payer, ctx.cfg.spec)
             .map_err(|err| EVMError::Custom(err.to_string()))?;
 
         // Skip fee token validity check for cases when the transaction is free and is not a part of a subblock.
         if (!ctx.tx.max_balance_spending()?.is_zero() || ctx.tx.is_subblock_transaction())
             && !ctx
                 .journaled_state
-                .is_valid_fee_token(self.fee_token, ctx.cfg.spec)
+                .is_valid_fee_token(ctx.cfg.spec, self.fee_token)
                 .map_err(|err| EVMError::Custom(err.to_string()))?
         {
             return Err(TempoInvalidTransaction::InvalidFeeToken(self.fee_token).into());
@@ -348,6 +332,32 @@ where
             if !instruction_result.is_ok() {
                 // Revert checkpoint - rolls back ALL state changes from ALL calls
                 evm.ctx().journal_mut().checkpoint_revert(checkpoint);
+
+                // For AA transactions with CREATE as the first call, the nonce was bumped by
+                // make_create_frame during execution. Since checkpoint_revert rolled that back,
+                // we need to manually bump the nonce here to ensure it persists even on failure.
+                //
+                // However, this only applies when using the protocol nonce (nonce_key == 0).
+                // When using 2D nonces (nonce_key != 0), replay protection is handled by the
+                // NonceManager, and the protocol nonce is only used for CREATE address derivation.
+                // Since the CREATE reverted, no contract was deployed, so the address wasn't
+                // "claimed" and we don't need to burn the protocol nonce.
+                let uses_protocol_nonce = evm
+                    .ctx()
+                    .tx()
+                    .tempo_tx_env
+                    .as_ref()
+                    .map(|aa| aa.nonce_key.is_zero())
+                    .unwrap_or(true);
+
+                if uses_protocol_nonce && calls.first().map(|c| c.to.is_create()).unwrap_or(false) {
+                    let caller = evm.ctx().tx().caller();
+                    if let Ok(mut caller_acc) =
+                        evm.ctx().journal_mut().load_account_with_code_mut(caller)
+                    {
+                        caller_acc.data.bump_nonce();
+                    }
+                }
 
                 // Include gas from all previous successful calls + failed call
                 let gas_used_by_failed_call = frame_result.gas().used();
@@ -624,13 +634,6 @@ where
         // Load caller's account
         let mut caller_account = journal.load_account_with_code_mut(tx.caller())?.data;
 
-        if caller_account.info.has_no_code_and_nonce() {
-            caller_account.set_code(
-                DEFAULT_7702_DELEGATE_CODE_HASH,
-                Bytecode::new_eip7702(DEFAULT_7702_DELEGATE_ADDRESS),
-            );
-        }
-
         let nonce_key = tx
             .tempo_tx_env
             .as_ref()
@@ -655,19 +658,13 @@ where
             nonce_2d_gas = StorageCtx::enter_evm(journal, block, cfg, || {
                 let mut nonce_manager = NonceManager::new();
 
-                // Calculate 2D nonce gas (only post-AllegroModerato)
-                let gas = if cfg.spec.is_allegro_moderato() {
-                    calculate_2d_nonce_gas(&nonce_manager, tx.caller(), nonce_key).map_err(
-                        |err| match err {
-                            TempoPrecompileError::Fatal(err) => EVMError::Custom(err),
-                            err => {
-                                TempoInvalidTransaction::NonceManagerError(err.to_string()).into()
-                            }
-                        },
-                    )?
-                } else {
-                    0
-                };
+                // Calculate 2D nonce gas
+                let gas = calculate_2d_nonce_gas(&nonce_manager, tx.caller(), nonce_key).map_err(
+                    |err| match err {
+                        TempoPrecompileError::Fatal(err) => EVMError::Custom(err),
+                        err => TempoInvalidTransaction::NonceManagerError(err.to_string()).into(),
+                    },
+                )?;
 
                 if !cfg.is_nonce_check_disabled() {
                     let tx_nonce = tx.nonce();
@@ -719,9 +716,9 @@ where
         } else {
             nonce_2d_gas = 0;
             // Bump the nonce for calls. Nonce for CREATE will be bumped in `make_create_frame`.
-            //
-            // Always bump nonce for AA transactions.
-            if tx.tempo_tx_env.is_some() || tx.kind().is_call() {
+            // This applies uniformly to both standard and AA transactions - we only bump here
+            // for CALLs, letting make_create_frame handle the nonce for CREATE operations.
+            if tx.kind().is_call() {
                 caller_account.bump_nonce();
             }
         }
@@ -1064,10 +1061,7 @@ where
         _evm: &mut Self::Evm,
         _exec_result: &mut <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
     ) -> Result<(), Self::Error> {
-        // Pre-AllegroModerato: fee handling (refunds and queuing) done in reimburse_caller via collectFeePostTx.
-        // The actual swap and transfer to validator happens in executeBlock at the end of block processing.
-        //
-        // Post-AllegroModerato: fees are collected and swapped immediately in collectFeePreTx.
+        // Fee handling (refunds and swaps) are done in `reimburse_caller()` via `collectFeePostTx`.
         // Validators call distributeFees() to claim their accumulated fees.
         Ok(())
     }
@@ -1094,32 +1088,22 @@ where
         let tx = evm.ctx_ref().tx();
 
         if let Some(aa_env) = tx.tempo_tx_env.as_ref() {
+            // Validate AA transaction structure (calls list, CREATE rules)
+            validate_calls(
+                &aa_env.aa_calls,
+                !aa_env.tempo_authorization_list.is_empty(),
+            )
+            .map_err(TempoInvalidTransaction::from)?;
+
             let has_keychain_fields =
                 aa_env.key_authorization.is_some() || aa_env.signature.is_keychain();
 
-            // Validate that keychain operations are only supported after Allegretto
-            if has_keychain_fields && !cfg.spec.is_allegretto() {
-                return Err(TempoInvalidTransaction::KeychainOpBeforeAllegretto.into());
-            }
-
-            if aa_env.subblock_transaction {
-                if !cfg.spec.is_allegretto() {
-                    if tx.max_fee_per_gas() > 0 {
-                        return Err(
-                            TempoInvalidTransaction::SubblockTransactionMustHaveZeroFee.into()
-                        );
-                    }
-                } else if has_keychain_fields {
-                    return Err(TempoInvalidTransaction::KeychainOpInSubblockTransaction.into());
-                }
+            if aa_env.subblock_transaction && has_keychain_fields {
+                return Err(TempoInvalidTransaction::KeychainOpInSubblockTransaction.into());
             }
 
             // Validate priority fee for AA transactions using revm's validate_priority_fee_tx
-            //
-            // Skip basefee check for subblock transactions pre-Allegretto as they must always be free.
-            let base_fee = if cfg.is_base_fee_check_disabled()
-                || (aa_env.subblock_transaction && !cfg.spec.is_allegretto())
-            {
+            let base_fee = if cfg.is_base_fee_check_disabled() {
                 None
             } else {
                 Some(evm.ctx_ref().block().basefee() as u128)
@@ -1172,7 +1156,6 @@ where
     ) -> Result<ExecutionResult<Self::HaltReason>, Self::Error> {
         // For subblock transactions that failed `collectFeePreTx` call we catch error and treat such transactions as valid.
         if evm.ctx.tx.is_subblock_transaction()
-            && evm.cfg.spec.is_allegretto()
             && let Some(
                 TempoInvalidTransaction::CollectFeePreTx(_)
                 | TempoInvalidTransaction::EthInvalidTransaction(
@@ -1212,12 +1195,11 @@ where
 ///   - Initcode analysis gas (2 per 32-byte chunk, Shanghai+)
 /// - Check that value transfer is zero.
 /// - Access list costs (shared across batch)
-/// - Key authorization costs (if present, post-AllegroModerato): 30k/32k base + 22k per spending limit
+/// - Key authorization costs (if present): 30k/32k base + 22k per spending limit
 /// - Floor gas calculation (EIP-7623, Prague+)
-fn calculate_aa_batch_intrinsic_gas<'a>(
+pub fn calculate_aa_batch_intrinsic_gas<'a>(
     aa_env: &TempoBatchCallEnv,
     access_list: Option<impl Iterator<Item = &'a AccessListItem>>,
-    spec: tempo_chainspec::hardfork::TempoHardfork,
 ) -> Result<InitialAndFloorGas, TempoInvalidTransaction> {
     let calls = &aa_env.aa_calls;
     let signature = &aa_env.signature;
@@ -1229,23 +1211,20 @@ fn calculate_aa_batch_intrinsic_gas<'a>(
     gas.initial_gas += 21_000;
 
     // 2. Signature verification gas
-    gas.initial_gas += tempo_signature_verification_gas(signature, spec);
+    gas.initial_gas += tempo_signature_verification_gas(signature);
 
-    // 3. Per-call overhead: cold account access
-    // if the `to` address has not appeared in the call batch before.
-    gas.initial_gas += COLD_ACCOUNT_ACCESS_COST * calls.len() as u64;
+    // 3. Per-call overhead: cold account access for additional calls beyond the first.
+    gas.initial_gas += COLD_ACCOUNT_ACCESS_COST * calls.len().saturating_sub(1) as u64;
 
     // 4. Authorization list costs (EIP-7702)
     gas.initial_gas += authorization_list.len() as u64 * eip7702::PER_EMPTY_ACCOUNT_COST;
     // Add signature verification costs for each authorization
     for auth in authorization_list {
-        gas.initial_gas += tempo_signature_verification_gas(auth.signature(), spec);
+        gas.initial_gas += tempo_signature_verification_gas(auth.signature());
     }
 
-    // 5. Key authorization costs (if present, post-AllegroModerato)
-    if spec.is_allegro_moderato()
-        && let Some(key_auth) = key_authorization
-    {
+    // 5. Key authorization costs (if present)
+    if let Some(key_auth) = key_authorization {
         gas.initial_gas += calculate_key_authorization_gas(key_auth);
     }
 
@@ -1335,8 +1314,7 @@ where
     }
 
     // Calculate batch intrinsic gas using helper
-    let spec = evm.ctx_ref().cfg().spec();
-    let mut batch_gas = calculate_aa_batch_intrinsic_gas(aa_env, tx.access_list(), spec)?;
+    let mut batch_gas = calculate_aa_batch_intrinsic_gas(aa_env, tx.access_list())?;
 
     if evm.ctx.cfg.is_eip7623_disabled() {
         batch_gas.floor_gas = 0u64;
@@ -1372,11 +1350,12 @@ pub fn get_token_balance<JOURNAL>(
 where
     JOURNAL: JournalTr,
 {
-    // Address has already been validated
-    let token_id = tip20::address_to_token_id_unchecked(token);
-
+    // Address has already been validated as having TIP20 prefix
     journal.load_account(token)?;
-    let balance_slot = TIP20Token::new(token_id).balances.at(sender).slot();
+    let balance_slot = TIP20Token::from_address(token)
+        .expect("TIP20 prefix already validated")
+        .balances[sender]
+        .slot();
     let balance = journal.sload(token, balance_slot)?.data;
 
     Ok(balance)
@@ -1471,18 +1450,18 @@ pub fn validate_time_window(
 mod tests {
     use super::*;
     use crate::{TempoBlockEnv, TempoTxEnv};
-    use alloy_primitives::{Address, U256};
+    use alloy_primitives::{Address, B256, U256};
     use revm::{
         Context, Journal, MainContext,
         context::CfgEnv,
         database::{CacheDB, EmptyDB},
         interpreter::instructions::utility::IntoU256,
         primitives::hardfork::SpecId,
-        state::Account,
     };
     use std::convert::Infallible;
     use tempo_chainspec::hardfork::TempoHardfork;
-    use tempo_precompiles::{DEFAULT_FEE_TOKEN_POST_ALLEGRETTO, TIP_FEE_MANAGER_ADDRESS};
+    use tempo_contracts::precompiles::DEFAULT_FEE_TOKEN;
+    use tempo_precompiles::{PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS};
 
     fn create_test_journal() -> Journal<CacheDB<EmptyDB>> {
         let db = CacheDB::new(EmptyDB::default());
@@ -1492,13 +1471,13 @@ mod tests {
     #[test]
     fn test_get_token_balance() -> eyre::Result<()> {
         let mut journal = create_test_journal();
-        let token = Address::random();
+        // Use PATH_USD_ADDRESS which has the TIP20 prefix
+        let token = PATH_USD_ADDRESS;
         let account = Address::random();
         let expected_balance = U256::random();
 
         // Set up initial balance
-        let token_id = tip20::address_to_token_id_unchecked(token);
-        let balance_slot = TIP20Token::new(token_id).balances.at(account).slot();
+        let balance_slot = TIP20Token::from_address(token)?.balances[account].slot();
         journal.load_account(token)?;
         journal
             .sstore(token, balance_slot, expected_balance)
@@ -1528,7 +1507,7 @@ mod tests {
         let tx_fee_token = Address::random();
 
         // Set validator token
-        let validator_slot = TipFeeManager::new().validator_tokens.at(validator).slot();
+        let validator_slot = TipFeeManager::new().validator_tokens[validator].slot();
         ctx.journaled_state.load_account(TIP_FEE_MANAGER_ADDRESS)?;
         ctx.journaled_state
             .sstore(
@@ -1539,14 +1518,14 @@ mod tests {
             .unwrap();
 
         {
-            let fee_token =
-                ctx.journaled_state
-                    .get_fee_token(&ctx.tx, validator, user, ctx.cfg.spec)?;
-            assert_eq!(DEFAULT_FEE_TOKEN_POST_ALLEGRETTO, fee_token);
+            let fee_token = ctx
+                .journaled_state
+                .get_fee_token(&ctx.tx, user, ctx.cfg.spec)?;
+            assert_eq!(DEFAULT_FEE_TOKEN, fee_token);
         }
 
         // Set user token
-        let user_slot = TipFeeManager::new().user_tokens.at(user).slot();
+        let user_slot = TipFeeManager::new().user_tokens[user].slot();
         ctx.journaled_state
             .sstore(
                 TIP_FEE_MANAGER_ADDRESS,
@@ -1556,29 +1535,20 @@ mod tests {
             .unwrap();
 
         {
-            let fee_token =
-                ctx.journaled_state
-                    .get_fee_token(&ctx.tx, validator, user, ctx.cfg.spec)?;
+            let fee_token = ctx
+                .journaled_state
+                .get_fee_token(&ctx.tx, user, ctx.cfg.spec)?;
             assert_eq!(user_fee_token, fee_token);
         }
 
         // Set tx fee token
         ctx.tx.fee_token = Some(tx_fee_token);
-        let fee_token =
-            ctx.journaled_state
-                .get_fee_token(&ctx.tx, validator, user, ctx.cfg.spec)?;
+        let fee_token = ctx
+            .journaled_state
+            .get_fee_token(&ctx.tx, user, ctx.cfg.spec)?;
         assert_eq!(tx_fee_token, fee_token);
 
         Ok(())
-    }
-
-    #[test]
-    fn test_delegate_code_hash() {
-        let mut account = Account::default();
-        account
-            .info
-            .set_code(Bytecode::new_eip7702(DEFAULT_7702_DELEGATE_ADDRESS));
-        assert_eq!(account.info.code_hash, DEFAULT_7702_DELEGATE_CODE_HASH);
     }
 
     #[test]
@@ -1614,7 +1584,6 @@ mod tests {
         let aa_gas = calculate_aa_batch_intrinsic_gas(
             &aa_env,
             None::<std::iter::Empty<&AccessListItem>>, // no access list
-            spec,
         )
         .unwrap();
 
@@ -1628,11 +1597,10 @@ mod tests {
             0,     // no authorization list
         );
 
-        // AA should be: normal tx + per-call overhead (COLD_ACCOUNT_ACCESS_COST)
-        let expected_initial = normal_tx_gas.initial_gas + COLD_ACCOUNT_ACCESS_COST;
+        // AA with secp256k1 + single call should match normal tx exactly
         assert_eq!(
-            aa_gas.initial_gas, expected_initial,
-            "AA secp256k1 single call should match normal tx + per-call overhead"
+            aa_gas.initial_gas, normal_tx_gas.initial_gas,
+            "AA secp256k1 single call should match normal tx exactly"
         );
     }
 
@@ -1674,24 +1642,21 @@ mod tests {
         };
 
         let spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let gas = calculate_aa_batch_intrinsic_gas(
-            &aa_env,
-            None::<std::iter::Empty<&AccessListItem>>,
-            spec,
-        )
-        .unwrap();
+        let gas =
+            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
+                .unwrap();
 
         // Calculate base gas for a single normal tx
         let base_tx_gas = calculate_initial_tx_gas(spec.into(), &calldata, false, 0, 0, 0);
 
-        // For 3 calls: base (21k) + 3*calldata + 3*per-call overhead
-        // = 21k + 2*(calldata cost) + 3*COLD_ACCOUNT_ACCESS_COST
+        // For 3 calls: base (21k) + 3*calldata + 2*per-call overhead (calls 2 and 3)
+        // = 21k + 2*(calldata cost) + 2*COLD_ACCOUNT_ACCESS_COST
         let expected = base_tx_gas.initial_gas
             + 2 * (calldata.len() as u64 * 16)
-            + 3 * COLD_ACCOUNT_ACCESS_COST;
+            + 2 * COLD_ACCOUNT_ACCESS_COST;
         assert_eq!(
             gas.initial_gas, expected,
-            "Should charge per-call overhead for each call"
+            "Should charge per-call overhead for calls beyond the first"
         );
     }
 
@@ -1729,19 +1694,15 @@ mod tests {
             ..Default::default()
         };
 
-        let tempo_spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let gas = calculate_aa_batch_intrinsic_gas(
-            &aa_env,
-            None::<std::iter::Empty<&AccessListItem>>,
-            tempo_spec,
-        )
-        .unwrap();
+        let gas =
+            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
+                .unwrap();
 
         // Calculate base gas for normal tx
         let base_gas = calculate_initial_tx_gas(spec, &calldata, false, 0, 0, 0);
 
-        // Expected: normal tx + P256_VERIFY_GAS + per-call overhead
-        let expected = base_gas.initial_gas + P256_VERIFY_GAS + COLD_ACCOUNT_ACCESS_COST;
+        // Expected: normal tx + P256_VERIFY_GAS
+        let expected = base_gas.initial_gas + P256_VERIFY_GAS;
         assert_eq!(
             gas.initial_gas, expected,
             "Should include P256 verification gas"
@@ -1774,13 +1735,9 @@ mod tests {
             ..Default::default()
         };
 
-        let tempo_spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let gas = calculate_aa_batch_intrinsic_gas(
-            &aa_env,
-            None::<std::iter::Empty<&AccessListItem>>,
-            tempo_spec,
-        )
-        .unwrap();
+        let gas =
+            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
+                .unwrap();
 
         // Calculate expected using revm's function for CREATE tx
         let base_gas = calculate_initial_tx_gas(
@@ -1788,9 +1745,11 @@ mod tests {
             0, 0, 0,
         );
 
-        // AA CREATE should be: normal CREATE + per-call overhead
-        let expected = base_gas.initial_gas + COLD_ACCOUNT_ACCESS_COST;
-        assert_eq!(gas.initial_gas, expected, "Should include CREATE costs");
+        // AA CREATE should match normal CREATE exactly
+        assert_eq!(
+            gas.initial_gas, base_gas.initial_gas,
+            "Should include CREATE costs"
+        );
     }
 
     #[test]
@@ -1817,12 +1776,8 @@ mod tests {
             ..Default::default()
         };
 
-        let spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let res = calculate_aa_batch_intrinsic_gas(
-            &aa_env,
-            None::<std::iter::Empty<&AccessListItem>>,
-            spec,
-        );
+        let res =
+            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>);
 
         assert_eq!(
             res.unwrap_err(),
@@ -1857,22 +1812,17 @@ mod tests {
         };
 
         // Test without access list
-        let tempo_spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let gas = calculate_aa_batch_intrinsic_gas(
-            &aa_env,
-            None::<std::iter::Empty<&AccessListItem>>,
-            tempo_spec,
-        )
-        .unwrap();
+        let gas =
+            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
+                .unwrap();
 
         // Calculate expected using revm's function
         let base_gas = calculate_initial_tx_gas(spec, &calldata, false, 0, 0, 0);
 
-        // Expected: normal tx + per-call overhead (no access list in this test)
-        let expected = base_gas.initial_gas + COLD_ACCOUNT_ACCESS_COST;
+        // Expected: normal tx
         assert_eq!(
-            gas.initial_gas, expected,
-            "Should match normal tx + per-call overhead"
+            gas.initial_gas, base_gas.initial_gas,
+            "Should match normal tx exactly"
         );
     }
 
@@ -1962,13 +1912,9 @@ mod tests {
             ..Default::default()
         };
 
-        let tempo_spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let gas = calculate_aa_batch_intrinsic_gas(
-            &aa_env,
-            None::<std::iter::Empty<&AccessListItem>>,
-            tempo_spec,
-        )
-        .unwrap();
+        let gas =
+            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
+                .unwrap();
 
         // Calculate expected floor gas using revm's function
         let base_gas = calculate_initial_tx_gas(spec, &calldata, false, 0, 0, 0);
@@ -2139,14 +2085,10 @@ mod tests {
             ..Default::default()
         };
 
-        // Use AllegroModerato to test the key authorization gas schedule
-        let spec = tempo_chainspec::hardfork::TempoHardfork::AllegroModerato;
-
         // Calculate gas WITH key authorization
         let gas_with_key_auth = calculate_aa_batch_intrinsic_gas(
             &aa_env_with_key_auth,
             None::<std::iter::Empty<&AccessListItem>>,
-            spec,
         )
         .unwrap();
 
@@ -2154,7 +2096,6 @@ mod tests {
         let gas_without_key_auth = calculate_aa_batch_intrinsic_gas(
             &aa_env_without_key_auth,
             None::<std::iter::Empty<&AccessListItem>>,
-            spec,
         )
         .unwrap();
 
@@ -2168,8 +2109,9 @@ mod tests {
         );
 
         // Also verify absolute values
+        let spec = tempo_chainspec::hardfork::TempoHardfork::default();
         let base_tx_gas = calculate_initial_tx_gas(spec.into(), &calldata, false, 0, 0, 0);
-        let expected_without = base_tx_gas.initial_gas + COLD_ACCOUNT_ACCESS_COST;
+        let expected_without = base_tx_gas.initial_gas; // no cold access for single call
         let expected_with = expected_without + expected_key_auth_gas;
 
         assert_eq!(
