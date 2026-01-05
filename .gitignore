@@ -15,7 +15,7 @@ profile.json.gz
 !.envrc
 localnet/**
 
-.claude/
+.claude/settings.local.json
 !docs/.claude/
 
 # Docs
