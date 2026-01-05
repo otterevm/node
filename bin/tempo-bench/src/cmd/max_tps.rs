@@ -151,6 +151,10 @@ pub struct MaxTpsArgs {
     #[arg(long, default_value_t = 100)]
     sample_size: usize,
 
+    /// Timeout in seconds for retrieving transaction receipts.
+    #[arg(long, default_value_t = 30)]
+    receipt_timeout: u64,
+
     /// Fund accounts from the faucet before running the benchmark.
     ///
     /// Calls tempo_fundAddress for each account.
@@ -349,7 +353,7 @@ impl MaxTpsArgs {
             if let Some(first_tx) = pending_txs.pop_front() {
                 debug!(hash = %first_tx.tx_hash(), "Retrieving transaction receipt for first block number");
                 if let Ok(first_tx_receipt) = first_tx
-                    .with_timeout(Some(Duration::from_secs(5)))
+                    .with_timeout(Some(Duration::from_secs(self.receipt_timeout)))
                     .get_receipt()
                     .await
                 {
@@ -377,7 +381,7 @@ impl MaxTpsArgs {
             .map(|pending_tx| {
                 let hash = *pending_tx.tx_hash();
                 pending_tx
-                    .with_timeout(Some(Duration::from_secs(5)))
+                    .with_timeout(Some(Duration::from_secs(self.receipt_timeout)))
                     .get_receipt()
                     .map(move |result| (hash, result))
             })
