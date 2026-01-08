@@ -175,11 +175,18 @@ contract FeeAMMSingleInvariantTest is Test {
             (uint128 ru, uint128 rv) = FEE_AMM.pools(pid);
             uint256 supply = FEE_AMM.totalSupply(pid);
 
+            // If supply is zero, both reserves must be zero.
             if (supply == 0) {
                 assertEq(uint256(ru), 0, "supply=0 => reserveU=0");
                 assertEq(uint256(rv), 0, "supply=0 => reserveV=0");
             } else {
+                // If supply > 0, the pool must have at least MIN_LIQUIDITY locked.
                 assertGe(supply, minLiq, "initialized pool must lock MIN_LIQUIDITY");
+            }
+
+            // If either reserve is nonzero, the pool must be initialized.
+            if (ru != 0 || rv != 0) {
+                assertGt(supply, 0, "reserves>0 => supply>0");
             }
         }
     }
@@ -198,7 +205,7 @@ contract FeeAMMSingleInvariantTest is Test {
             bytes32 pid = poolIds[i];
             uint256 supply = FEE_AMM.totalSupply(pid);
 
-            // If supply is zero, this pool is considered uninitialized by our harness.
+            // If supply is zero, this pool is considered uninitialized.
             if (supply == 0) continue;
 
             uint256 sum = _sumActorLp(pid);
@@ -207,7 +214,6 @@ contract FeeAMMSingleInvariantTest is Test {
             assertEq(supply, sum + minLiq, "supply != sumBalances + MIN_LIQUIDITY");
 
             // Local sanity: no single actor can exceed totalSupply.
-            // (Not strictly needed if above passes, but gives better shrink output.)
             for (uint256 k = 0; k < actors.length; k++) {
                 uint256 bal = FEE_AMM.liquidityBalances(pid, actors[k]);
                 assertLe(bal, supply, "actor LP balance > totalSupply");
@@ -240,7 +246,6 @@ contract FeeAMMSingleInvariantTest is Test {
                 IFeeAMM.Pool memory p = FEE_AMM.getPool(userToken, validatorToken);
 
                 // Reserves are uint128 in storage; assert that decoded values are in-range.
-                // (Catches storage corruption/packing issues.)
                 assertLe(uint256(p.reserveUserToken), type(uint128).max, "reserveUserToken > u128");
                 assertLe(
                     uint256(p.reserveValidatorToken),
@@ -277,6 +282,49 @@ contract FeeAMMSingleInvariantTest is Test {
             }
 
             assertEq(matches, 1, "poolId must match exactly one ordered pair");
+        }
+    }
+
+    /// Invariant 5:
+    /// If a pool is uninitialized (totalSupply == 0), then no actor may hold LP for it.
+    function invariant_no_lp_when_uninitialized() public view {
+        for (uint256 i = 0; i < poolIds.length; i++) {
+            bytes32 pid = poolIds[i];
+            uint256 supply = FEE_AMM.totalSupply(pid);
+            if (supply != 0) continue;
+
+            for (uint256 k = 0; k < actors.length; k++) {
+                uint256 bal = FEE_AMM.liquidityBalances(pid, actors[k]);
+                assertEq(bal, 0, "uninitialized pool => all actor LP = 0");
+            }
+        }
+    }
+
+    /// Invariant 6:
+    /// Per-pool backing: for every tracked pool, the AMM must hold at least the pool's reserves
+    /// of each token.
+    function invariant_each_pool_is_individually_backed() public view {
+        for (uint256 i = 0; i < poolIds.length; i++) {
+            bytes32 pid = poolIds[i];
+
+            // Resolve token pair for this poolId within our token universe.
+            (address userToken, address validatorToken) = _resolvePoolTokens(pid);
+
+            IFeeAMM.Pool memory p = FEE_AMM.getPool(userToken, validatorToken);
+
+            uint256 balU = ITIP20(userToken).balanceOf(address(FEE_AMM));
+            uint256 balV = ITIP20(validatorToken).balanceOf(address(FEE_AMM));
+
+            assertGe(balU, uint256(p.reserveUserToken), "pool user reserve not backed");
+            assertGe(balV, uint256(p.reserveValidatorToken), "pool validator reserve not backed");
+        }
+    }
+
+    /// Invariant 7:
+    /// Basic pool id sanity: tracked poolIds must correspond to a "seen" pool.
+    function invariant_tracked_pool_ids_are_marked_seen() public view {
+        for (uint256 i = 0; i < poolIds.length; i++) {
+            assertTrue(seenPool[poolIds[i]], "poolIds[] must only contain seen pools");
         }
     }
 
@@ -328,6 +376,31 @@ contract FeeAMMSingleInvariantTest is Test {
             seenPool[pid] = true;
             poolIds.push(pid);
         }
+    }
+
+    /// @dev Resolve a poolId to its unique ordered token pair within this test's token universe.
+    function _resolvePoolTokens(bytes32 pid)
+        internal
+        view
+        returns (address userToken, address validatorToken)
+    {
+        bool found;
+
+        for (uint256 a = 0; a < usdTokens.length; a++) {
+            for (uint256 b = 0; b < usdTokens.length; b++) {
+                if (a == b) continue;
+                address u = address(usdTokens[a]);
+                address v = address(usdTokens[b]);
+                if (FEE_AMM.getPoolId(u, v) == pid) {
+                    // invariant_pool_ids_resolve_to_unique_ordered_pair() already enforces uniqueness,
+                    // so we can safely return the first match.
+                    found = true;
+                    return (u, v);
+                }
+            }
+        }
+
+        require(found, "unresolvable poolId");
     }
 
 }
