@@ -159,7 +159,22 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
-                INVARIANT A8: RESERVES BOUNDED BY UINT128
+                INVARIANT A8: UNINITIALIZED POOL CONSISTENCY
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Uninitialized pools (totalSupply == 0) must have zero reserves
+    /// @dev Catches dirty state attacks where reserves are modified without minting LP tokens
+    function invariant_uninitializedPoolConsistency() public view {
+        uint256 ts = amm.totalSupply(poolId);
+        if (ts == 0) {
+            IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
+            assertEq(pool.reserveUserToken, 0, "Uninitialized pool has non-zero user reserve");
+            assertEq(pool.reserveValidatorToken, 0, "Uninitialized pool has non-zero validator reserve");
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                INVARIANT A9: RESERVES BOUNDED BY UINT128
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Pool reserves must always fit in uint128

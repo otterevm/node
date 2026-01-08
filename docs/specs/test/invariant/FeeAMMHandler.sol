@@ -114,10 +114,9 @@ contract FeeAMMHandler is CommonBase, StdCheats, StdUtils {
         address actor = actors[actorSeed % actors.length];
 
         IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
-        if (pool.reserveUserToken == 0) return;
 
-        // Bound to available userToken reserve
-        amountOut = bound(amountOut, 1, pool.reserveUserToken);
+        // Bound to available userToken reserve (allow 0 to test zero-amount edge case)
+        amountOut = bound(amountOut, 0, pool.reserveUserToken);
 
         // Calculate required input: (amountOut * N) / SCALE + 1
         uint256 amountIn = (amountOut * 9985) / 10_000 + 1;
