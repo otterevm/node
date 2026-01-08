@@ -26,8 +26,8 @@ contract FeeAMMTest is BaseTest {
         );
 
         // Grant ISSUER_ROLE to admin so we can mint tokens
-        userToken.grantRole(_ISSUER_ROLE, admin);
-        validatorToken.grantRole(_ISSUER_ROLE, admin);
+        userToken.grantRole(userToken.ISSUER_ROLE(), admin);
+        validatorToken.grantRole(validatorToken.ISSUER_ROLE(), admin);
 
         // Fund alice with large balances
         userToken.mintWithMemo(alice, 10_000e18, bytes32(0));

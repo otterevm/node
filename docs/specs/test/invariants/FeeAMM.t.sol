@@ -10,10 +10,10 @@ import { Test } from "forge-std/Test.sol";
 
 contract FeeAMMSingleInvariantTest is Test {
 
-    ITIP20 pathUsd = ITIP20(0x20C0000000000000000000000000000000000000);
-    ITIP20 alphaUsd = ITIP20(0x20C0000000000000000000000000000000000001);
-    ITIP20 betaUsd = ITIP20(0x20C0000000000000000000000000000000000002);
-    ITIP20 thetaUsd = ITIP20(0x20C0000000000000000000000000000000000003);
+    ITIP20 pathUSD = ITIP20(0x20C0000000000000000000000000000000000000);
+    ITIP20 alphaUSD = ITIP20(0x20C0000000000000000000000000000000000001);
+    ITIP20 betaUSD = ITIP20(0x20C0000000000000000000000000000000000002);
+    ITIP20 thetaUSD = ITIP20(0x20C0000000000000000000000000000000000003);
 
     FeeAMM internal constant FEE_AMM = FeeAMM(0xfeEC000000000000000000000000000000000000);
     TIP20Factory internal constant TIP20_FACTORY =
@@ -26,10 +26,30 @@ contract FeeAMMSingleInvariantTest is Test {
     mapping(bytes32 => bool) public seenPool;
 
     function setUp() public {
-        usdTokens.push(TIP20(address(pathUsd)));
-        usdTokens.push(TIP20(address(alphaUsd)));
-        usdTokens.push(TIP20(address(betaUsd)));
-        usdTokens.push(TIP20(address(thetaUsd)));
+        usdTokens.push(TIP20(address(pathUSD)));
+        usdTokens.push(TIP20(address(alphaUSD)));
+        usdTokens.push(TIP20(address(betaUSD)));
+        usdTokens.push(TIP20(address(thetaUSD)));
+
+        TIP20 tokenA = TIP20(
+            address(
+                TIP20_FACTORY.createToken(
+                    "User", "USR", "USD", pathUSD, address(this), bytes32("user")
+                )
+            )
+        );
+        tokenA.grantRole(tokenA.ISSUER_ROLE(), address(this));
+        usdTokens.push(tokenA);
+
+        TIP20 tokenB = TIP20(
+            address(
+                TIP20_FACTORY.createToken(
+                    "Validator", "VAL", "USD", pathUSD, address(this), bytes32("validator")
+                )
+            )
+        );
+        tokenB.grantRole(tokenB.ISSUER_ROLE(), address(this));
+        usdTokens.push(tokenB);
 
         for (uint256 i = 0; i < 20; i++) {
             actors.push(makeAddr(string(abi.encodePacked("actor-", vm.toString(i)))));
@@ -38,7 +58,7 @@ contract FeeAMMSingleInvariantTest is Test {
         for (uint256 i = 0; i < actors.length; i++) {
             address a = actors[i];
             for (uint256 j = 0; j < usdTokens.length; j++) {
-                usdTokens[j].mintWithMemo(a, 5_000_000e18, bytes32(0));
+                usdTokens[j].mintWithMemo(a, 10_000_000e6, bytes32(0));
                 vm.prank(a);
                 usdTokens[j].approve(address(FEE_AMM), type(uint256).max);
             }
@@ -57,11 +77,12 @@ contract FeeAMMSingleInvariantTest is Test {
                                ACTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Fuzz action: mint liquidity into a pool.
     function act_mint(uint256 seedA, uint256 seedB, uint256 seedActor, uint256 rawAmount) external {
         (TIP20 userToken, TIP20 validatorToken) = _pair(seedA, seedB);
         address actor = _actor(seedActor);
-
-        uint256 amount = bound(rawAmount, 0, 1_000_000e18);
+        uint256 bal = validatorToken.balanceOf(actor);
+        uint256 amount = (bal == 0) ? 0 : bound(rawAmount, 0, bal);
 
         vm.startPrank(actor);
         try FEE_AMM.mint(address(userToken), address(validatorToken), amount, actor) returns (
@@ -72,14 +93,14 @@ contract FeeAMMSingleInvariantTest is Test {
         vm.stopPrank();
     }
 
+    /// @dev Fuzz action: burn liquidity from a pool.
     function act_burn(uint256 seedA, uint256 seedB, uint256 seedActor, uint256 rawLiq) external {
         (TIP20 userToken, TIP20 validatorToken) = _pair(seedA, seedB);
         address actor = _actor(seedActor);
 
         bytes32 pid = FEE_AMM.getPoolId(address(userToken), address(validatorToken));
         uint256 bal = FEE_AMM.liquidityBalances(pid, actor);
-
-        uint256 liq = (bal == 0) ? bound(rawLiq, 0, 1e18) : bound(rawLiq, 0, bal);
+        uint256 liq = (bal == 0) ? 0 : bound(rawLiq, 0, bal);
 
         vm.startPrank(actor);
         try FEE_AMM.burn(address(userToken), address(validatorToken), liq, actor) returns (
@@ -90,6 +111,7 @@ contract FeeAMMSingleInvariantTest is Test {
         vm.stopPrank();
     }
 
+    /// @dev Fuzz action: perform a rebalance swap from validatorToken to userToken.
     function act_rebalanceSwap(uint256 seedA, uint256 seedB, uint256 seedActor, uint256 rawOut)
         external
     {
@@ -262,14 +284,17 @@ contract FeeAMMSingleInvariantTest is Test {
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Get an actor address from a seed.
     function _actor(uint256 seed) internal view returns (address) {
         return actors[seed % actors.length];
     }
 
+    /// @dev Get a token from a seed.
     function _token(uint256 seed) internal view returns (TIP20) {
         return usdTokens[seed % usdTokens.length];
     }
 
+    /// @dev Get a unique ordered token pair from two seeds.
     function _pair(uint256 seedA, uint256 seedB)
         internal
         view
@@ -288,12 +313,14 @@ contract FeeAMMSingleInvariantTest is Test {
         validatorToken = usdTokens[ib];
     }
 
+    /// @dev Sum all actor LP balances for a given poolId.
     function _sumActorLp(bytes32 pid) internal view returns (uint256 sum) {
         for (uint256 k = 0; k < actors.length; k++) {
             sum += FEE_AMM.liquidityBalances(pid, actors[k]);
         }
     }
 
+    /// @dev Remember a poolId for later invariant checks.
     function _rememberPool(address userToken, address validatorToken) internal {
         if (userToken == validatorToken) return;
         bytes32 pid = FEE_AMM.getPoolId(userToken, validatorToken);
