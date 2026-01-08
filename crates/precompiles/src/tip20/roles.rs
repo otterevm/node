@@ -114,8 +114,15 @@ impl TIP20Token {
     }
 
     /// Grant the default admin role to an account
-    pub fn grant_default_admin(&mut self, admin: Address) -> Result<()> {
-        self.grant_role_internal(admin, DEFAULT_ADMIN_ROLE)
+    pub fn grant_default_admin(&mut self, msg_sender: Address, admin: Address) -> Result<()> {
+        self.grant_role_internal(admin, DEFAULT_ADMIN_ROLE)?;
+
+        self.emit_event(RolesAuthEvent::role_membership_updated(
+            DEFAULT_ADMIN_ROLE,
+            admin,
+            msg_sender,
+            true,
+        ))
     }
 
     // Utility functions for checking roles without calldata
@@ -125,24 +132,24 @@ impl TIP20Token {
 
     // Internal implementation functions
     pub fn has_role_internal(&self, account: Address, role: B256) -> Result<bool> {
-        self.roles.at(account).at(role).read()
+        self.roles[account][role].read()
     }
 
     pub fn grant_role_internal(&mut self, account: Address, role: B256) -> Result<()> {
-        self.roles.at(account).at(role).write(true)
+        self.roles[account][role].write(true)
     }
 
     fn revoke_role_internal(&mut self, account: Address, role: B256) -> Result<()> {
-        self.roles.at(account).at(role).write(false)
+        self.roles[account][role].write(false)
     }
 
     /// If sloads 0, will be equal to DEFAULT_ADMIN_ROLE
     fn get_role_admin_internal(&self, role: B256) -> Result<B256> {
-        self.role_admins.at(role).read()
+        self.role_admins[role].read()
     }
 
     fn set_role_admin_internal(&mut self, role: B256, admin_role: B256) -> Result<()> {
-        self.role_admins.at(role).write(admin_role)
+        self.role_admins[role].write(admin_role)
     }
 
     fn check_role_internal(&self, account: Address, role: B256) -> Result<()> {
@@ -158,28 +165,18 @@ mod tests {
     use alloy::primitives::keccak256;
 
     use super::*;
-    use crate::{error::TempoPrecompileError, storage::StorageCtx, test_util::setup_storage};
+    use crate::{error::TempoPrecompileError, storage::StorageCtx, test_util::TIP20Setup};
     use roles_auth::Interface;
 
     #[test]
     fn test_role_contract_grant_and_check() -> eyre::Result<()> {
-        let (mut storage, admin) = setup_storage();
+        let mut storage = crate::storage::hashmap::HashMapStorageProvider::new(1);
+        let admin = Address::random();
         let user = Address::random();
         let custom_role = keccak256(b"CUSTOM_ROLE");
-        let token_id = 1;
 
         StorageCtx::enter(&mut storage, || {
-            let mut token = TIP20Token::new(token_id);
-
-            // Initialize and grant admin
-            token.initialize(
-                "name",
-                "symbol",
-                "currency",
-                Address::ZERO,
-                admin,
-                Address::ZERO,
-            )?;
+            let mut token = TIP20Setup::create("Test", "TST", admin).apply()?;
 
             // Test hasRole
             let has_admin = token.has_role(admin, DEFAULT_ADMIN_ROLE)?;
@@ -193,7 +190,22 @@ mod tests {
             assert!(has_custom);
 
             // Verify events were emitted
-            assert_eq!(token.emitted_events().len(), 1); // One grant event
+            token.assert_emitted_events(vec![
+                // Event from grant_default_admin during token initialization
+                RolesAuthEvent::RoleMembershipUpdated(IRolesAuth::RoleMembershipUpdated {
+                    role: DEFAULT_ADMIN_ROLE,
+                    account: admin,
+                    sender: admin,
+                    hasRole: true,
+                }),
+                // Event from grant_role call above
+                RolesAuthEvent::RoleMembershipUpdated(IRolesAuth::RoleMembershipUpdated {
+                    role: custom_role,
+                    account: user,
+                    sender: admin,
+                    hasRole: true,
+                }),
+            ]);
 
             Ok(())
         })
@@ -201,22 +213,13 @@ mod tests {
 
     #[test]
     fn test_role_admin_functions() -> eyre::Result<()> {
-        let (mut storage, admin) = setup_storage();
+        let mut storage = crate::storage::hashmap::HashMapStorageProvider::new(1);
+        let admin = Address::random();
         let custom_role = keccak256(b"CUSTOM_ROLE");
         let admin_role = keccak256(b"ADMIN_ROLE");
-        let token_id = 1;
 
         StorageCtx::enter(&mut storage, || {
-            let mut token = TIP20Token::new(token_id);
-            // Initialize and grant admin
-            token.initialize(
-                "name",
-                "symbol",
-                "currency",
-                Address::ZERO,
-                admin,
-                Address::ZERO,
-            )?;
+            let mut token = TIP20Setup::create("Test", "TST", admin).apply()?;
 
             // Set custom admin for role
             token.set_role_admin(admin, custom_role, admin_role)?;
@@ -231,20 +234,13 @@ mod tests {
 
     #[test]
     fn test_renounce_role() -> eyre::Result<()> {
-        let (mut storage, user) = setup_storage();
+        let mut storage = crate::storage::hashmap::HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        let user = Address::random();
         let custom_role = keccak256(b"CUSTOM_ROLE");
-        let token_id = 1;
 
         StorageCtx::enter(&mut storage, || {
-            let mut token = TIP20Token::new(token_id);
-            token.initialize(
-                "name",
-                "symbol",
-                "currency",
-                Address::ZERO,
-                Address::ZERO,
-                Address::ZERO,
-            )?;
+            let mut token = TIP20Setup::create("Test", "TST", admin).apply()?;
             token.grant_role_internal(user, custom_role).unwrap();
 
             // Renounce role
@@ -259,21 +255,14 @@ mod tests {
 
     #[test]
     fn test_unauthorized_access() -> eyre::Result<()> {
-        let (mut storage, user) = setup_storage();
+        let mut storage = crate::storage::hashmap::HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        let user = Address::random();
         let other = Address::random();
         let custom_role = keccak256(b"CUSTOM_ROLE");
-        let token_id = 1;
 
         StorageCtx::enter(&mut storage, || {
-            let mut token = TIP20Token::new(token_id);
-            token.initialize(
-                "name",
-                "symbol",
-                "currency",
-                Address::ZERO,
-                Address::ZERO,
-                Address::ZERO,
-            )?;
+            let mut token = TIP20Setup::create("Test", "TST", admin).apply()?;
 
             // Try to grant role without permission
             let result = token.grant_role(user, custom_role, other);

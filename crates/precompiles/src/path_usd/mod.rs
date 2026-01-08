@@ -1,7 +1,7 @@
 pub mod dispatch;
 
 use crate::{
-    STABLECOIN_EXCHANGE_ADDRESS,
+    STABLECOIN_DEX_ADDRESS,
     error::Result,
     storage::StorageCtx,
     tip20::{ITIP20, TIP20Token},
@@ -52,14 +52,14 @@ impl PathUSD {
     }
 
     fn is_transfer_authorized(&self, sender: Address) -> Result<bool> {
-        let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
+        let authorized = sender == STABLECOIN_DEX_ADDRESS
             || self.token.has_role_internal(sender, *TRANSFER_ROLE)?;
 
         Ok(authorized)
     }
 
     fn is_transfer_from_authorized(&self, sender: Address, from: Address) -> Result<bool> {
-        let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
+        let authorized = sender == STABLECOIN_DEX_ADDRESS
             || self.token.has_role_internal(from, *TRANSFER_ROLE)?;
         Ok(authorized)
     }
@@ -69,7 +69,7 @@ impl PathUSD {
         sender: Address,
         recipient: Address,
     ) -> Result<bool> {
-        let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
+        let authorized = sender == STABLECOIN_DEX_ADDRESS
             || self.token.has_role_internal(sender, *TRANSFER_ROLE)?
             || self
                 .token
@@ -84,7 +84,7 @@ impl PathUSD {
         from: Address,
         recipient: Address,
     ) -> Result<bool> {
-        let authorized = sender == STABLECOIN_EXCHANGE_ADDRESS
+        let authorized = sender == STABLECOIN_DEX_ADDRESS
             || self.token.has_role_internal(from, *TRANSFER_ROLE)?
             || self
                 .token
@@ -117,7 +117,7 @@ impl PathUSD {
         }
 
         if self.is_transfer_from_authorized(msg_sender, call.from)?
-            || msg_sender == STABLECOIN_EXCHANGE_ADDRESS
+            || msg_sender == STABLECOIN_DEX_ADDRESS
         {
             self.token.transfer_from(msg_sender, call)
         } else {
@@ -153,7 +153,7 @@ impl PathUSD {
         }
 
         if self.is_transfer_from_with_memo_authorized(msg_sender, call.from, call.to)?
-            || msg_sender == STABLECOIN_EXCHANGE_ADDRESS
+            || msg_sender == STABLECOIN_DEX_ADDRESS
         {
             self.token.transfer_from_with_memo(msg_sender, call)
         } else {
@@ -510,20 +510,20 @@ mod tests {
             path_usd.mint(
                 admin,
                 ITIP20::mintCall {
-                    to: STABLECOIN_EXCHANGE_ADDRESS,
+                    to: STABLECOIN_DEX_ADDRESS,
                     amount,
                 },
             )?;
 
             let dex_balance_before = path_usd.balance_of(ITIP20::balanceOfCall {
-                account: STABLECOIN_EXCHANGE_ADDRESS,
+                account: STABLECOIN_DEX_ADDRESS,
             })?;
 
             let recipient_balance_before =
                 path_usd.balance_of(ITIP20::balanceOfCall { account: recipient })?;
 
             let result = path_usd.transfer(
-                STABLECOIN_EXCHANGE_ADDRESS,
+                STABLECOIN_DEX_ADDRESS,
                 ITIP20::transferCall {
                     to: recipient,
                     amount,
@@ -532,7 +532,7 @@ mod tests {
             assert!(result);
 
             let dex_balance_after = path_usd.balance_of(ITIP20::balanceOfCall {
-                account: STABLECOIN_EXCHANGE_ADDRESS,
+                account: STABLECOIN_DEX_ADDRESS,
             })?;
 
             let recipient_balance_after =
@@ -562,7 +562,7 @@ mod tests {
             path_usd.approve(
                 from,
                 ITIP20::approveCall {
-                    spender: STABLECOIN_EXCHANGE_ADDRESS,
+                    spender: STABLECOIN_DEX_ADDRESS,
                     amount,
                 },
             )?;
@@ -574,11 +574,11 @@ mod tests {
 
             let allowance_before = path_usd.allowance(ITIP20::allowanceCall {
                 owner: from,
-                spender: STABLECOIN_EXCHANGE_ADDRESS,
+                spender: STABLECOIN_DEX_ADDRESS,
             })?;
 
             let result = path_usd.transfer_from(
-                STABLECOIN_EXCHANGE_ADDRESS,
+                STABLECOIN_DEX_ADDRESS,
                 ITIP20::transferFromCall { from, to, amount },
             )?;
 
@@ -591,7 +591,7 @@ mod tests {
 
             let allowance_after = path_usd.allowance(ITIP20::allowanceCall {
                 owner: from,
-                spender: STABLECOIN_EXCHANGE_ADDRESS,
+                spender: STABLECOIN_DEX_ADDRESS,
             })?;
 
             assert_eq!(from_balance_after, from_balance_before - amount);
@@ -864,7 +864,7 @@ mod tests {
             path_usd.approve(
                 from,
                 ITIP20::approveCall {
-                    spender: STABLECOIN_EXCHANGE_ADDRESS,
+                    spender: STABLECOIN_DEX_ADDRESS,
                     amount,
                 },
             )?;
@@ -874,11 +874,11 @@ mod tests {
             let to_balance_before = path_usd.balance_of(ITIP20::balanceOfCall { account: to })?;
             let allowance_before = path_usd.allowance(ITIP20::allowanceCall {
                 owner: from,
-                spender: STABLECOIN_EXCHANGE_ADDRESS,
+                spender: STABLECOIN_DEX_ADDRESS,
             })?;
 
             let result = path_usd.transfer_from_with_memo(
-                STABLECOIN_EXCHANGE_ADDRESS,
+                STABLECOIN_DEX_ADDRESS,
                 ITIP20::transferFromWithMemoCall {
                     from,
                     to,
@@ -894,7 +894,7 @@ mod tests {
             let to_balance_after = path_usd.balance_of(ITIP20::balanceOfCall { account: to })?;
             let allowance_after = path_usd.allowance(ITIP20::allowanceCall {
                 owner: from,
-                spender: STABLECOIN_EXCHANGE_ADDRESS,
+                spender: STABLECOIN_DEX_ADDRESS,
             })?;
 
             assert_eq!(from_balance_after, from_balance_before - amount);

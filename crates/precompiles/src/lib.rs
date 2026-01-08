@@ -9,13 +9,10 @@ pub mod storage;
 
 pub mod account_keychain;
 pub mod nonce;
-pub mod path_usd;
-pub mod stablecoin_exchange;
+pub mod stablecoin_dex;
 pub mod tip20;
 pub mod tip20_factory;
-pub mod tip20_rewards_registry;
 pub mod tip403_registry;
-pub mod tip_account_registrar;
 pub mod tip_fee_manager;
 pub mod validator_config;
 
@@ -25,14 +22,11 @@ pub mod test_util;
 use crate::{
     account_keychain::AccountKeychain,
     nonce::NonceManager,
-    path_usd::PathUSD,
-    stablecoin_exchange::StablecoinExchange,
+    stablecoin_dex::StablecoinDEX,
     storage::StorageCtx,
-    tip_account_registrar::TipAccountRegistrar,
     tip_fee_manager::TipFeeManager,
-    tip20::{TIP20Token, address_to_token_id_unchecked, is_tip20_prefix},
+    tip20::{TIP20Token, is_tip20_prefix},
     tip20_factory::TIP20Factory,
-    tip20_rewards_registry::TIP20RewardsRegistry,
     tip403_registry::TIP403Registry,
     validator_config::ValidatorConfig,
 };
@@ -52,9 +46,8 @@ use revm::{
 };
 
 pub use tempo_contracts::precompiles::{
-    ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN_POST_ALLEGRETTO, DEFAULT_FEE_TOKEN_PRE_ALLEGRETTO,
-    NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS, STABLECOIN_EXCHANGE_ADDRESS, TIP_ACCOUNT_REGISTRAR,
-    TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS, TIP20_REWARDS_REGISTRY_ADDRESS,
+    ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN, NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS,
+    STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
     TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
 };
 
@@ -80,30 +73,20 @@ pub fn extend_tempo_precompiles(precompiles: &mut PrecompilesMap, cfg: &CfgEnv<T
     let spec = cfg.spec;
     precompiles.set_precompile_lookup(move |address: &Address| {
         if is_tip20_prefix(*address) {
-            let token_id = address_to_token_id_unchecked(*address);
-            if token_id == 0 {
-                Some(PathUSDPrecompile::create(chain_id, spec))
-            } else {
-                Some(TIP20Precompile::create(*address, chain_id, spec))
-            }
+            Some(TIP20Precompile::create(*address, chain_id, spec))
         } else if *address == TIP20_FACTORY_ADDRESS {
             Some(TIP20FactoryPrecompile::create(chain_id, spec))
-        } else if *address == TIP20_REWARDS_REGISTRY_ADDRESS {
-            Some(TIP20RewardsRegistryPrecompile::create(chain_id, spec))
         } else if *address == TIP403_REGISTRY_ADDRESS {
             Some(TIP403RegistryPrecompile::create(chain_id, spec))
         } else if *address == TIP_FEE_MANAGER_ADDRESS {
             Some(TipFeeManagerPrecompile::create(chain_id, spec))
-        } else if *address == TIP_ACCOUNT_REGISTRAR {
-            Some(TipAccountRegistrarPrecompile::create(chain_id, spec))
-        } else if *address == STABLECOIN_EXCHANGE_ADDRESS {
-            Some(StablecoinExchangePrecompile::create(chain_id, spec))
+        } else if *address == STABLECOIN_DEX_ADDRESS {
+            Some(StablecoinDEXPrecompile::create(chain_id, spec))
         } else if *address == NONCE_PRECOMPILE_ADDRESS {
             Some(NoncePrecompile::create(chain_id, spec))
         } else if *address == VALIDATOR_CONFIG_ADDRESS {
             Some(ValidatorConfigPrecompile::create(chain_id, spec))
-        } else if *address == ACCOUNT_KEYCHAIN_ADDRESS && spec.is_allegretto() {
-            // AccountKeychain is only available after Allegretto hardfork
+        } else if *address == ACCOUNT_KEYCHAIN_ADDRESS {
             Some(AccountKeychainPrecompile::create(chain_id, spec))
         } else {
             None
@@ -148,24 +131,6 @@ impl TipFeeManagerPrecompile {
     }
 }
 
-pub struct TipAccountRegistrarPrecompile;
-impl TipAccountRegistrarPrecompile {
-    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("TipAccountRegistrar", chain_id, spec, |input| {
-            TipAccountRegistrar::new()
-        })
-    }
-}
-
-pub struct TIP20RewardsRegistryPrecompile;
-impl TIP20RewardsRegistryPrecompile {
-    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("TIP20RewardsRegistry", chain_id, spec, |input| {
-            TIP20RewardsRegistry::new()
-        })
-    }
-}
-
 pub struct TIP403RegistryPrecompile;
 impl TIP403RegistryPrecompile {
     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
@@ -187,18 +152,17 @@ impl TIP20FactoryPrecompile {
 pub struct TIP20Precompile;
 impl TIP20Precompile {
     pub fn create(address: Address, chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        let token_id = address_to_token_id_unchecked(address);
         tempo_precompile!("TIP20Token", chain_id, spec, |input| {
-            TIP20Token::new(token_id)
+            TIP20Token::from_address(address).expect("TIP20 prefix already verified")
         })
     }
 }
 
-pub struct StablecoinExchangePrecompile;
-impl StablecoinExchangePrecompile {
+pub struct StablecoinDEXPrecompile;
+impl StablecoinDEXPrecompile {
     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("StablecoinExchange", chain_id, spec, |input| {
-            StablecoinExchange::new()
+        tempo_precompile!("StablecoinDEX", chain_id, spec, |input| {
+            StablecoinDEX::new()
         })
     }
 }
@@ -221,13 +185,6 @@ impl AccountKeychainPrecompile {
     }
 }
 
-pub struct PathUSDPrecompile;
-impl PathUSDPrecompile {
-    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("PathUSD", chain_id, spec, |input| { PathUSD::new() })
-    }
-}
-
 pub struct ValidatorConfigPrecompile;
 impl ValidatorConfigPrecompile {
     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
@@ -243,17 +200,13 @@ fn metadata<T: SolCall>(f: impl FnOnce() -> Result<T::Return>) -> PrecompileResu
 }
 
 #[inline]
-fn view<T: SolCall>(calldata: &[u8], f: impl FnOnce(T) -> Result<T::Return>) -> PrecompileResult {
-    let Ok(call) = T::abi_decode(calldata) else {
-        // TODO refactor
-        return Ok(PrecompileOutput::new_reverted(0, Bytes::new()));
-    };
+fn view<T: SolCall>(call: T, f: impl FnOnce(T) -> Result<T::Return>) -> PrecompileResult {
     f(call).into_precompile_result(0, |ret| T::abi_encode_returns(&ret).into())
 }
 
 #[inline]
-pub fn mutate<T: SolCall>(
-    calldata: &[u8],
+fn mutate<T: SolCall>(
+    call: T,
     sender: Address,
     f: impl FnOnce(Address, T) -> Result<T::Return>,
 ) -> PrecompileResult {
@@ -263,15 +216,12 @@ pub fn mutate<T: SolCall>(
             StaticCallNotAllowed {}.abi_encode().into(),
         ));
     }
-    let Ok(call) = T::abi_decode(calldata) else {
-        return Ok(PrecompileOutput::new_reverted(0, Bytes::new()));
-    };
     f(sender, call).into_precompile_result(0, |ret| T::abi_encode_returns(&ret).into())
 }
 
 #[inline]
 fn mutate_void<T: SolCall>(
-    calldata: &[u8],
+    call: T,
     sender: Address,
     f: impl FnOnce(Address, T) -> Result<()>,
 ) -> PrecompileResult {
@@ -281,37 +231,53 @@ fn mutate_void<T: SolCall>(
             StaticCallNotAllowed {}.abi_encode().into(),
         ));
     }
-    let Ok(call) = T::abi_decode(calldata) else {
-        return Ok(PrecompileOutput::new_reverted(0, Bytes::new()));
-    };
     f(sender, call).into_precompile_result(0, |()| Bytes::new())
 }
 
 #[inline]
-fn fill_precompile_output(
-    mut output: PrecompileOutput,
-    storage: &mut StorageCtx,
-) -> PrecompileOutput {
+fn fill_precompile_output(mut output: PrecompileOutput, storage: &StorageCtx) -> PrecompileOutput {
     output.gas_used = storage.gas_used();
 
     // add refund only if it is not reverted
-    if !output.reverted && storage.spec().is_allegretto() {
+    if !output.reverted {
         output.gas_refunded = storage.gas_refunded();
     }
     output
 }
 
-/// Helper function to return an unknown function selector error
-///
-/// Before Moderato: Returns a generic PrecompileError::Other
-/// Moderato onwards: Returns an ABI-encoded UnknownFunctionSelector error with the selector
+/// Helper function to return an unknown function selector error.
+/// Returns an ABI-encoded UnknownFunctionSelector error with the selector.
 #[inline]
-pub fn unknown_selector(selector: [u8; 4], gas: u64, spec: TempoHardfork) -> PrecompileResult {
-    if spec.is_moderato() {
-        error::TempoPrecompileError::UnknownFunctionSelector(selector)
-            .into_precompile_result(gas, |_: ()| Bytes::new())
-    } else {
-        Err(PrecompileError::Other("Unknown function selector".into()))
+pub fn unknown_selector(selector: [u8; 4], gas: u64) -> PrecompileResult {
+    error::TempoPrecompileError::UnknownFunctionSelector(selector).into_precompile_result(gas)
+}
+
+/// Helper function to decode calldata and dispatch it.
+#[inline]
+fn dispatch_call<T>(
+    calldata: &[u8],
+    decode: impl FnOnce(&[u8]) -> core::result::Result<T, alloy::sol_types::Error>,
+    f: impl FnOnce(T) -> PrecompileResult,
+) -> PrecompileResult {
+    if calldata.len() < 4 {
+        return Err(PrecompileError::Other(
+            "Invalid input: missing function selector".into(),
+        ));
+    }
+
+    let storage = StorageCtx::default();
+    let result = decode(calldata);
+
+    match result {
+        Ok(call) => f(call).map(|res| fill_precompile_output(res, &storage)),
+        Err(alloy::sol_types::Error::UnknownSelector { selector, .. }) => {
+            unknown_selector(*selector, storage.gas_used())
+                .map(|res| fill_precompile_output(res, &storage))
+        }
+        Err(_) => Ok(fill_precompile_output(
+            PrecompileOutput::new_reverted(0, Bytes::new()),
+            &storage,
+        )),
     }
 }
 
@@ -336,7 +302,7 @@ where
 mod tests {
     use super::*;
     use crate::tip20::TIP20Token;
-    use alloy::primitives::{Address, Bytes, U256};
+    use alloy::primitives::{Address, Bytes, U256, bytes};
     use alloy_evm::{
         EthEvmFactory, EvmEnv, EvmFactory, EvmInternals,
         precompiles::{Precompile as AlloyEvmPrecompile, PrecompileInput},
@@ -344,14 +310,16 @@ mod tests {
     use revm::{
         context::ContextTr,
         database::{CacheDB, EmptyDB},
+        state::{AccountInfo, Bytecode},
     };
     use tempo_contracts::precompiles::ITIP20;
 
     #[test]
     fn test_precompile_delegatecall() {
         let (chain_id, spec) = (1, TempoHardfork::default());
-        let precompile =
-            tempo_precompile!("TIP20Token", chain_id, spec, |input| { TIP20Token::new(1) });
+        let precompile = tempo_precompile!("TIP20Token", chain_id, spec, |input| {
+            TIP20Token::from_address(PATH_USD_ADDRESS).expect("PATH_USD_ADDRESS is valid")
+        });
 
         let db = CacheDB::new(EmptyDB::new());
         let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());
@@ -386,13 +354,21 @@ mod tests {
     #[test]
     fn test_precompile_static_call() {
         let (chain_id, spec) = (1, TempoHardfork::default());
-        let precompile =
-            tempo_precompile!("TIP20Token", chain_id, spec, |input| { TIP20Token::new(1) });
+        let precompile = tempo_precompile!("TIP20Token", chain_id, spec, |input| {
+            TIP20Token::from_address(PATH_USD_ADDRESS).expect("PATH_USD_ADDRESS is valid")
+        });
 
-        let target_address = Address::random();
+        let token_address = PATH_USD_ADDRESS;
 
         let call_static = |calldata: Bytes| {
-            let db = CacheDB::new(EmptyDB::new());
+            let mut db = CacheDB::new(EmptyDB::new());
+            db.insert_account_info(
+                token_address,
+                AccountInfo {
+                    code: Some(Bytecode::new_raw(bytes!("0xEF"))),
+                    ..Default::default()
+                },
+            );
             let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());
             let block = evm.block.clone();
             let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
@@ -404,8 +380,8 @@ mod tests {
                 gas: 100_000,
                 is_static: true,
                 value: U256::ZERO,
-                target_address,
-                bytecode_address: target_address,
+                target_address: token_address,
+                bytecode_address: token_address,
             };
 
             AlloyEvmPrecompile::call(&precompile, input)

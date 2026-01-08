@@ -16,6 +16,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod defaults;
+mod tempo_cmd;
 
 use clap::Parser;
 use commonware_runtime::{Metrics, Runner};
@@ -30,14 +31,18 @@ use reth_ethereum_cli as _;
 use reth_node_builder::{NodeHandle, WithLaunchContext};
 use std::{sync::Arc, thread};
 use tempo_chainspec::spec::{TempoChainSpec, TempoChainSpecParser};
-use tempo_commonware_node::run_consensus_stack;
+use tempo_commonware_node::{feed as consensus_feed, run_consensus_stack};
 use tempo_consensus::TempoConsensus;
 use tempo_evm::{TempoEvmConfig, TempoEvmFactory};
 use tempo_faucet::{
     args::FaucetArgs,
     faucet::{TempoFaucetExt, TempoFaucetExtApiServer},
 };
-use tempo_node::{TempoFullNode, TempoNodeArgs, node::TempoNode};
+use tempo_node::{
+    TempoFullNode, TempoNodeArgs,
+    node::TempoNode,
+    rpc::consensus::{TempoConsensusApiServer, TempoConsensusRpc},
+};
 use tokio::sync::oneshot;
 use tracing::{info, info_span};
 
@@ -109,6 +114,10 @@ fn main() -> eyre::Result<()> {
     tempo_node::init_version_metadata();
     defaults::init_defaults();
 
+    if let Some(result) = tempo_cmd::try_run_tempo_subcommand() {
+        return result;
+    }
+
     let cli = Cli::<TempoChainSpecParser, TempoArgs>::parse();
     let is_node = matches!(cli.command, Commands::Node(_));
 
@@ -117,8 +126,10 @@ fn main() -> eyre::Result<()> {
     let (consensus_dead_tx, mut consensus_dead_rx) = oneshot::channel();
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let cl_feed_state = consensus_feed::FeedStateHandle::new();
 
     let shutdown_token_clone = shutdown_token.clone();
+    let cl_feed_state_clone = cl_feed_state.clone();
     let consensus_handle = thread::spawn(move || {
         // Exit early if we are not executing `tempo node` command.
         if !is_node {
@@ -168,7 +179,8 @@ fn main() -> eyre::Result<()> {
                     args.consensus.metrics_address,
                 )
                 .fuse();
-                let consensus_stack = run_consensus_stack(&ctx, args.consensus, node);
+                let consensus_stack =
+                    run_consensus_stack(&ctx, args.consensus, node, cl_feed_state_clone);
                 tokio::pin!(consensus_stack);
                 loop {
                     tokio::select!(
@@ -263,6 +275,11 @@ fn main() -> eyre::Result<()> {
                     );
 
                     ctx.modules.merge_configured(ext.into_rpc())?;
+                }
+
+                if validator_key.is_some() {
+                    ctx.modules
+                        .merge_configured(TempoConsensusRpc::new(cl_feed_state).into_rpc())?;
                 }
 
                 Ok(())
