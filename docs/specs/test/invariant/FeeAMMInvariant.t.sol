@@ -9,75 +9,261 @@ import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { console } from "forge-std/console.sol";
 
 /// @title FeeAMMInvariantTest
-/// @notice Invariant tests for the FeeAMM contract
+/// @notice Invariant tests for the FeeAMM contract with multi-pool support
 /// @dev Tests run against both Solidity reference (forge test) and Rust precompiles (tempo-forge test)
 contract FeeAMMInvariantTest is StdInvariant, BaseTest {
 
     FeeAMMHandler public handler;
-    TIP20 public userToken;
-    TIP20 public validatorToken;
-    bytes32 public poolId;
+
+    // Token universe for multi-pool testing
+    TIP20[] public tokens;
+
+    // Actors for testing
+    address[] public actors;
 
     function setUp() public override {
         super.setUp();
 
-        // Create tokens for testing
-        userToken =
-            TIP20(factory.createToken("UserToken", "UTK", "USD", pathUSD, admin, bytes32("user")));
-        validatorToken = TIP20(
-            factory.createToken("ValidatorToken", "VTK", "USD", pathUSD, admin, bytes32("validator"))
+        // Create token universe (4 tokens for various pair combinations)
+        // Note: We skip pathUSD since it requires special admin setup
+        // Instead we create 4 new tokens that we have full control over
+
+        TIP20 alphaUSD = TIP20(
+            factory.createToken("AlphaUSD", "aUSD", "USD", pathUSD, admin, bytes32("alpha"))
         );
+        tokens.push(alphaUSD);
 
-        // Create handler
-        handler = new FeeAMMHandler(amm, userToken, validatorToken, admin);
-        poolId = amm.getPoolId(address(userToken), address(validatorToken));
+        TIP20 betaUSD = TIP20(
+            factory.createToken("BetaUSD", "bUSD", "USD", pathUSD, admin, bytes32("beta"))
+        );
+        tokens.push(betaUSD);
 
-        // Grant issuer role to handler so it can mint tokens directly
-        userToken.grantRole(_ISSUER_ROLE, address(handler));
-        validatorToken.grantRole(_ISSUER_ROLE, address(handler));
+        TIP20 gammaUSD = TIP20(
+            factory.createToken("GammaUSD", "gUSD", "USD", pathUSD, admin, bytes32("gamma"))
+        );
+        tokens.push(gammaUSD);
+
+        TIP20 deltaUSD = TIP20(
+            factory.createToken("DeltaUSD", "dUSD", "USD", pathUSD, admin, bytes32("delta"))
+        );
+        tokens.push(deltaUSD);
+
+        // Grant ISSUER_ROLE to admin for all tokens
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokens[i].grantRole(_ISSUER_ROLE, admin);
+        }
+
+        // Create 10 actors for better fuzz coverage
+        for (uint256 i = 0; i < 10; i++) {
+            address actor = makeAddr(string(abi.encodePacked("actor-", vm.toString(i))));
+            actors.push(actor);
+            targetSender(actor);
+        }
+
+        // Fund all actors with all tokens and set approvals
+        for (uint256 i = 0; i < actors.length; i++) {
+            address actor = actors[i];
+            for (uint256 j = 0; j < tokens.length; j++) {
+                tokens[j].mintWithMemo(actor, 10_000_000e6, bytes32(0));
+                vm.prank(actor);
+                tokens[j].approve(address(amm), type(uint256).max);
+            }
+        }
+
+        // Create handler with tokens and actors
+        handler = new FeeAMMHandler(amm, factory, tokens, actors, admin);
+
+        // Grant issuer role to handler for all tokens
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokens[i].grantRole(_ISSUER_ROLE, address(handler));
+        }
 
         // Target only the handler
         targetContract(address(handler));
+
+        // Target specific selectors for fuzzing
+        bytes4[] memory selectors = new bytes4[](4);
+        selectors[0] = handler.mint.selector;
+        selectors[1] = handler.burn.selector;
+        selectors[2] = handler.rebalanceSwap.selector;
+        selectors[3] = handler.simulateFeeSwap.selector;
+        targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
 
     /*//////////////////////////////////////////////////////////////
-                    INVARIANT A1: LP TOKEN ACCOUNTING
+            INVARIANT A1: POOL INITIALIZATION SHAPE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Total supply must equal MIN_LIQUIDITY + sum of all user balances
-    function invariant_lpTokenAccounting() public view {
-        uint256 totalSupply = amm.totalSupply(poolId);
+    /// @notice A pool is either completely uninitialized, or properly initialized
+    /// @dev If totalSupply == 0, both reserves must be zero
+    ///      If totalSupply > 0, pool must have locked at least MIN_LIQUIDITY
+    function invariant_poolSupplyAndReserveShape() public view {
+        uint256 minLiq = amm.MIN_LIQUIDITY();
 
-        if (totalSupply == 0) return; // Pool not initialized
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            bytes32 pid = handler.getPoolId(i);
+            (uint128 ru, uint128 rv) = amm.pools(pid);
+            uint256 supply = amm.totalSupply(pid);
 
-        uint256 sumBalances = handler.sumLPBalances();
-        uint256 minLiquidity = amm.MIN_LIQUIDITY();
+            // If supply is zero, both reserves must be zero
+            if (supply == 0) {
+                assertEq(uint256(ru), 0, "supply=0 => reserveU=0");
+                assertEq(uint256(rv), 0, "supply=0 => reserveV=0");
+            } else {
+                // If supply > 0, the pool must have at least MIN_LIQUIDITY locked
+                assertGe(supply, minLiq, "initialized pool must lock MIN_LIQUIDITY");
+            }
 
-        // totalSupply = MIN_LIQUIDITY (locked) + sum of all user balances
-        assertEq(totalSupply, minLiquidity + sumBalances, "LP token accounting mismatch");
+            // If either reserve is nonzero, the pool must be initialized
+            if (ru != 0 || rv != 0) {
+                assertGt(supply, 0, "reserves>0 => supply>0");
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
-                    INVARIANT A2: RESERVES NEVER NEGATIVE
+            INVARIANT A2: LP SUPPLY ACCOUNTING
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Pool reserves must never underflow (always >= 0)
-    function invariant_reservesNonNegative() public view {
-        IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
+    /// @notice Total LP supply equals sum of all actor LP balances plus locked MIN_LIQUIDITY
+    function invariant_lpAccountingMatchesLockedMinLiquidity() public view {
+        uint256 minLiq = amm.MIN_LIQUIDITY();
 
-        // uint128 can't be negative, but check they're valid
-        assertTrue(pool.reserveUserToken >= 0, "User reserve negative");
-        assertTrue(pool.reserveValidatorToken >= 0, "Validator reserve negative");
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            bytes32 pid = handler.getPoolId(i);
+            uint256 supply = amm.totalSupply(pid);
+
+            // If supply is zero, this pool is considered uninitialized
+            if (supply == 0) continue;
+
+            uint256 sum = handler.sumLPBalances(pid);
+
+            // Strong accounting identity: all LP owned by actors + locked MIN_LIQUIDITY == totalSupply
+            assertEq(supply, sum + minLiq, "supply != sumBalances + MIN_LIQUIDITY");
+
+            // Local sanity: no single actor can exceed totalSupply
+            for (uint256 k = 0; k < actors.length; k++) {
+                uint256 bal = amm.liquidityBalances(pid, actors[k]);
+                assertLe(bal, supply, "actor LP balance > totalSupply");
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
-                INVARIANT A3: NO VALUE CREATION FROM ROUNDING
+            INVARIANT A3: TOKEN BALANCE COVERS RESERVES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice AMM's on-chain token balance must be at least the sum of reserves across all pools
+    function invariant_tokenBalanceCoversSumOfReserves() public view {
+        uint256 n = tokens.length;
+        uint256[] memory sumReserves = new uint256[](n);
+
+        // Accumulate reserves across all seen pools in the token universe
+        for (uint256 a = 0; a < n; a++) {
+            for (uint256 b = 0; b < n; b++) {
+                if (a == b) continue;
+
+                address userToken = address(tokens[a]);
+                address validatorToken = address(tokens[b]);
+
+                bytes32 pid = amm.getPoolId(userToken, validatorToken);
+                if (!handler.seenPool(pid)) continue;
+
+                IFeeAMM.Pool memory p = amm.getPool(userToken, validatorToken);
+
+                sumReserves[a] += uint256(p.reserveUserToken);
+                sumReserves[b] += uint256(p.reserveValidatorToken);
+            }
+        }
+
+        // Check AMM balances cover aggregate reserves per token
+        for (uint256 i = 0; i < n; i++) {
+            uint256 bal = tokens[i].balanceOf(address(amm));
+            assertGe(bal, sumReserves[i], "token balance < sum(reserves)");
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            INVARIANT A4: POOL IDS RESOLVE TO UNIQUE PAIR
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Every tracked poolId must correspond to exactly one ordered pair
+    function invariant_poolIdsResolveToUniqueOrderedPair() public view {
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            bytes32 pid = handler.getPoolId(i);
+            uint256 matches;
+
+            for (uint256 a = 0; a < tokens.length; a++) {
+                for (uint256 b = 0; b < tokens.length; b++) {
+                    if (a == b) continue;
+                    if (amm.getPoolId(address(tokens[a]), address(tokens[b])) == pid) {
+                        matches++;
+                    }
+                }
+            }
+
+            assertEq(matches, 1, "poolId must match exactly one ordered pair");
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            INVARIANT A5: NO LP WHEN UNINITIALIZED
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice If a pool is uninitialized (totalSupply == 0), no actor may hold LP for it
+    function invariant_noLpWhenUninitialized() public view {
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            bytes32 pid = handler.getPoolId(i);
+            uint256 supply = amm.totalSupply(pid);
+            if (supply != 0) continue;
+
+            for (uint256 k = 0; k < actors.length; k++) {
+                uint256 bal = amm.liquidityBalances(pid, actors[k]);
+                assertEq(bal, 0, "uninitialized pool => all actor LP = 0");
+            }
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            INVARIANT A6: EACH POOL INDIVIDUALLY BACKED
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice For every tracked pool, the AMM must hold at least the pool's reserves
+    function invariant_eachPoolIsIndividuallyBacked() public view {
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            bytes32 pid = handler.getPoolId(i);
+
+            // Resolve token pair for this poolId within our token universe
+            (address userToken, address validatorToken) = _resolvePoolTokens(pid);
+            if (userToken == address(0)) continue; // Skip if unresolvable
+
+            IFeeAMM.Pool memory p = amm.getPool(userToken, validatorToken);
+
+            uint256 balU = TIP20(userToken).balanceOf(address(amm));
+            uint256 balV = TIP20(validatorToken).balanceOf(address(amm));
+
+            assertGe(balU, uint256(p.reserveUserToken), "pool user reserve not backed");
+            assertGe(balV, uint256(p.reserveValidatorToken), "pool validator reserve not backed");
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            INVARIANT A7: TRACKED POOL IDS ARE MARKED SEEN
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Tracked poolIds must correspond to a "seen" pool
+    function invariant_trackedPoolIdsAreMarkedSeen() public view {
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            assertTrue(handler.seenPool(handler.getPoolId(i)), "poolIds[] must only contain seen pools");
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            INVARIANT A8: NO VALUE CREATION FROM ROUNDING
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Users cannot extract more LP tokens than minted through rounding
     function invariant_noFreeValue() public view {
-        // After any sequence of operations:
-        // ghost_totalBurned <= ghost_totalMinted (can't burn more LP than minted)
         assertLe(
             handler.ghost_totalBurned(),
             handler.ghost_totalMinted(),
@@ -86,7 +272,7 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
-                INVARIANT A4: REBALANCE SWAP RATE CORRECTNESS
+            INVARIANT A9: REBALANCE SWAP RATE CORRECTNESS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Rebalance swap input must be >= (output * N) / SCALE + 1
@@ -103,44 +289,10 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
-                INVARIANT A5: POOL SOLVENCY
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Pool must always have enough tokens to cover reserves
-    function invariant_poolSolvency() public view {
-        uint256 totalSupply = amm.totalSupply(poolId);
-        if (totalSupply == 0) return;
-
-        IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
-
-        // FeeManager must hold at least the reserve amounts
-        uint256 userBalance = userToken.balanceOf(address(amm));
-        uint256 validatorBalance = validatorToken.balanceOf(address(amm));
-
-        assertGe(userBalance, pool.reserveUserToken, "Insufficient userToken balance");
-        assertGe(validatorBalance, pool.reserveValidatorToken, "Insufficient validatorToken balance");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                INVARIANT A6: MIN_LIQUIDITY PERMANENTLY LOCKED
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice MIN_LIQUIDITY tokens are permanently locked on first mint
-    /// @dev After first mint, totalSupply >= MIN_LIQUIDITY always
-    function invariant_minLiquidityLocked() public view {
-        uint256 ts = amm.totalSupply(poolId);
-        if (ts == 0) return; // Pool not initialized
-
-        uint256 minLiquidity = amm.MIN_LIQUIDITY();
-        assertGe(ts, minLiquidity, "Total supply below MIN_LIQUIDITY");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                INVARIANT A7: FEE SWAP RATE CORRECTNESS
+            INVARIANT A10: FEE SWAP RATE CORRECTNESS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Fee swap output must be exactly (input * M) / SCALE
-    /// @dev M = 9970, SCALE = 10000, so output = input * 0.997
     function invariant_feeSwapRateCorrect() public view {
         uint256 totalIn = handler.ghost_feeSwapIn();
         uint256 totalOut = handler.ghost_feeSwapOut();
@@ -159,29 +311,42 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
-                INVARIANT A8: UNINITIALIZED POOL CONSISTENCY
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Uninitialized pools (totalSupply == 0) must have zero reserves
-    /// @dev Catches dirty state attacks where reserves are modified without minting LP tokens
-    function invariant_uninitializedPoolConsistency() public view {
-        uint256 ts = amm.totalSupply(poolId);
-        if (ts == 0) {
-            IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
-            assertEq(pool.reserveUserToken, 0, "Uninitialized pool has non-zero user reserve");
-            assertEq(pool.reserveValidatorToken, 0, "Uninitialized pool has non-zero validator reserve");
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                INVARIANT A9: RESERVES BOUNDED BY UINT128
+            INVARIANT A11: RESERVES BOUNDED BY UINT128
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Pool reserves must always fit in uint128
     function invariant_reservesBounded() public view {
-        IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
-        assertLe(pool.reserveUserToken, type(uint128).max, "User reserve overflow");
-        assertLe(pool.reserveValidatorToken, type(uint128).max, "Validator reserve overflow");
+        for (uint256 i = 0; i < handler.poolCount(); i++) {
+            bytes32 pid = handler.getPoolId(i);
+            (uint128 ru, uint128 rv) = amm.pools(pid);
+
+            assertLe(uint256(ru), type(uint128).max, "reserveUserToken > u128");
+            assertLe(uint256(rv), type(uint128).max, "reserveValidatorToken > u128");
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Resolve a poolId to its unique ordered token pair within this test's token universe
+    function _resolvePoolTokens(bytes32 pid)
+        internal
+        view
+        returns (address userToken, address validatorToken)
+    {
+        for (uint256 a = 0; a < tokens.length; a++) {
+            for (uint256 b = 0; b < tokens.length; b++) {
+                if (a == b) continue;
+                address u = address(tokens[a]);
+                address v = address(tokens[b]);
+                if (amm.getPoolId(u, v) == pid) {
+                    return (u, v);
+                }
+            }
+        }
+        // Return zero addresses if not found
+        return (address(0), address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -191,6 +356,7 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     /// @notice Log call statistics for debugging
     function invariant_callSummary() public view {
         console.log("=== FeeAMM Invariant Call Summary ===");
+        console.log("Pools touched:", handler.poolCount());
         console.log("Mint calls:", handler.mintCalls());
         console.log("Burn calls:", handler.burnCalls());
         console.log("Rebalance calls:", handler.rebalanceCalls());
