@@ -4,12 +4,14 @@ out = "out"
 libs = ["lib"]
 optimizer = true
 optimizer_runs = 200
-invariant = { runs = 2, fail_on_revert = true, show_solidity = true }
 
 [profile.ci]
 optimizer = true
 optimizer_runs = 1
-invariant = { runs = 10, depth = 100, fail_on_revert = true, show_solidity = true }
+
+[invariant]
+fail_on_revert = true
+show_solidity = true
 
 [fmt]
 line_length = 100

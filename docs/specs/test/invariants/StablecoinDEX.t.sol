@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import { TIP20 } from "../../src/TIP20.sol";
 import { IStablecoinDEX } from "../../src/interfaces/IStablecoinDEX.sol";
 import { ITIP20 } from "../../src/interfaces/ITIP20.sol";
+import { ITIP403Registry } from "../../src/interfaces/ITIP403Registry.sol";
 import { BaseTest } from "../BaseTest.t.sol";
 
 /// @title StablecoinDEX Invariant Tests
@@ -38,6 +39,12 @@ contract StablecoinDEXInvariantTest is BaseTest {
     /// @dev The trading pair key for token1/pathUSD
     bytes32 private _pairKey;
 
+    /// @dev Blacklist policy ID for token1
+    uint64 private _token1PolicyId;
+
+    /// @dev Blacklist policy ID for pathUSD
+    uint64 private _pathUsdPolicyId;
+
     /// @notice Sets up the test environment
     /// @dev Initializes BaseTest, creates trading pair, builds actors, and sets initial state
     function setUp() public override {
@@ -58,6 +65,17 @@ contract StablecoinDEXInvariantTest is BaseTest {
 
         // Create the trading pair
         _pairKey = exchange.createPair(address(token1));
+
+        // Create blacklist policies for testing cancelStaleOrder
+        vm.startPrank(admin);
+        _token1PolicyId = registry.createPolicy(admin, ITIP403Registry.PolicyType.BLACKLIST);
+        token1.changeTransferPolicyId(_token1PolicyId);
+        vm.stopPrank();
+
+        vm.startPrank(pathUSDAdmin);
+        _pathUsdPolicyId = registry.createPolicy(pathUSDAdmin, ITIP403Registry.PolicyType.BLACKLIST);
+        pathUSD.changeTransferPolicyId(_pathUsdPolicyId);
+        vm.stopPrank();
 
         _actors = _buildActors(20);
         _nextOrderId = exchange.nextOrderId();
@@ -268,6 +286,111 @@ contract StablecoinDEXInvariantTest is BaseTest {
         _nextOrderId = exchange.nextOrderId();
 
         vm.stopPrank();
+    }
+
+    /// @notice Fuzz handler: Blacklists an actor, has another actor cancel their stale orders, then whitelists again
+    /// @dev Tests TEMPO-DEX13 (stale order cancellation by non-owner when maker is blacklisted)
+    /// @param blacklistActorRnd Random seed for selecting actor to blacklist
+    /// @param cancellerActorRnd Random seed for selecting actor who will cancel stale orders
+    /// @param forBids If true, blacklist in quote token (pathUSD) for bids; if false, blacklist in base token for asks
+    function cancelStaleOrderAfterBlacklist(
+        uint256 blacklistActorRnd,
+        uint256 cancellerActorRnd,
+        bool forBids
+    ) external {
+        address blacklistedActor = _actors[blacklistActorRnd % _actors.length];
+        address canceller = _actors[cancellerActorRnd % _actors.length];
+
+        // Skip if canceller is the same as blacklisted actor
+        vm.assume(canceller != blacklistedActor);
+
+        // Skip if the actor has no orders
+        if (_placedOrders[blacklistedActor].length == 0) {
+            return;
+        }
+
+        // Blacklist the actor in the appropriate token
+        if (forBids) {
+            // For bids, blacklist in quote token (pathUSD) since that's the escrow token
+            vm.prank(pathUSDAdmin);
+            registry.modifyPolicyBlacklist(_pathUsdPolicyId, blacklistedActor, true);
+        } else {
+            // For asks, blacklist in base token (token1) since that's the escrow token
+            vm.prank(admin);
+            registry.modifyPolicyBlacklist(_token1PolicyId, blacklistedActor, true);
+        }
+
+        // Have a different actor cancel the blacklisted actor's stale orders
+        vm.startPrank(canceller);
+        for (uint256 i = 0; i < _placedOrders[blacklistedActor].length; i++) {
+            uint128 orderId = _placedOrders[blacklistedActor][i];
+
+            // Try to get the order - it may have been filled
+            try exchange.getOrder(orderId) returns (IStablecoinDEX.Order memory order) {
+                // Only try to cancel if the order side matches the blacklist type
+                bool canCancelStale = (forBids && order.isBid) || (!forBids && !order.isBid);
+
+                if (canCancelStale) {
+                    // Capture balance before cancel
+                    uint128 balanceBefore = forBids
+                        ? exchange.balanceOf(blacklistedActor, address(pathUSD))
+                        : exchange.balanceOf(blacklistedActor, address(token1));
+
+                    // TEMPO-DEX13: Anyone can cancel a stale order from a blacklisted maker
+                    exchange.cancelStaleOrder(orderId);
+
+                    // Verify refund was credited to blacklisted actor's internal balance
+                    uint128 balanceAfter = forBids
+                        ? exchange.balanceOf(blacklistedActor, address(pathUSD))
+                        : exchange.balanceOf(blacklistedActor, address(token1));
+
+                    if (order.isBid) {
+                        uint32 price = exchange.tickToPrice(order.tick);
+                        uint128 expectedRefund = uint128(
+                            (uint256(order.remaining) * uint256(price) + exchange.PRICE_SCALE() - 1)
+                                / exchange.PRICE_SCALE()
+                        );
+                        assertEq(
+                            balanceAfter - balanceBefore,
+                            expectedRefund,
+                            "TEMPO-DEX13: stale bid cancel refund mismatch"
+                        );
+                    } else {
+                        assertEq(
+                            balanceAfter - balanceBefore,
+                            order.remaining,
+                            "TEMPO-DEX13: stale ask cancel refund mismatch"
+                        );
+                    }
+
+                    // Verify order no longer exists
+                    try exchange.getOrder(orderId) returns (IStablecoinDEX.Order memory) {
+                        revert("TEMPO-DEX13: order should not exist after stale cancel");
+                    } catch (bytes memory reason) {
+                        assertEq(
+                            bytes4(reason),
+                            IStablecoinDEX.OrderDoesNotExist.selector,
+                            "TEMPO-DEX13: unexpected error on getOrder"
+                        );
+                    }
+                }
+            } catch {
+                // Order was already filled or cancelled
+            }
+        }
+        vm.stopPrank();
+
+        // Whitelist the actor again so they can continue to be used in tests
+        if (forBids) {
+            vm.prank(pathUSDAdmin);
+            registry.modifyPolicyBlacklist(_pathUsdPolicyId, blacklistedActor, false);
+        } else {
+            vm.prank(admin);
+            registry.modifyPolicyBlacklist(_token1PolicyId, blacklistedActor, false);
+        }
+
+        // Update next order id in case any flip orders were triggered
+        _nextOrderId = exchange.nextOrderId();
     }
 
     /*//////////////////////////////////////////////////////////////
