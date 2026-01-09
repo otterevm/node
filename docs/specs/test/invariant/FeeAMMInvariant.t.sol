@@ -29,6 +29,7 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     uint256 public ghost_totalBurned;
     uint256 public ghost_rebalanceIn;
     uint256 public ghost_rebalanceOut;
+    uint256 public ghost_rebalanceExpectedIn; // Track sum of individual expected inputs
     uint256 public ghost_feeSwapIn;
     uint256 public ghost_feeSwapOut;
 
@@ -197,6 +198,7 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
 
             ghost_rebalanceIn += amountIn;
             ghost_rebalanceOut += amountOut;
+            ghost_rebalanceExpectedIn += expectedIn; // Track individual expected amount
             rebalanceCalls++;
         } catch (bytes memory err) {
             _assertExpectedSwapRevert(err);
@@ -450,14 +452,9 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_rebalanceSwapRateCorrect() public view {
-        uint256 totalIn = ghost_rebalanceIn;
-        uint256 totalOut = ghost_rebalanceOut;
-
-        if (totalOut == 0) return;
-
-        uint256 minExpectedIn = (totalOut * 9985) / 10_000 + rebalanceCalls;
-
-        assertGe(totalIn, minExpectedIn, "Rebalance swap: insufficient input collected");
+        // Use tracked sum of individual expected inputs instead of computing from total
+        // This avoids floor division rounding discrepancy: sum(floor(x_i)) <= floor(sum(x_i))
+        assertGe(ghost_rebalanceIn, ghost_rebalanceExpectedIn, "Rebalance swap: insufficient input collected");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -465,17 +462,10 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_feeSwapRateCorrect() public view {
-        uint256 totalIn = ghost_feeSwapIn;
-        uint256 totalOut = ghost_feeSwapOut;
+        uint256 expectedOut = (ghost_feeSwapIn * 9970) / 10_000;
 
-        if (totalIn == 0) return;
-
-        uint256 expectedOut = (totalIn * 9970) / 10_000;
-
-        assertLe(totalOut, expectedOut, "Fee swap output too high");
-
-        uint256 maxRoundingError = feeSwapCalls;
-        assertGe(totalOut + maxRoundingError, expectedOut, "Fee swap output too low");
+        assertLe(ghost_feeSwapOut, expectedOut, "Fee swap output too high");
+        assertGe(ghost_feeSwapOut + feeSwapCalls, expectedOut, "Fee swap output too low");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -507,6 +497,7 @@ contract FeeAMMInvariantTest is StdInvariant, BaseTest {
         console.log("Total LP burned:", ghost_totalBurned);
         console.log("Total rebalance in:", ghost_rebalanceIn);
         console.log("Total rebalance out:", ghost_rebalanceOut);
+        console.log("Total rebalance expected in:", ghost_rebalanceExpectedIn);
         console.log("Total fee swap in:", ghost_feeSwapIn);
         console.log("Total fee swap out:", ghost_feeSwapOut);
     }

@@ -35,6 +35,7 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
     uint256 public ghost_totalBurned;
     uint256 public ghost_rebalanceIn;
     uint256 public ghost_rebalanceOut;
+    uint256 public ghost_rebalanceExpectedIn; // Track sum of individual expected inputs
 
     // Ghost state - Cross-token fee tracking
     uint256 public ghost_crossTokenFeesIn;
@@ -218,12 +219,13 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
 
         amountOut = bound(amountOut, 1, pool.reserveUserToken);
 
-        uint256 amountIn = (amountOut * N) / SCALE + 1;
+        // Calculate expected input for this specific swap (matches implementation formula)
+        uint256 expectedIn = (amountOut * N) / SCALE + 1;
 
-        validatorToken.mint(actor, amountIn);
+        validatorToken.mint(actor, expectedIn);
 
         vm.startPrank(actor);
-        validatorToken.approve(address(amm), amountIn);
+        validatorToken.approve(address(amm), expectedIn);
 
         try amm.rebalanceSwap(
             address(userToken), address(validatorToken), amountOut, actor
@@ -232,6 +234,7 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
         ) {
             ghost_rebalanceIn += actualIn;
             ghost_rebalanceOut += amountOut;
+            ghost_rebalanceExpectedIn += expectedIn; // Track individual expected amount
             rebalanceCalls++;
         } catch { }
         vm.stopPrank();
@@ -297,17 +300,13 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_crossTokenFeeRate() public view {
-        uint256 feesIn = ghost_crossTokenFeesIn;
-        uint256 feesOut = ghost_crossTokenFeesOut;
+        uint256 expectedOut = (ghost_crossTokenFeesIn * M) / SCALE;
 
-        if (feesIn == 0) return;
-
-        uint256 expectedOut = (feesIn * M) / SCALE;
-        uint256 maxRoundingError = crossTokenFeeCalls;
-
-        assertLe(feesOut, expectedOut, "Cross-token fees exceed expected");
+        assertLe(ghost_crossTokenFeesOut, expectedOut, "Cross-token fees exceed expected");
         assertGe(
-            feesOut + maxRoundingError, expectedOut, "Cross-token fees too low beyond rounding"
+            ghost_crossTokenFeesOut + crossTokenFeeCalls,
+            expectedOut,
+            "Cross-token fees too low beyond rounding"
         );
     }
 
@@ -316,13 +315,9 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_noArbitrage() public view {
-        uint256 rebalIn = ghost_rebalanceIn;
-        uint256 rebalOut = ghost_rebalanceOut;
-
-        if (rebalOut == 0) return;
-
-        uint256 minExpectedIn = (rebalOut * 9985) / 10_000 + rebalanceCalls;
-        assertGe(rebalIn, minExpectedIn, "Rebalance rate too favorable");
+        // Use tracked sum of individual expected inputs instead of computing from total
+        // This avoids floor division rounding discrepancy: sum(floor(x_i)) <= floor(sum(x_i))
+        assertGe(ghost_rebalanceIn, ghost_rebalanceExpectedIn, "Rebalance rate too favorable");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -411,9 +406,7 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
         IFeeAMM.Pool memory pool = amm.getPool(address(userToken), address(validatorToken));
         uint256 totalValue = pool.reserveUserToken + pool.reserveValidatorToken;
 
-        if (ts > 0) {
-            assertTrue(totalValue >= 0, "Pool value should be non-negative");
-        }
+        assertTrue(totalValue >= 0, "Pool value should be non-negative");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -451,6 +444,7 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
         console.log("Total LP burned:", ghost_totalBurned);
         console.log("Total rebalance in:", ghost_rebalanceIn);
         console.log("Total rebalance out:", ghost_rebalanceOut);
+        console.log("Total rebalance expected in:", ghost_rebalanceExpectedIn);
     }
 
 }
