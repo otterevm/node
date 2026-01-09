@@ -37,15 +37,12 @@ contract FeeIntegrationInvariantTest is StdInvariant, BaseTest {
         userToken.grantRole(_ISSUER_ROLE, admin);
         validatorToken.grantRole(_ISSUER_ROLE, admin);
 
-        // Setup initial pool liquidity
+        // Setup initial pool liquidity (validator token only via mint)
+        // User token reserves will accumulate through simulateCrossTokenFee during testing
         uint256 initialLiquidity = 10_000_000e18;
         validatorToken.mint(admin, initialLiquidity);
         validatorToken.approve(address(amm), initialLiquidity);
         amm.mint(address(userToken), address(validatorToken), initialLiquidity, admin);
-
-        // Also add some userToken to the pool for rebalance swaps
-        // We do this by simulating fee swaps that add userToken to reserves
-        userToken.mint(address(amm), 5_000_000e18);
 
         poolId = amm.getPoolId(address(userToken), address(validatorToken));
 

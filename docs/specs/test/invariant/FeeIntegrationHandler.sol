@@ -13,6 +13,9 @@ import { StdUtils } from "forge-std/StdUtils.sol";
 /// @dev Tests cross-contract interactions between fee collection and AMM operations
 contract FeeIntegrationHandler is CommonBase, StdCheats, StdUtils {
 
+    // Storage slot for pools mapping in FeeAMM (slot 0)
+    uint256 internal constant POOLS_SLOT = 0;
+
     FeeManager public feeManager;
     TIP20 public userToken;
     TIP20 public validatorToken;
@@ -132,7 +135,30 @@ contract FeeIntegrationHandler is CommonBase, StdCheats, StdUtils {
         ghost_crossTokenFeesOut += amountOut;
         ghost_totalFeesCollected += amountOut;
 
+        // Update pool reserves to simulate the fee swap
+        // reserveUserToken += actualUsed, reserveValidatorToken -= amountOut
+        _updatePoolReserves(poolId, int256(actualUsed), -int256(amountOut));
+
         crossTokenFeeCalls++;
+    }
+
+    /// @notice Update pool reserves using vm.store
+    /// @dev Pool struct packs reserveUserToken (lower 128 bits) and reserveValidatorToken (upper 128 bits)
+    function _updatePoolReserves(bytes32 _poolId, int256 deltaUser, int256 deltaValidator)
+        internal
+    {
+        bytes32 poolSlot = keccak256(abi.encode(_poolId, POOLS_SLOT));
+        bytes32 currentData = vm.load(address(feeManager), poolSlot);
+
+        uint128 currentUserReserve = uint128(uint256(currentData));
+        uint128 currentValidatorReserve = uint128(uint256(currentData) >> 128);
+
+        uint128 newUserReserve = uint128(uint256(int256(uint256(currentUserReserve)) + deltaUser));
+        uint128 newValidatorReserve =
+            uint128(uint256(int256(uint256(currentValidatorReserve)) + deltaValidator));
+
+        bytes32 newData = bytes32((uint256(newValidatorReserve) << 128) | uint256(newUserReserve));
+        vm.store(address(feeManager), poolSlot, newData);
     }
 
     /// @notice Add liquidity to the pool
