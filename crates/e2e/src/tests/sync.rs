@@ -35,7 +35,7 @@ fn joins_from_snapshot() {
 
     executor.start(|context| async move {
         let (mut validators, execution_runtime) =
-            setup_validators(context.clone(), setup.clone()).await;
+            setup_validators(context.clone(), setup).await;
 
         // The validator that will donate its address to the snapshot syncing
         // validator.
