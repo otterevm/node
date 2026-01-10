@@ -6,6 +6,7 @@ import { ITIP20 } from "../src/interfaces/ITIP20.sol";
 import { ITIP403Registry } from "../src/interfaces/ITIP403Registry.sol";
 import { BaseTest } from "./BaseTest.t.sol";
 import { MockTIP20 } from "./mocks/MockTIP20.sol";
+import { console } from "forge-std/Test.sol";
 
 contract StablecoinDEXTest is BaseTest {
 
@@ -1713,6 +1714,27 @@ contract StablecoinDEXTest is BaseTest {
         assertEq(head, order2);
         assertEq(tail, order2);
         assertEq(liquidity, exchange.MIN_ORDER_AMOUNT());
+    }
+
+    // bob swaps pathUSD to token1 at price 1.02
+    function test_AskSwapExactInRounding() public {
+        int16 tick = 2000;
+
+        uint128 oid = _placeAskOrder(alice, exchange.MIN_ORDER_AMOUNT(), tick);
+
+        uint128 amountIn = uint128(exchange.tickToPrice(tick) + 1); // 102001;
+
+        uint256 balanceBeforeIn = pathUSD.balanceOf(bob);
+
+        vm.prank(bob);
+        exchange.swapExactAmountIn(address(pathUSD), address(token1), amountIn, 0);
+
+        // Fails assert for both spec + precompile - bob spends 102001 but alice's balance only inc's by 1
+        // We round once when we calculate an intermediate `amountOut = floor(amountIn / price)`
+        // Then we have `aliceBalance += ceil(amountOut * price)`
+        vm.assertEq(
+            exchange.balanceOf(alice, address(pathUSD)), balanceBeforeIn - pathUSD.balanceOf(bob)
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
