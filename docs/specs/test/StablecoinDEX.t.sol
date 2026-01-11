@@ -1950,6 +1950,52 @@ contract StablecoinDEXTest is BaseTest {
         );
     }
 
+    /// @notice Test that partial fills on a flip bid order via swapExactAmountOut
+    ///         can leave dust in the exchange when the maker cancels.
+    function test_FlipBidPartialFills_CancelLeavesDust() public {
+        uint32 price = exchange.tickToPrice(90);
+
+        // Setup charlie
+        vm.prank(admin);
+        token1.mint(charlie, 10e18);
+        vm.prank(charlie);
+        token1.approve(address(exchange), type(uint256).max);
+
+        // Alice places a flip bid order for 8284545912 base
+        vm.prank(alice);
+        uint128 orderId = exchange.placeFlip(address(token1), 8_284_545_912, true, 90, 200);
+
+        // First partial fill: bob wants 972796803 quote out
+        vm.prank(bob);
+        exchange.swapExactAmountOut(address(token1), address(pathUSD), 972_796_803, 972_796_903);
+
+        // Second partial fill: charlie wants 900000049 quote out
+        vm.prank(charlie);
+        exchange.swapExactAmountOut(address(token1), address(pathUSD), 900_000_049, 900_000_149);
+
+        uint128 remaining = exchange.getOrder(orderId).remaining;
+        uint256 dexBalanceBeforeCancel = pathUSD.balanceOf(address(exchange));
+
+        vm.prank(alice);
+        exchange.cancel(orderId);
+
+        uint128 aliceInternalBalance = exchange.balanceOf(alice, address(pathUSD));
+        uint128 expectedEscrowRefund = uint128(
+            (uint256(remaining) * uint256(price) + exchange.PRICE_SCALE() - 1)
+                / exchange.PRICE_SCALE()
+        );
+
+        console.log("Order remaining:", remaining);
+        console.log("DEX balance before cancel:", dexBalanceBeforeCancel);
+        console.log("Alice refund:", aliceInternalBalance);
+        console.log("Dust:", dexBalanceBeforeCancel - aliceInternalBalance);
+
+        assertEq(remaining, 6_413_433_060);
+        assertLe(
+            aliceInternalBalance, dexBalanceBeforeCancel, "Refund should not exceed DEX balance"
+        );
+    }
+
     /// @notice PoC: Without the fix, at price < 1.0, trading 1 base at a time costs 0 quote each.
     /// floor(1 * 98000 / 100000) = floor(0.98) = 0
     /// With the fix (ceiling), each 1-base trade costs 1 quote.
