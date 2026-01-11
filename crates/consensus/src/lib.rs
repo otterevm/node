@@ -363,11 +363,9 @@ mod tests {
         let sealed = SealedHeader::seal_slow(header);
 
         let result = consensus.validate_header(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(
-                "Shared gas limit does not match header gas limit".to_string()
-            ))
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::Other(msg) if msg == "Shared gas limit does not match header gas limit")
         );
     }
 
@@ -382,11 +380,9 @@ mod tests {
         let sealed = SealedHeader::seal_slow(header);
 
         let result = consensus.validate_header(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(
-                "Non-payment gas limit does not match header gas limit".to_string()
-            ))
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::Other(msg) if msg == "Non-payment gas limit does not match header gas limit")
         );
     }
 
@@ -403,11 +399,9 @@ mod tests {
         let sealed = SealedHeader::seal_slow(header);
 
         let result = consensus.validate_header(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(
-                "Timestamp milliseconds part must be less than 1000".to_string()
-            ))
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::Other(msg) if msg == "Timestamp milliseconds part must be less than 1000")
         );
 
         // Test timestamp > 1000
@@ -418,11 +412,9 @@ mod tests {
             .build();
         let sealed = SealedHeader::seal_slow(header);
         let result = consensus.validate_header(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(
-                "Timestamp milliseconds part must be less than 1000".to_string()
-            ))
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::Other(msg) if msg == "Timestamp milliseconds part must be less than 1000")
         );
     }
 
@@ -474,12 +466,10 @@ mod tests {
         let parent_timestamp_millis = parent_ts * 1000 + 500;
         let child_timestamp_millis = parent_ts * 1000 + 400;
         let result = consensus.validate_header_against_parent(&child_sealed, &parent_sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::TimestampIsInPast {
-                parent_timestamp: parent_timestamp_millis,
-                timestamp: child_timestamp_millis,
-            })
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::TimestampIsInPast { parent_timestamp, timestamp }
+                if *parent_timestamp == parent_timestamp_millis && *timestamp == child_timestamp_millis)
         );
     }
 
@@ -547,12 +537,9 @@ mod tests {
         let sealed = SealedBlock::seal_slow(block);
 
         let result = consensus.validate_block_pre_execution(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(format!(
-                "Invalid system transaction: {tx_hash}"
-            )))
-        );
+        let err = result.unwrap_err();
+        let expected_msg = format!("Invalid system transaction: {tx_hash}");
+        assert!(matches!(&err, ConsensusError::Other(msg) if msg == &expected_msg));
     }
 
     #[test]
@@ -570,11 +557,9 @@ mod tests {
         let sealed = SealedBlock::seal_slow(block);
 
         let result = consensus.validate_block_pre_execution(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(
-                "Block must contain end-of-block system txs".to_string()
-            ))
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::Other(msg) if msg == "Block must contain end-of-block system txs")
         );
     }
 
@@ -594,11 +579,9 @@ mod tests {
         let sealed = SealedBlock::seal_slow(block);
 
         let result = consensus.validate_block_pre_execution(&sealed);
-        assert_eq!(
-            result,
-            Err(ConsensusError::Other(
-                "Invalid end-of-block system tx order".to_string()
-            ))
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConsensusError::Other(msg) if msg == "Invalid end-of-block system tx order")
         );
     }
 }
