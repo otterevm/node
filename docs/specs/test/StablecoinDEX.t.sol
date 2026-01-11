@@ -1716,22 +1716,36 @@ contract StablecoinDEXTest is BaseTest {
         assertEq(liquidity, exchange.MIN_ORDER_AMOUNT());
     }
 
-    // bob swaps pathUSD to token1 at price 1.02
-    function test_AskSwapExactInRounding() public {
+    function test_AskSwapExactInPartial() public {
         int16 tick = 2000;
 
         uint128 oid = _placeAskOrder(alice, exchange.MIN_ORDER_AMOUNT(), tick);
 
-        uint128 amountIn = uint128(exchange.tickToPrice(tick) + 1); // 102001;
+        uint128 amountIn = 102_001;
 
         uint256 balanceBeforeIn = pathUSD.balanceOf(bob);
 
         vm.prank(bob);
         exchange.swapExactAmountIn(address(pathUSD), address(token1), amountIn, 0);
 
-        // Fails assert for both spec + precompile - bob spends 102001 but alice's balance only inc's by 1
-        // We round once when we calculate an intermediate `amountOut = floor(amountIn / price)`
-        // Then we have `aliceBalance += ceil(amountOut * price)`
+        vm.assertEq(
+            exchange.balanceOf(alice, address(pathUSD)), balanceBeforeIn - pathUSD.balanceOf(bob)
+        );
+    }
+
+    function test_AskSwapExactInFull() public {
+        int16 tick = 2000;
+
+        uint128 oid = _placeAskOrder(alice, exchange.MIN_ORDER_AMOUNT(), tick);
+
+        // 102000001
+        uint128 amountIn = (exchange.MIN_ORDER_AMOUNT() * 102_000 / 100_000) + 1;
+
+        uint256 balanceBeforeIn = pathUSD.balanceOf(bob);
+
+        vm.prank(bob);
+        exchange.swapExactAmountIn(address(pathUSD), address(token1), amountIn, 0);
+
         vm.assertEq(
             exchange.balanceOf(alice, address(pathUSD)), balanceBeforeIn - pathUSD.balanceOf(bob)
         );

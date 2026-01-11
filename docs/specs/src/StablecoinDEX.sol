@@ -526,8 +526,9 @@ contract StablecoinDEX is IStablecoinDEX {
     /// @notice Fill an order and handle cleanup when fully filled
     /// @param orderId The order ID to fill
     /// @param fillAmount The amount to fill
+    /// @param delta The amount to increment the maker's balance by when we fill asks
     /// @return nextOrderAtTick The next order ID to process (0 if no more liquidity at this tick)
-    function _fillOrder(uint128 orderId, uint128 fillAmount)
+    function _fillOrder(uint128 orderId, uint128 fillAmount, uint128 delta)
         internal
         returns (uint128 nextOrderAtTick)
     {
@@ -549,11 +550,8 @@ contract StablecoinDEX is IStablecoinDEX {
             // Bid order: maker gets base tokens (exact amount)
             balances[order.maker][book.base] += fillAmount;
         } else {
-            // Ask order: maker gets quote tokens - round UP to favor maker
-            uint32 price = tickToPrice(order.tick);
-            uint128 quoteAmount =
-                uint128((uint256(fillAmount) * uint256(price) + PRICE_SCALE - 1) / PRICE_SCALE);
-            balances[order.maker][book.quote] += quoteAmount;
+            // Ask order: maker gets quote tokens
+            balances[order.maker][book.quote] += delta;
         }
 
         if (order.remaining == 0) {
@@ -746,19 +744,22 @@ contract StablecoinDEX is IStablecoinDEX {
                 uint128 baseNeeded =
                     uint128((uint256(remainingOut) * PRICE_SCALE + price - 1) / price);
                 uint128 fillAmount;
+                uint128 delta;
 
                 // Calculate how much quote to receive for fillAmount of base
                 if (baseNeeded > currentOrder.remaining) {
                     fillAmount = currentOrder.remaining;
-                    remainingOut -= (fillAmount * price) / PRICE_SCALE;
+                    delta = (fillAmount * price) / PRICE_SCALE;
+                    remainingOut -= delta;
                 } else {
                     fillAmount = baseNeeded;
+                    delta = remainingOut;
                     remainingOut = 0;
                 }
                 amountIn += fillAmount;
 
                 // Fill the order and get next order
-                orderId = _fillOrder(orderId, fillAmount);
+                orderId = _fillOrder(orderId, fillAmount, delta);
 
                 if (remainingOut == 0) {
                     return amountIn;
@@ -803,12 +804,12 @@ contract StablecoinDEX is IStablecoinDEX {
                 }
 
                 // Calculate how much quote taker pays (maker receives) - round UP to favor maker
-                uint128 quoteIn =
-                    uint128((uint256(fillAmount) * uint256(price) + PRICE_SCALE - 1) / PRICE_SCALE);
-                amountIn += quoteIn;
+                amountIn += uint128(
+                    (uint256(fillAmount) * uint256(price) + PRICE_SCALE - 1) / PRICE_SCALE
+                );
 
                 // Fill the order and get next order
-                orderId = _fillOrder(orderId, fillAmount);
+                orderId = _fillOrder(orderId, fillAmount, 0);
 
                 if (remainingOut == 0) {
                     return amountIn;
@@ -869,11 +870,10 @@ contract StablecoinDEX is IStablecoinDEX {
                 }
 
                 // Calculate how much quote to receive for fillAmount of base
-                uint128 quoteOut = (fillAmount * price) / PRICE_SCALE;
-                amountOut += quoteOut;
+                amountOut += (fillAmount * price) / PRICE_SCALE;
 
                 // Fill the order and get next order
-                orderId = _fillOrder(orderId, fillAmount);
+                orderId = _fillOrder(orderId, fillAmount, 0);
 
                 if (remainingIn == 0) {
                     return amountOut;
@@ -908,23 +908,24 @@ contract StablecoinDEX is IStablecoinDEX {
                 IStablecoinDEX.Order memory currentOrder = orders[orderId];
 
                 // For asks, calculate how much base we can get for remainingIn quote
-                uint128 baseOut = (remainingIn * PRICE_SCALE) / price;
-                uint128 fillAmount;
+                uint128 fillAmount = (remainingIn * PRICE_SCALE) / price;
+                uint128 delta;
 
                 // Calculate quote consumed = what maker receives - round UP to favor maker
-                if (baseOut > currentOrder.remaining) {
+                if (fillAmount > currentOrder.remaining) {
                     fillAmount = currentOrder.remaining;
-                    remainingIn -= uint128(
+                    delta = uint128(
                         (uint256(fillAmount) * uint256(price) + PRICE_SCALE - 1) / PRICE_SCALE
                     );
+                    remainingIn -= delta;
                 } else {
-                    fillAmount = baseOut;
+                    delta = remainingIn;
                     remainingIn = 0;
                 }
                 amountOut += fillAmount;
 
                 // Fill the order and get next order
-                orderId = _fillOrder(orderId, fillAmount);
+                orderId = _fillOrder(orderId, fillAmount, delta);
 
                 if (remainingIn == 0) {
                     return amountOut;
