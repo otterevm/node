@@ -62,3 +62,14 @@ reth-provider.workspace = true
 tokio = { workspace = true, features = ["macros", "sync"] }
 tracing.workspace = true
 pin-project = "1.1.10"
+
+[target.'cfg(unix)'.dependencies]
+jemalloc_pprof = { workspace = true, optional = true }
+mappings = { workspace = true, optional = true }
+pprof_util = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+tikv-jemalloc-ctl = { version = "0.6", optional = true, features = ["stats"] }
+
+[features]
+jemalloc-prof = ["dep:jemalloc_pprof", "dep:mappings", "dep:pprof_util", "dep:tempfile", "dep:tikv-jemalloc-ctl"]
+jemalloc-symbols = ["jemalloc-prof", "jemalloc_pprof?/symbolize"]

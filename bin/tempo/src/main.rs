@@ -18,6 +18,10 @@
 #[global_allocator]
 static ALLOC: reth_cli_util::allocator::Allocator = reth_cli_util::allocator::new_allocator();
 
+#[cfg(all(feature = "jemalloc-prof", unix))]
+#[unsafe(export_name = "_rjem_malloc_conf")]
+static MALLOC_CONF: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 mod defaults;
 mod tempo_cmd;
 
@@ -147,17 +151,18 @@ fn main() -> eyre::Result<()> {
                 Ok(())
             })
         } else {
-            let consensus_storage = &node
+            let chain_data_dir = node
                 .config
                 .datadir
                 .clone()
-                .resolve_datadir(node.chain_spec().chain())
-                .data_dir()
-                .join("consensus");
+                .resolve_datadir(node.chain_spec().chain());
+            let data_dir = chain_data_dir.data_dir();
+            let consensus_storage = data_dir.join("consensus");
+            let pprof_dump_dir = data_dir.join("pprof");
             let runtime_config = commonware_runtime::tokio::Config::default()
                 .with_tcp_nodelay(Some(true))
                 .with_worker_threads(args.consensus.worker_threads)
-                .with_storage_directory(consensus_storage)
+                .with_storage_directory(&consensus_storage)
                 .with_catch_panics(true);
 
             info_span!("prepare_consensus").in_scope(|| {
@@ -177,6 +182,7 @@ fn main() -> eyre::Result<()> {
                 let mut metrics_server = tempo_commonware_node::metrics::install(
                     ctx.with_label("metrics"),
                     args.consensus.metrics_address,
+                    pprof_dump_dir,
                 )
                 .fuse();
                 let consensus_stack =
