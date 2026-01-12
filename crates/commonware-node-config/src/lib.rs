@@ -115,8 +115,8 @@ impl EncryptionKey {
         else {
             return Err(DecryptErrorKind::InvalidLength.into());
         };
-        let nonce = Nonce::from_slice(&nonce);
-        let plaintext = self.cipher.decrypt(&nonce, ciphertext).unwrap();
+        let nonce = Nonce::from_slice(nonce);
+        let plaintext = self.cipher.decrypt(nonce, ciphertext).unwrap();
         Ok(plaintext)
     }
 

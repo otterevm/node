@@ -220,7 +220,8 @@ where
         mux: &mut MuxHandle<TSender, TReceiver>,
     ) -> eyre::Result<()>
     where
-        TStorageContext: commonware_runtime::Metrics + commonware_runtime::Storage + CryptoRngCore,
+        TStorageContext:
+            commonware_runtime::Metrics + commonware_runtime::Storage + Clock + CryptoRngCore,
         TSender: Sender<PublicKey = PublicKey>,
         TReceiver: Receiver<PublicKey = PublicKey>,
     {
@@ -375,9 +376,9 @@ where
                                             ));
 
                                             if let Err(err) = storage
-                                                .append_state(new_state)
+                                                .set_state(new_state)
                                                 .await
-                                                .wrap_err("failed appending new state to journal")
+                                                .wrap_err("failed setting new state")
                                             {
                                                 break Err(err);
                                             }
@@ -621,7 +622,8 @@ where
         block: Block,
     ) -> eyre::Result<Option<state::InMemory>>
     where
-        TStorageContext: commonware_runtime::Metrics + commonware_runtime::Storage + CryptoRngCore,
+        TStorageContext:
+            commonware_runtime::Metrics + commonware_runtime::Storage + Clock + CryptoRngCore,
         TSender: Sender<PublicKey = PublicKey>,
     {
         let epoch_info = self
@@ -883,7 +885,8 @@ where
         player_state: &mut Option<state::Player>,
         round_channel: &mut TSender,
     ) where
-        TStorageContext: commonware_runtime::Metrics + commonware_runtime::Storage + CryptoRngCore,
+        TStorageContext:
+            commonware_runtime::Metrics + commonware_runtime::Storage + Clock + CryptoRngCore,
         TSender: Sender<PublicKey = PublicKey>,
     {
         let me = self.config.me.public_key();
@@ -956,7 +959,8 @@ where
         mut message: Bytes,
     ) -> eyre::Result<()>
     where
-        TStorageContext: commonware_runtime::Metrics + commonware_runtime::Storage + CryptoRngCore,
+        TStorageContext:
+            commonware_runtime::Metrics + commonware_runtime::Storage + Clock + CryptoRngCore,
     {
         let msg = Message::read_cfg(&mut message, &NZU32!(round.players().len() as u32))
             .wrap_err("failed reading p2p message")?;
@@ -1041,7 +1045,7 @@ where
         request: GetDkgOutcome,
     ) -> Option<(Digest, GetDkgOutcome)>
     where
-        TStorageContext: commonware_runtime::Metrics + commonware_runtime::Storage,
+        TStorageContext: commonware_runtime::Metrics + commonware_runtime::Storage + Clock,
     {
         let epoch_info = self
             .config
