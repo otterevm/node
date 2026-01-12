@@ -74,6 +74,7 @@ use registry::TypeRegistry;
 /// 1. Parses the module into IR
 /// 2. Builds a type registry for ABI resolution
 /// 3. Generates code for all types with full type knowledge
+/// 4. Generates provider-bound instance struct when Interface trait exists
 pub(crate) fn expand(item: ItemMod) -> syn::Result<TokenStream> {
     let module = SolidityModule::parse(item)?;
     let registry = TypeRegistry::from_module(&module)?;
@@ -124,6 +125,12 @@ pub(crate) fn expand(item: ItemMod) -> syn::Result<TokenStream> {
         None
     };
 
+    let instance_impl = if let Some(ref def) = module.interface {
+        Some(interface::generate_instance(&module.name, def)?)
+    } else {
+        None
+    };
+
     let other_items: Vec<TokenStream> = module.other_items.iter().map(|i| quote! { #i }).collect();
 
     Ok(quote! {
@@ -140,6 +147,8 @@ pub(crate) fn expand(item: ItemMod) -> syn::Result<TokenStream> {
             #event_impl
 
             #interface_impl
+
+            #instance_impl
 
             #(#other_items)*
         }

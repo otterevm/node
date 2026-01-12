@@ -6,7 +6,8 @@
 //! Also transforms the trait to inject `msg_sender: Address` for mutable methods.
 
 use alloy_sol_macro_expander::{
-    CallCodegen, ReturnInfo, SolInterfaceKind, StructLayout, gen_from_into_tuple,
+    CallCodegen, CallLayout, ContractCodegen, ContractFunctionInfo, ReturnInfo, SolInterfaceKind,
+    StructLayout, gen_from_into_tuple, is_reserved_method_name,
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -218,4 +219,49 @@ fn generate_calls_enum(methods: &[MethodDef], registry: &TypeRegistry) -> syn::R
         &field_counts,
         SolInterfaceKind::Call,
     ))
+}
+
+/// Generate provider-bound instance struct for RPC interactions.
+///
+/// When an Interface trait exists, this generates a `{ModuleName}Instance<P, N>`
+/// struct with methods for each interface function that return `SolCallBuilder`.
+pub(super) fn generate_instance(
+    module_name: &proc_macro2::Ident,
+    def: &InterfaceDef,
+) -> syn::Result<TokenStream> {
+    let functions: Vec<ContractFunctionInfo> = def
+        .methods
+        .iter()
+        .map(|m| {
+            let method_name = if is_reserved_method_name(&m.sol_name) {
+                format_ident!("{}_call", m.sol_name)
+            } else {
+                format_ident!("{}", m.sol_name)
+            };
+
+            let layout = if m.params.is_empty() {
+                CallLayout::Unit
+            } else {
+                CallLayout::Named
+            };
+
+            ContractFunctionInfo {
+                method_name,
+                call_name: format_ident!("{}Call", m.sol_name),
+                param_names: m.params.iter().map(|(n, _)| n.clone()).collect(),
+                rust_types: m.params.iter().map(|(_, ty)| quote! { #ty }).collect(),
+                layout,
+            }
+        })
+        .collect();
+
+    let codegen = ContractCodegen::new(
+        module_name.clone(),
+        functions,
+        vec![], // No events for Interface
+        false,  // No bytecode
+        None,   // No constructor
+    );
+
+    Ok(codegen.expand())
 }
