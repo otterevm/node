@@ -1953,7 +1953,7 @@ contract StablecoinDEXTest is BaseTest {
     /// @notice Test that partial fills on a flip bid order via swapExactAmountOut
     ///         can leave dust in the exchange when the maker cancels.
     function test_FlipBidPartialFills_CancelLeavesDust() public {
-        uint32 price = exchange.tickToPrice(90);
+        uint128 orderAmount = 8_284_545_912;
 
         // Setup charlie
         vm.prank(admin);
@@ -1961,39 +1961,165 @@ contract StablecoinDEXTest is BaseTest {
         vm.prank(charlie);
         token1.approve(address(exchange), type(uint256).max);
 
-        // Alice places a flip bid order for 8284545912 base
+        console.log("=== ORDER PLACEMENT ===");
+        console.log("Order amount (base):", orderAmount);
+
         vm.prank(alice);
-        uint128 orderId = exchange.placeFlip(address(token1), 8_284_545_912, true, 90, 200);
+        uint128 orderId = exchange.placeFlip(address(token1), orderAmount, true, 90, 200);
 
-        // First partial fill: bob wants 972796803 quote out
+        uint256 dexQuote0 = pathUSD.balanceOf(address(exchange));
+        // Precise: 8284545912 * 100090 / 100000 = 8292002003.3208, ceil = 8292002004
+        console.log("Escrow (ceil):", dexQuote0);
+
+        // === SWAP 1 ===
+        uint128 quoteWanted1 = 972_796_803;
+        uint128 aliceBaseBefore1 = exchange.balanceOf(alice, address(token1));
+
         vm.prank(bob);
-        exchange.swapExactAmountOut(address(token1), address(pathUSD), 972_796_803, 972_796_903);
+        exchange.swapExactAmountOut(
+            address(token1), address(pathUSD), quoteWanted1, type(uint128).max
+        );
 
-        // Second partial fill: charlie wants 900000049 quote out
+        uint256 dexQuote1 = pathUSD.balanceOf(address(exchange));
+        uint128 aliceBaseAfter1 = exchange.balanceOf(alice, address(token1));
+        uint128 remaining1 = exchange.getOrder(orderId).remaining;
+        uint128 baseIn1 = aliceBaseAfter1 - aliceBaseBefore1;
+
+        console.log("");
+        console.log("=== SWAP 1 (Bob) ===");
+        console.log("Quote wanted:", quoteWanted1);
+        console.log("Quote released:", dexQuote0 - dexQuote1);
+        // Precise: 972796803 * 100000 / 100090 = 971922073.1342, ceil = 971922074
+        console.log("Base in (ceil):", baseIn1);
+        console.log("Order remaining:", remaining1);
+
+        // === SWAP 2 ===
+        uint128 quoteWanted2 = 900_000_049;
+        uint128 aliceBaseBefore2 = exchange.balanceOf(alice, address(token1));
+
         vm.prank(charlie);
-        exchange.swapExactAmountOut(address(token1), address(pathUSD), 900_000_049, 900_000_149);
+        exchange.swapExactAmountOut(
+            address(token1), address(pathUSD), quoteWanted2, type(uint128).max
+        );
 
-        uint128 remaining = exchange.getOrder(orderId).remaining;
-        uint256 dexBalanceBeforeCancel = pathUSD.balanceOf(address(exchange));
+        uint256 dexQuote2 = pathUSD.balanceOf(address(exchange));
+        uint128 aliceBaseAfter2 = exchange.balanceOf(alice, address(token1));
+        uint128 remaining2 = exchange.getOrder(orderId).remaining;
+        uint128 baseIn2 = aliceBaseAfter2 - aliceBaseBefore2;
+
+        console.log("");
+        console.log("=== SWAP 2 (Charlie) ===");
+        console.log("Quote wanted:", quoteWanted2);
+        console.log("Quote released:", dexQuote1 - dexQuote2);
+        // Precise: 900000049 * 100000 / 100090 = 899190777.3004, ceil = 899190778
+        console.log("Base in (ceil):", baseIn2);
+        console.log("Order remaining:", remaining2);
+
+        // === CANCEL ===
+        console.log("");
+        console.log("=== CANCEL ===");
+        console.log("DEX quote before cancel:", dexQuote2);
 
         vm.prank(alice);
         exchange.cancel(orderId);
 
-        uint128 aliceInternalBalance = exchange.balanceOf(alice, address(pathUSD));
-        uint128 expectedEscrowRefund = uint128(
-            (uint256(remaining) * uint256(price) + exchange.PRICE_SCALE() - 1)
-                / exchange.PRICE_SCALE()
-        );
+        uint128 aliceQuoteRefund = exchange.balanceOf(alice, address(pathUSD));
+        // Precise: 6413433060 * 100090 / 100000 = 6419205149.754, ceil = 6419205150
+        console.log("Refund (ceil):", aliceQuoteRefund);
 
-        console.log("Order remaining:", remaining);
-        console.log("DEX balance before cancel:", dexBalanceBeforeCancel);
-        console.log("Alice refund:", aliceInternalBalance);
-        console.log("Dust:", dexBalanceBeforeCancel - aliceInternalBalance);
+        console.log("");
+        console.log("=== SUMMARY ===");
+        console.log("DEX had:", dexQuote2);
+        console.log("Refund:", aliceQuoteRefund);
+        console.log("Dust:", dexQuote2 - aliceQuoteRefund);
 
-        assertEq(remaining, 6_413_433_060);
-        assertLe(
-            aliceInternalBalance, dexBalanceBeforeCancel, "Refund should not exceed DEX balance"
-        );
+        assertEq(remaining2, 6_413_433_060);
+        assertLe(aliceQuoteRefund, dexQuote2, "Refund should not exceed DEX balance");
+    }
+
+    /// @notice Same as test_FlipBidPartialFills_CancelLeavesDust but using swapExactAmountIn.
+    ///         Uses the same base amounts to see if dust behavior differs.
+    function test_FlipBidPartialFills_CancelLeavesDust_ExactIn() public {
+        uint128 orderAmount = 8_284_545_912;
+
+        // Setup charlie
+        vm.prank(admin);
+        token1.mint(charlie, 10e18);
+        vm.prank(charlie);
+        token1.approve(address(exchange), type(uint256).max);
+
+        console.log("=== ORDER PLACEMENT ===");
+        console.log("Order amount (base):", orderAmount);
+
+        vm.prank(alice);
+        uint128 orderId = exchange.placeFlip(address(token1), orderAmount, true, 90, 200);
+
+        uint256 dexQuote0 = pathUSD.balanceOf(address(exchange));
+        // Precise: 8284545912 * 100090 / 100000 = 8292002003.3208, ceil = 8292002004
+        console.log("Escrow (ceil):", dexQuote0);
+
+        // === SWAP 1 ===
+        // Using same base amount as exactOut test (971922074)
+        uint128 baseIn1 = 971_922_074;
+        uint128 aliceBaseBefore1 = exchange.balanceOf(alice, address(token1));
+
+        vm.prank(bob);
+        exchange.swapExactAmountIn(address(token1), address(pathUSD), baseIn1, 0);
+
+        uint256 dexQuote1 = pathUSD.balanceOf(address(exchange));
+        uint128 aliceBaseAfter1 = exchange.balanceOf(alice, address(token1));
+        uint128 remaining1 = exchange.getOrder(orderId).remaining;
+        uint128 baseReceived1 = aliceBaseAfter1 - aliceBaseBefore1;
+
+        console.log("");
+        console.log("=== SWAP 1 (Bob) ===");
+        console.log("Base in (exact):", baseIn1);
+        // Precise: 971922074 * 100090 / 100000 = 972796803.8666, floor = 972796803
+        console.log("Quote released (floor):", dexQuote0 - dexQuote1);
+        console.log("Base to maker:", baseReceived1);
+        console.log("Order remaining:", remaining1);
+
+        // === SWAP 2 ===
+        // Using same base amount as exactOut test (899190778)
+        uint128 baseIn2 = 899_190_778;
+        uint128 aliceBaseBefore2 = exchange.balanceOf(alice, address(token1));
+
+        vm.prank(charlie);
+        exchange.swapExactAmountIn(address(token1), address(pathUSD), baseIn2, 0);
+
+        uint256 dexQuote2 = pathUSD.balanceOf(address(exchange));
+        uint128 aliceBaseAfter2 = exchange.balanceOf(alice, address(token1));
+        uint128 remaining2 = exchange.getOrder(orderId).remaining;
+        uint128 baseReceived2 = aliceBaseAfter2 - aliceBaseBefore2;
+
+        // Precise: 899190778 * 100090 / 100000 = 900000049.7002, floor = 900000049
+        console.log("");
+        console.log("=== SWAP 2 (Charlie) ===");
+        console.log("Base in (exact):", baseIn2);
+        console.log("Quote released (floor):", dexQuote1 - dexQuote2);
+        console.log("Base to maker:", baseReceived2);
+        console.log("Order remaining:", remaining2);
+
+        // === CANCEL ===
+        console.log("");
+        console.log("=== CANCEL ===");
+        console.log("DEX quote before cancel:", dexQuote2);
+
+        vm.prank(alice);
+        exchange.cancel(orderId);
+
+        uint128 aliceQuoteRefund = exchange.balanceOf(alice, address(pathUSD));
+        // Precise: 6413433060 * 100090 / 100000 = 6419205149.754, ceil = 6419205150
+        console.log("Refund (ceil):", aliceQuoteRefund);
+
+        console.log("");
+        console.log("=== SUMMARY ===");
+        console.log("DEX had:", dexQuote2);
+        console.log("Refund:", aliceQuoteRefund);
+        console.log("Dust:", dexQuote2 - aliceQuoteRefund);
+
+        assertEq(remaining2, 6_413_433_060);
+        assertLe(aliceQuoteRefund, dexQuote2, "Refund should not exceed DEX balance");
     }
 
     /// @notice PoC: Without the fix, at price < 1.0, trading 1 base at a time costs 0 quote each.
