@@ -934,12 +934,20 @@ contract StablecoinDEXInvariantTest is BaseTest {
             if (bidLiquidity > 0) {
                 // TEMPO-DEX7: If liquidity > 0, head should be non-zero
                 assertTrue(bidHead != 0, "TEMPO-DEX7: bid tick has liquidity but no head");
+                assertTrue(bidTail != 0, "TEMPO-DEX7: bid tick has liquidity but no tail");
                 // TEMPO-DEX11: Bitmap correctness verified indirectly via bestBidTick/bestAskTick in _assertBestTickConsistency
             }
             if (bidHead == 0) {
                 // If head is 0, tail should also be 0 and liquidity should be 0
                 assertEq(bidTail, 0, "TEMPO-DEX10: bid tail non-zero but head is zero");
                 assertEq(bidLiquidity, 0, "TEMPO-DEX7: bid liquidity non-zero but head is zero");
+            } else {
+                // TEMPO-DEX17: head.prev should be 0
+                IStablecoinDEX.Order memory headOrder = exchange.getOrder(bidHead);
+                assertEq(headOrder.prev, 0, "TEMPO-DEX17: bid head.prev is not None");
+                // TEMPO-DEX17: tail.next should be 0
+                IStablecoinDEX.Order memory tailOrder = exchange.getOrder(bidTail);
+                assertEq(tailOrder.next, 0, "TEMPO-DEX17: bid tail.next is not None");
             }
 
             // Check ask tick level
@@ -947,10 +955,18 @@ contract StablecoinDEXInvariantTest is BaseTest {
                 exchange.getTickLevel(baseToken, tick, false);
             if (askLiquidity > 0) {
                 assertTrue(askHead != 0, "TEMPO-DEX7: ask tick has liquidity but no head");
+                assertTrue(askTail != 0, "TEMPO-DEX7: ask tick has liquidity but no tail");
             }
             if (askHead == 0) {
                 assertEq(askTail, 0, "TEMPO-DEX10: ask tail non-zero but head is zero");
                 assertEq(askLiquidity, 0, "TEMPO-DEX7: ask liquidity non-zero but head is zero");
+            } else {
+                // TEMPO-DEX17: head.prev should be 0
+                IStablecoinDEX.Order memory headOrder = exchange.getOrder(bidHead);
+                assertEq(headOrder.prev, 0, "TEMPO-DEX17: bid head.prev is not None");
+                // TEMPO-DEX17: tail.next should be 0
+                IStablecoinDEX.Order memory tailOrder = exchange.getOrder(bidTail);
+                assertEq(tailOrder.next, 0, "TEMPO-DEX17: bid tail.next is not None");
             }
         }
     }
