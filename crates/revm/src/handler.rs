@@ -382,9 +382,7 @@ where
                 let gas_spent_by_failed_call = frame_result.gas().spent();
                 let total_gas_spent = (gas_limit - remaining_gas)
                     .checked_add(gas_spent_by_failed_call)
-                    .ok_or_else(|| {
-                        EVMError::Custom("total gas spent overflow".to_string())
-                    })?;
+                    .ok_or_else(|| EVMError::Custom("total gas spent overflow".to_string()))?;
 
                 // Create new Gas with correct limit, because Gas does not have a set_limit method
                 // (the frame_result has the limit from just the last call)
@@ -1334,9 +1332,8 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
 
     // 5. Access list costs using revm constants
     if let Some(mut access_list) = access_list {
-        let (accounts, storages) = access_list.try_fold(
-            (0u64, 0u64),
-            |(acc_count, storage_count), item| {
+        let (accounts, storages) =
+            access_list.try_fold((0u64, 0u64), |(acc_count, storage_count), item| {
                 Ok::<_, TempoInvalidTransaction>((
                     acc_count
                         .checked_add(1)
@@ -1345,8 +1342,7 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
                         .checked_add(item.storage_slots().count() as u64)
                         .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?,
                 ))
-            },
-        )?;
+            })?;
         let accounts_gas = accounts
             .checked_mul(ACCESS_LIST_ADDRESS)
             .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
