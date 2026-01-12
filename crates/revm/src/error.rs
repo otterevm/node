@@ -232,44 +232,57 @@ impl reth_rpc_eth_types::error::api::FromEvmHalt<TempoHaltReason>
     }
 }
 
-/// Extension trait for hardfork-gated checked u64 arithmetic with gas overflow errors.
+/// Gas arithmetic mode for hardfork-gated overflow checking.
 ///
-/// - Pre-T0 (Genesis): Uses wrapping arithmetic (legacy behavior)
-/// - Post-T0: Uses checked arithmetic that returns `GasArithmeticOverflow` on overflow
-pub(crate) trait CheckedGasOps: Sized {
-    fn try_add(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction>;
-    fn try_sub(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction>;
-    fn try_mul(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction>;
+/// This encapsulates the hardfork check so callers don't need to pass `TempoHardfork` everywhere.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum GasMode {
+    #[default]
+    Checked,
+    Unchecked, // Genesis used unchecked gas calculations
 }
 
-impl CheckedGasOps for u64 {
+impl GasMode {
+    /// Create a new `GasMode` from the current hardfork.
     #[inline]
-    fn try_add(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction> {
+    pub fn new(spec: TempoHardfork) -> Self {
         if spec.is_t0_active() {
-            self.checked_add(rhs)
-                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)
+            Self::Checked
         } else {
-            Ok(self + rhs)
+            Self::Unchecked
         }
     }
 
+    /// Checked addition with hardfork-gated overflow behavior.
     #[inline]
-    fn try_sub(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction> {
-        if spec.is_t0_active() {
-            self.checked_sub(rhs)
-                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)
-        } else {
-            Ok(self - rhs)
+    pub fn add(self, lhs: u64, rhs: u64) -> Result<u64, TempoInvalidTransaction> {
+        match self {
+            Self::Checked => lhs
+                .checked_add(rhs)
+                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow),
+            Self::Unchecked => Ok(lhs + rhs),
         }
     }
 
+    /// Checked subtraction with hardfork-gated overflow behavior.
     #[inline]
-    fn try_mul(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction> {
-        if spec.is_t0_active() {
-            self.checked_mul(rhs)
-                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)
-        } else {
-            Ok(self * rhs)
+    pub fn sub(self, lhs: u64, rhs: u64) -> Result<u64, TempoInvalidTransaction> {
+        match self {
+            Self::Checked => lhs
+                .checked_sub(rhs)
+                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow),
+            Self::Unchecked => Ok(lhs - rhs),
+        }
+    }
+
+    /// Checked multiplication with hardfork-gated overflow behavior.
+    #[inline]
+    pub fn mul(self, lhs: u64, rhs: u64) -> Result<u64, TempoInvalidTransaction> {
+        match self {
+            Self::Checked => lhs
+                .checked_mul(rhs)
+                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow),
+            Self::Unchecked => Ok(lhs * rhs),
         }
     }
 }
@@ -340,27 +353,28 @@ mod tests {
     }
 
     #[test]
-    fn test_checked_gas_ops_overflow_t0() {
-        use super::CheckedGasOps;
-        use tempo_chainspec::hardfork::TempoHardfork;
+    fn test_gas_mode_checked() {
+        // Checked mode: returns errors on overflow
+        let mode = GasMode::Checked;
+        assert!(mode.add(u64::MAX, 1).is_err());
+        assert!(mode.sub(0, 1).is_err());
+        assert!(mode.mul(u64::MAX, 2).is_err());
 
-        // Post-T0: checked arithmetic returns errors on overflow
-        assert!(u64::MAX.try_add(1, TempoHardfork::T0).is_err());
-        assert!(0u64.try_sub(1, TempoHardfork::T0).is_err());
-        assert!(u64::MAX.try_mul(2, TempoHardfork::T0).is_err());
+        // Normal operations succeed
+        assert_eq!(mode.add(1, 2).unwrap(), 3);
+        assert_eq!(mode.sub(5, 3).unwrap(), 2);
+        assert_eq!(mode.mul(4, 5).unwrap(), 20);
     }
 
     #[test]
-    fn test_checked_gas_ops_wrapping_genesis() {
-        use super::CheckedGasOps;
-        use tempo_chainspec::hardfork::TempoHardfork;
+    fn test_gas_mode_from_hardfork() {
+        // Pre-T0 should be `Unchecked`
+        assert!(matches!(
+            GasMode::new(TempoHardfork::Genesis),
+            GasMode::Unchecked
+        ));
 
-        // Pre-T0 (Genesis): wrapping arithmetic
-        assert_eq!(u64::MAX.try_add(1, TempoHardfork::Genesis).unwrap(), 0);
-        assert_eq!(0u64.try_sub(1, TempoHardfork::Genesis).unwrap(), u64::MAX);
-        assert_eq!(
-            u64::MAX.try_mul(2, TempoHardfork::Genesis).unwrap(),
-            u64::MAX.wrapping_mul(2)
-        );
+        // Post-T0 should be `Checked`
+        assert!(matches!(GasMode::new(TempoHardfork::T0), GasMode::Checked));
     }
 }

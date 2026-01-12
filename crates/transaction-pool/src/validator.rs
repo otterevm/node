@@ -23,7 +23,7 @@ use tempo_primitives::{
     subblock::has_sub_block_nonce_key_prefix,
     transaction::{RecoveredTempoAuthorization, TempoTransaction},
 };
-use tempo_revm::{TempoBatchCallEnv, TempoStateAccess, calculate_aa_batch_intrinsic_gas};
+use tempo_revm::{GasMode, TempoBatchCallEnv, TempoStateAccess, calculate_aa_batch_intrinsic_gas};
 
 // Reject AA txs where `valid_before` is too close to current time (or already expired) to prevent block invalidation.
 const AA_VALID_BEFORE_MIN_SECS: u64 = 3;
@@ -234,11 +234,11 @@ where
         // Calculate the intrinsic gas for the AA transaction
         // Use the current hardfork based on tip timestamp for pool validation
         let tip_timestamp = self.inner.fork_tracker().tip_timestamp();
-        let spec = self.inner.chain_spec().tempo_hardfork_at(tip_timestamp);
+        let gas_mode = GasMode::new(self.inner.chain_spec().tempo_hardfork_at(tip_timestamp));
         let init_and_floor_gas = calculate_aa_batch_intrinsic_gas(
             &aa_env,
             Some(tx.access_list.iter()),
-            spec,
+            gas_mode,
         )
         .map_err(|_| TempoPoolTransactionError::NonZeroValue)?;
 
