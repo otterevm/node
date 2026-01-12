@@ -136,12 +136,12 @@ pub enum TempoInvalidTransaction {
     #[error("{0}")]
     CallsValidation(&'static str),
 
-    /// Arithmetic overflow during gas calculation.
+    /// Arithmetic underflow or overflow during gas calculation.
     ///
-    /// This error occurs when a checked arithmetic operation overflows during
+    /// This error occurs when a checked arithmetic operation underflows or overflows during
     /// gas calculation or other numeric operations.
-    #[error("arithmetic overflow: {0}")]
-    ArithmeticOverflow(&'static str),
+    #[error("arithmetic underflow or overflow")]
+    ArithmeticUnderOverflow,
 }
 
 impl InvalidTxError for TempoInvalidTransaction {

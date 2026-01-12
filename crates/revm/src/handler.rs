@@ -90,7 +90,7 @@ fn primitive_signature_verification_gas(
             tokens
                 .checked_mul(STANDARD_TOKEN_COST)
                 .and_then(|token_gas| P256_VERIFY_GAS.checked_add(token_gas))
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow("signature gas"))
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)
         }
     }
 }
@@ -109,7 +109,7 @@ fn tempo_signature_verification_gas(
             // Keychain = inner signature + key validation overhead (SLOAD + processing)
             primitive_signature_verification_gas(&keychain_sig.signature)?
                 .checked_add(KEYCHAIN_VALIDATION_GAS)
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow("keychain gas"))
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)
         }
     }
 }
@@ -127,9 +127,7 @@ fn calculate_key_authorization_gas(
     // For KeyAuthorization, we're doing an additional signature verification.
     let sig_gas = ECRECOVER_GAS
         .checked_add(primitive_signature_verification_gas(&key_auth.signature)?)
-        .ok_or(TempoInvalidTransaction::ArithmeticOverflow(
-            "key auth sig gas",
-        ))?;
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
     // Per-limit storage gas
     let limits_gas = key_auth
@@ -139,9 +137,7 @@ fn calculate_key_authorization_gas(
         .map(|limits| {
             (limits.len() as u64)
                 .checked_mul(KEY_AUTH_PER_LIMIT_GAS)
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow(
-                    "key auth limits gas",
-                ))
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)
         })
         .transpose()?
         .unwrap_or(0);
@@ -150,9 +146,7 @@ fn calculate_key_authorization_gas(
     KEY_AUTH_BASE_GAS
         .checked_add(sig_gas)
         .and_then(|gas| gas.checked_add(limits_gas))
-        .ok_or(TempoInvalidTransaction::ArithmeticOverflow(
-            "key auth total gas",
-        ))
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)
 }
 
 /// Calculates the gas cost for 2D nonce usage.
@@ -531,7 +525,7 @@ where
             init_and_floor_gas
                 .initial_gas
                 .checked_add(evm.nonce_2d_gas)
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow("nonce gas"))?,
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?,
             init_and_floor_gas.floor_gas,
         );
 
@@ -645,9 +639,9 @@ where
                 if !(authority_acc.is_empty()
                     && authority_acc.is_loaded_as_not_existing_not_touched())
                 {
-                    refunded_accounts = refunded_accounts.checked_add(1).ok_or(
-                        TempoInvalidTransaction::ArithmeticOverflow("refunded accounts"),
-                    )?;
+                    refunded_accounts = refunded_accounts
+                        .checked_add(1)
+                        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
                 }
 
                 // 7. Set the code of `authority` to be `0xef0100 || address`. This is a delegation designation.
@@ -659,12 +653,10 @@ where
 
             let per_account_refund = eip7702::PER_EMPTY_ACCOUNT_COST
                 .checked_sub(eip7702::PER_AUTH_BASE_COST)
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow(
-                    "per account refund",
-                ))?;
-            let refunded_gas = refunded_accounts.checked_mul(per_account_refund).ok_or(
-                TempoInvalidTransaction::ArithmeticOverflow("refunded gas"),
-            )?;
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
+            let refunded_gas = refunded_accounts
+                .checked_mul(per_account_refund)
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
             return Ok(refunded_gas);
         }
 
@@ -784,9 +776,7 @@ where
         // account balance if `cfg.is_balance_check_disabled()` is true.
         let gas_balance_spending = core::cmp::max(account_balance, new_balance)
             .checked_sub(new_balance)
-            .ok_or(TempoInvalidTransaction::ArithmeticOverflow(
-                "gas balance spending",
-            ))?;
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
         // Note: Signature verification happens during recover_signer() before entering the pool
         // Note: Transaction parameter validation (priority fee, time window) happens in validate_env()
@@ -867,9 +857,10 @@ where
                 let expiry = key_auth.expiry.unwrap_or(u64::MAX);
 
                 // Validate expiry is not in the past
-                let current_timestamp: u64 = block.timestamp().try_into().map_err(|_| {
-                    TempoInvalidTransaction::ArithmeticOverflow("timestamp to u64")
-                })?;
+                let current_timestamp: u64 = block
+                    .timestamp()
+                    .try_into()
+                    .map_err(|_| TempoInvalidTransaction::ArithmeticUnderOverflow)?;
                 if expiry <= current_timestamp {
                     return Err(TempoInvalidTransaction::AccessKeyAuthorizationFailed {
                         reason: format!(
@@ -1165,7 +1156,7 @@ where
                 .block()
                 .timestamp()
                 .try_into()
-                .map_err(|_| TempoInvalidTransaction::ArithmeticOverflow("timestamp to u64"))?;
+                .map_err(|_| TempoInvalidTransaction::ArithmeticUnderOverflow)?;
             validate_time_window(aa_env.valid_after, aa_env.valid_before, block_timestamp)?;
         }
 
@@ -1255,41 +1246,51 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
     let key_authorization = aa_env.key_authorization.as_ref();
     let mut gas = InitialAndFloorGas::default();
 
-    // Helper macro to add gas with checked arithmetic
-    macro_rules! add_gas {
-        ($amount:expr) => {
-            gas.initial_gas = gas
-                .initial_gas
-                .checked_add($amount)
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow("intrinsic gas"))?;
-        };
-    }
-
     // 1. Base stipend (21k, once per transaction)
-    add_gas!(21_000);
+    gas.initial_gas = gas
+        .initial_gas
+        .checked_add(21_000)
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
     // 2. Signature verification gas
-    add_gas!(tempo_signature_verification_gas(signature)?);
+    gas.initial_gas = gas
+        .initial_gas
+        .checked_add(tempo_signature_verification_gas(signature)?)
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
     // 3. Per-call overhead: cold account access for additional calls beyond the first.
     #[allow(clippy::manual_saturating_arithmetic)]
     let additional_calls = calls.len().checked_sub(1).unwrap_or(0) as u64;
-    add_gas!(COLD_ACCOUNT_ACCESS_COST.checked_mul(additional_calls).ok_or(
-        TempoInvalidTransaction::ArithmeticOverflow("cold access gas")
-    )?);
+    let cold_access_gas = COLD_ACCOUNT_ACCESS_COST
+        .checked_mul(additional_calls)
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
+    gas.initial_gas = gas
+        .initial_gas
+        .checked_add(cold_access_gas)
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
     // 4. Authorization list costs (EIP-7702)
-    add_gas!((authorization_list.len() as u64)
+    let auth_list_gas = (authorization_list.len() as u64)
         .checked_mul(eip7702::PER_EMPTY_ACCOUNT_COST)
-        .ok_or(TempoInvalidTransaction::ArithmeticOverflow("auth list gas"))?);
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
+    gas.initial_gas = gas
+        .initial_gas
+        .checked_add(auth_list_gas)
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
     // Add signature verification costs for each authorization
     for auth in authorization_list {
-        add_gas!(tempo_signature_verification_gas(auth.signature())?);
+        gas.initial_gas = gas
+            .initial_gas
+            .checked_add(tempo_signature_verification_gas(auth.signature())?)
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
     }
 
     // 5. Key authorization costs (if present)
     if let Some(key_auth) = key_authorization {
-        add_gas!(calculate_key_authorization_gas(key_auth)?);
+        gas.initial_gas = gas
+            .initial_gas
+            .checked_add(calculate_key_authorization_gas(key_auth)?)
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
     }
 
     // 6. Per-call costs
@@ -1300,15 +1301,21 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
         let tokens = get_tokens_in_calldata(&call.input, true);
         total_tokens = total_tokens
             .checked_add(tokens)
-            .ok_or(TempoInvalidTransaction::ArithmeticOverflow("total tokens"))?;
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
         // 4b. CREATE-specific costs
         if call.to.is_create() {
             // CREATE costs 32000 additional gas
-            add_gas!(CREATE); // 32000 gas
+            gas.initial_gas = gas
+                .initial_gas
+                .checked_add(CREATE)
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
             // EIP-3860: Initcode analysis gas using revm helper
-            add_gas!(initcode_cost(call.input.len()));
+            gas.initial_gas = gas
+                .initial_gas
+                .checked_add(initcode_cost(call.input.len()))
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
         }
 
         // Note: Transaction value is not allowed in AA transactions as there is no balances in accounts yet.
@@ -1320,13 +1327,20 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
         // 4c. Value transfer cost using revm constant
         // left here for future reference.
         if !call.value.is_zero() && call.to.is_call() {
-            add_gas!(CALLVALUE); // 9000 gas
+            gas.initial_gas = gas
+                .initial_gas
+                .checked_add(CALLVALUE)
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
         }
     }
 
-    add_gas!(total_tokens
+    let token_gas = total_tokens
         .checked_mul(STANDARD_TOKEN_COST)
-        .ok_or(TempoInvalidTransaction::ArithmeticOverflow("token gas"))?);
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
+    gas.initial_gas = gas
+        .initial_gas
+        .checked_add(token_gas)
+        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
 
     // 5. Access list costs using revm constants
     if let Some(mut access_list) = access_list {
@@ -1334,23 +1348,29 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
             (0u64, 0u64),
             |(acc_count, storage_count), item| {
                 Ok::<_, TempoInvalidTransaction>((
-                    acc_count.checked_add(1).ok_or(
-                        TempoInvalidTransaction::ArithmeticOverflow("access list count"),
-                    )?,
+                    acc_count
+                        .checked_add(1)
+                        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?,
                     storage_count
                         .checked_add(item.storage_slots().count() as u64)
-                        .ok_or(TempoInvalidTransaction::ArithmeticOverflow(
-                            "storage slots count",
-                        ))?,
+                        .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?,
                 ))
             },
         )?;
-        add_gas!(accounts.checked_mul(ACCESS_LIST_ADDRESS).ok_or(
-            TempoInvalidTransaction::ArithmeticOverflow("access list address gas")
-        )?); // 2400 per account
-        add_gas!(storages.checked_mul(ACCESS_LIST_STORAGE_KEY).ok_or(
-            TempoInvalidTransaction::ArithmeticOverflow("access list storage gas")
-        )?); // 1900 per storage
+        let accounts_gas = accounts
+            .checked_mul(ACCESS_LIST_ADDRESS)
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
+        gas.initial_gas = gas
+            .initial_gas
+            .checked_add(accounts_gas)
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?; // 2400 per account
+        let storages_gas = storages
+            .checked_mul(ACCESS_LIST_STORAGE_KEY)
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?;
+        gas.initial_gas = gas
+            .initial_gas
+            .checked_add(storages_gas)
+            .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?; // 1900 per storage
     }
 
     // 6. Floor gas  using revm helper
@@ -1474,7 +1494,7 @@ where
             init_and_floor_gas
                 .initial_gas
                 .checked_add(evm.nonce_2d_gas)
-                .ok_or(TempoInvalidTransaction::ArithmeticOverflow("nonce gas"))?,
+                .ok_or(TempoInvalidTransaction::ArithmeticUnderOverflow)?,
             init_and_floor_gas.floor_gas,
         );
 
