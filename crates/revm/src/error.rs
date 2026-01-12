@@ -246,7 +246,7 @@ impl GasMode {
     /// Create a new `GasMode` from the current hardfork.
     #[inline]
     pub fn new(spec: TempoHardfork) -> Self {
-        if spec.is_t0_active() {
+        if spec.is_t0() {
             Self::Checked
         } else {
             Self::Unchecked

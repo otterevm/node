@@ -48,8 +48,8 @@ hardfork!(
 );
 
 impl TempoHardfork {
-    /// Returns true if the hardfork is T0 or later.
-    pub const fn is_t0_active(self) -> bool {
+    /// Returns true if this hardfork is T0 or later.
+    pub const fn is_t0(&self) -> bool {
         matches!(self, Self::T0)
     }
 }
@@ -59,18 +59,18 @@ pub trait TempoHardforks: EthereumHardforks {
     /// Retrieves activation condition for a Tempo-specific hardfork
     fn tempo_fork_activation(&self, fork: TempoHardfork) -> ForkCondition;
 
-    /// Returns true if T0 hardfork is active at the given timestamp.
-    fn is_t0_active_at_timestamp(&self, timestamp: u64) -> bool {
-        self.tempo_fork_activation(TempoHardfork::T0)
-            .active_at_timestamp(timestamp)
-    }
-
     /// Retrieves the Tempo hardfork active at a given timestamp.
     fn tempo_hardfork_at(&self, timestamp: u64) -> TempoHardfork {
         if self.is_t0_active_at_timestamp(timestamp) {
             return TempoHardfork::T0;
         }
         TempoHardfork::Genesis
+    }
+
+    /// Returns true if T0 is active at the given timestamp.
+    fn is_t0_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.tempo_fork_activation(TempoHardfork::T0)
+            .active_at_timestamp(timestamp)
     }
 }
 
@@ -96,6 +96,18 @@ mod tests {
     fn test_hardfork_name() {
         assert_eq!(TempoHardfork::Genesis.name(), "Genesis");
         assert_eq!(TempoHardfork::T0.name(), "T0");
+    }
+
+    #[test]
+    fn test_t0_hardfork_name() {
+        let fork = TempoHardfork::T0;
+        assert_eq!(fork.name(), "T0");
+    }
+
+    #[test]
+    fn test_is_t0() {
+        assert!(!TempoHardfork::Genesis.is_t0());
+        assert!(TempoHardfork::T0.is_t0());
     }
 
     #[test]
