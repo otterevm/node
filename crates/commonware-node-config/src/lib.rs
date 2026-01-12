@@ -18,10 +18,10 @@ use zeroize::{Zeroize as _, ZeroizeOnDrop};
 #[cfg(test)]
 mod tests;
 
-pub const SIGNING_SHARE_KEY_ENV: &str = "TEMPO_SIGNING_SHARE_KEY";
+pub const DKG_ENCRYPTION_KEY: &str = "TEMPO_DKG_ENCRYPTION_KEY";
 
 pub fn sining_share_key_from_env() -> Result<EncryptionKey, EncryptionKeyError> {
-    EncryptionKey::from_env(SIGNING_SHARE_KEY_ENV)
+    EncryptionKey::from_env(DKG_ENCRYPTION_KEY)
 }
 
 #[derive(Clone)]
