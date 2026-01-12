@@ -39,6 +39,9 @@ contract StablecoinDEXInvariantTest is BaseTest {
 
     /// @dev Log file path for recording exchange actions
     string private constant LOG_FILE = "exchange.log";
+    
+    /// @dev Number of placed swaps, to be used in invariant checking.
+    uint64 private _numSwaps;
 
     /// @notice Sets up the test environment
     /// @dev Initializes BaseTest, creates trading pair, builds actors, and sets initial state
@@ -451,6 +454,7 @@ contract StablecoinDEXInvariantTest is BaseTest {
         }
         // Read next order id - if a flip order is hit then next order id is incremented.
         _nextOrderId = exchange.nextOrderId();
+        _numSwaps += 1;
 
         vm.stopPrank();
         _logBalances();
@@ -631,6 +635,8 @@ contract StablecoinDEXInvariantTest is BaseTest {
             }
             vm.stopPrank();
         }
+
+        assertGe(_numSwaps, pathUSD.balanceOf(address(exchange)) + token1.balanceOf(address(exchange)), "TEMPO-DEX19: Excess post-swap dust");
     }
 
     /*//////////////////////////////////////////////////////////////
