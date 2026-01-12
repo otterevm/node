@@ -46,9 +46,10 @@ use tempo_primitives::transaction::{
 use crate::{
     TempoBatchCallEnv, TempoEvm, TempoInvalidTransaction,
     common::TempoStateAccess,
-    error::{FeePaymentError, TempoHaltReason},
+    error::{CheckedGasOps, FeePaymentError, TempoHaltReason},
     evm::TempoContext,
 };
+use tempo_chainspec::hardfork::TempoHardfork;
 
 /// Additional gas for P256 signature verification
 /// P256 precompile cost (6900 from EIP-7951) + 1100 for 129 bytes extra signature size - ecrecover savings (3000)
@@ -79,13 +80,18 @@ const NEW_NONCE_KEY_GAS: u64 = COLD_SLOAD_COST + SSTORE_SET;
 /// - P256: 5000 gas
 /// - WebAuthn: 5000 gas + calldata cost for webauthn_data
 #[inline]
-fn primitive_signature_verification_gas(signature: &PrimitiveSignature) -> u64 {
+fn primitive_signature_verification_gas(
+    signature: &PrimitiveSignature,
+    spec: TempoHardfork,
+) -> Result<u64, TempoInvalidTransaction> {
     match signature {
-        PrimitiveSignature::Secp256k1(_) => 0,
-        PrimitiveSignature::P256(_) => P256_VERIFY_GAS,
+        PrimitiveSignature::Secp256k1(_) => Ok(0),
+        PrimitiveSignature::P256(_) => Ok(P256_VERIFY_GAS),
         PrimitiveSignature::WebAuthn(webauthn_sig) => {
             let tokens = get_tokens_in_calldata(&webauthn_sig.webauthn_data, true);
-            P256_VERIFY_GAS + tokens * STANDARD_TOKEN_COST
+            tokens
+                .try_mul(STANDARD_TOKEN_COST, spec)?
+                .try_add(P256_VERIFY_GAS, spec)
         }
     }
 }
@@ -95,12 +101,16 @@ fn primitive_signature_verification_gas(signature: &PrimitiveSignature) -> u64 {
 /// For Keychain signatures, adds key validation overhead to the inner signature cost
 /// Returns the additional gas required beyond the base transaction cost.
 #[inline]
-fn tempo_signature_verification_gas(signature: &TempoSignature) -> u64 {
+fn tempo_signature_verification_gas(
+    signature: &TempoSignature,
+    spec: TempoHardfork,
+) -> Result<u64, TempoInvalidTransaction> {
     match signature {
-        TempoSignature::Primitive(prim_sig) => primitive_signature_verification_gas(prim_sig),
+        TempoSignature::Primitive(prim_sig) => primitive_signature_verification_gas(prim_sig, spec),
         TempoSignature::Keychain(keychain_sig) => {
             // Keychain = inner signature + key validation overhead (SLOAD + processing)
-            primitive_signature_verification_gas(&keychain_sig.signature) + KEYCHAIN_VALIDATION_GAS
+            primitive_signature_verification_gas(&keychain_sig.signature, spec)?
+                .try_add(KEYCHAIN_VALIDATION_GAS, spec)
         }
     }
 }
@@ -112,22 +122,24 @@ fn tempo_signature_verification_gas(signature: &TempoSignature) -> u64 {
 #[inline]
 fn calculate_key_authorization_gas(
     key_auth: &tempo_primitives::transaction::SignedKeyAuthorization,
-) -> u64 {
+    spec: TempoHardfork,
+) -> Result<u64, TempoInvalidTransaction> {
     // All signature types pay ECRECOVER_GAS (3k) as the baseline since
     // primitive_signature_verification_gas assumes ecrecover is already in base 21k.
     // For KeyAuthorization, we're doing an additional signature verification.
-    let sig_gas = ECRECOVER_GAS + primitive_signature_verification_gas(&key_auth.signature);
+    let sig_gas = primitive_signature_verification_gas(&key_auth.signature, spec)?
+        .try_add(ECRECOVER_GAS, spec)?;
 
     // Per-limit storage gas
-    let limits_gas = key_auth
-        .authorization
-        .limits
-        .as_ref()
-        .map(|limits| limits.len() as u64 * KEY_AUTH_PER_LIMIT_GAS)
-        .unwrap_or(0);
+    let limits_gas = match key_auth.authorization.limits.as_ref() {
+        Some(limits) => (limits.len() as u64).try_mul(KEY_AUTH_PER_LIMIT_GAS, spec)?,
+        None => 0,
+    };
 
     // Total: base (27k) + sig verification + limits
-    KEY_AUTH_BASE_GAS + sig_gas + limits_gas
+    KEY_AUTH_BASE_GAS
+        .try_add(sig_gas, spec)?
+        .try_add(limits_gas, spec)
 }
 
 /// Calculates the gas cost for 2D nonce usage.
@@ -234,7 +246,12 @@ where
             <<TempoEvm<DB, I> as EvmTr>::Frame as FrameTr>::FrameInit,
         ) -> Result<FrameResult, EVMError<DB::Error, TempoInvalidTransaction>>,
     {
-        let gas_limit = evm.ctx().tx().gas_limit() - init_and_floor_gas.initial_gas;
+        let spec = evm.ctx().cfg.spec;
+        let gas_limit = evm
+            .ctx()
+            .tx()
+            .gas_limit()
+            .try_sub(init_and_floor_gas.initial_gas, spec)?;
 
         // Create first frame action
         let first_frame_input = self.first_frame_input(evm, gas_limit)?;
@@ -291,8 +308,9 @@ where
         // Create checkpoint for atomic execution - captures state before any calls
         let checkpoint = evm.ctx().journal_mut().checkpoint();
 
+        let spec = evm.ctx().cfg.spec;
         let gas_limit = evm.ctx().tx().gas_limit();
-        let mut remaining_gas = gas_limit - init_and_floor_gas.initial_gas;
+        let mut remaining_gas = gas_limit.try_sub(init_and_floor_gas.initial_gas, spec)?;
         let mut accumulated_gas_refund = 0i64;
 
         // Store original TxEnv values to restore after batch execution
@@ -361,7 +379,9 @@ where
 
                 // Include gas from all previous successful calls + failed call
                 let gas_spent_by_failed_call = frame_result.gas().spent();
-                let total_gas_spent = (gas_limit - remaining_gas) + gas_spent_by_failed_call;
+                let total_gas_spent = gas_limit
+                    .try_sub(remaining_gas, spec)?
+                    .try_add(gas_spent_by_failed_call, spec)?;
 
                 // Create new Gas with correct limit, because Gas does not have a set_limit method
                 // (the frame_result has the limit from just the last call)
@@ -395,7 +415,7 @@ where
         let mut result =
             final_result.ok_or_else(|| EVMError::Custom("No calls executed".into()))?;
 
-        let total_gas_spent = gas_limit - remaining_gas;
+        let total_gas_spent = gas_limit.try_sub(remaining_gas, spec)?;
 
         // Create new Gas with correct limit, because Gas does not have a set_limit method
         // (the frame_result has the limit from just the last call)
@@ -493,9 +513,12 @@ where
         evm: &mut Self::Evm,
         init_and_floor_gas: &InitialAndFloorGas,
     ) -> Result<FrameResult, Self::Error> {
+        let spec = evm.ctx().cfg.spec;
         // Add 2D nonce gas to the initial gas
         let adjusted_gas = InitialAndFloorGas::new(
-            init_and_floor_gas.initial_gas + evm.nonce_2d_gas,
+            init_and_floor_gas
+                .initial_gas
+                .try_add(evm.nonce_2d_gas, spec)?,
             init_and_floor_gas.floor_gas,
         );
 
@@ -1004,11 +1027,15 @@ where
 
         // Calculate actual used and refund amounts
         let actual_spending = calc_gas_balance_spending(gas.used(), effective_gas_price);
-        let refund_amount = tx.effective_balance_spending(
-            context.block.basefee.into(),
-            context.block.blob_gasprice().unwrap_or_default(),
-        )? - tx.value
-            - actual_spending;
+        let refund_amount = tx
+            .effective_balance_spending(
+                context.block.basefee.into(),
+                context.block.blob_gasprice().unwrap_or_default(),
+            )?
+            .checked_sub(tx.value)
+            .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)?
+            .checked_sub(actual_spending)
+            .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)?;
 
         // Skip `collectFeePostTx` call if the initial fee collected in
         // `collectFeePreTx` was zero, but spending is non-zero.
@@ -1191,6 +1218,7 @@ where
 pub fn calculate_aa_batch_intrinsic_gas<'a>(
     aa_env: &TempoBatchCallEnv,
     access_list: Option<impl Iterator<Item = &'a AccessListItem>>,
+    spec: TempoHardfork,
 ) -> Result<InitialAndFloorGas, TempoInvalidTransaction> {
     let calls = &aa_env.aa_calls;
     let signature = &aa_env.signature;
@@ -1199,24 +1227,36 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
     let mut gas = InitialAndFloorGas::default();
 
     // 1. Base stipend (21k, once per transaction)
-    gas.initial_gas += 21_000;
+    gas.initial_gas = gas.initial_gas.try_add(21_000, spec)?;
 
     // 2. Signature verification gas
-    gas.initial_gas += tempo_signature_verification_gas(signature);
+    gas.initial_gas = gas
+        .initial_gas
+        .try_add(tempo_signature_verification_gas(signature, spec)?, spec)?;
 
     // 3. Per-call overhead: cold account access for additional calls beyond the first.
-    gas.initial_gas += COLD_ACCOUNT_ACCESS_COST * calls.len().saturating_sub(1) as u64;
+    let additional_calls = calls.len().saturating_sub(1) as u64;
+    gas.initial_gas = gas
+        .initial_gas
+        .try_add(additional_calls.try_mul(COLD_ACCOUNT_ACCESS_COST, spec)?, spec)?;
 
     // 4. Authorization list costs (EIP-7702)
-    gas.initial_gas += authorization_list.len() as u64 * eip7702::PER_EMPTY_ACCOUNT_COST;
+    let auth_list_gas =
+        (authorization_list.len() as u64).try_mul(eip7702::PER_EMPTY_ACCOUNT_COST, spec)?;
+    gas.initial_gas = gas.initial_gas.try_add(auth_list_gas, spec)?;
+
     // Add signature verification costs for each authorization
     for auth in authorization_list {
-        gas.initial_gas += tempo_signature_verification_gas(auth.signature());
+        gas.initial_gas = gas
+            .initial_gas
+            .try_add(tempo_signature_verification_gas(auth.signature(), spec)?, spec)?;
     }
 
     // 5. Key authorization costs (if present)
     if let Some(key_auth) = key_authorization {
-        gas.initial_gas += calculate_key_authorization_gas(key_auth);
+        gas.initial_gas = gas
+            .initial_gas
+            .try_add(calculate_key_authorization_gas(key_auth, spec)?, spec)?;
     }
 
     // 6. Per-call costs
@@ -1225,15 +1265,17 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
     for call in calls {
         // 4a. Calldata gas using revm helper
         let tokens = get_tokens_in_calldata(&call.input, true);
-        total_tokens += tokens;
+        total_tokens = total_tokens.try_add(tokens, spec)?;
 
         // 4b. CREATE-specific costs
         if call.to.is_create() {
             // CREATE costs 32000 additional gas
-            gas.initial_gas += CREATE; // 32000 gas
+            gas.initial_gas = gas.initial_gas.try_add(CREATE, spec)?;
 
             // EIP-3860: Initcode analysis gas using revm helper
-            gas.initial_gas += initcode_cost(call.input.len());
+            gas.initial_gas = gas
+                .initial_gas
+                .try_add(initcode_cost(call.input.len()), spec)?;
         }
 
         // Note: Transaction value is not allowed in AA transactions as there is no balances in accounts yet.
@@ -1245,26 +1287,32 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
         // 4c. Value transfer cost using revm constant
         // left here for future reference.
         if !call.value.is_zero() && call.to.is_call() {
-            gas.initial_gas += CALLVALUE; // 9000 gas
+            gas.initial_gas = gas.initial_gas.try_add(CALLVALUE, spec)?;
         }
     }
 
-    gas.initial_gas += total_tokens * STANDARD_TOKEN_COST;
+    gas.initial_gas = gas
+        .initial_gas
+        .try_add(total_tokens.try_mul(STANDARD_TOKEN_COST, spec)?, spec)?;
 
     // 5. Access list costs using revm constants
     if let Some(access_list) = access_list {
         let (accounts, storages) =
             access_list.fold((0u64, 0u64), |(acc_count, storage_count), item| {
                 (
-                    acc_count + 1,
-                    storage_count + item.storage_slots().count() as u64,
+                    acc_count.saturating_add(1),
+                    storage_count.saturating_add(item.storage_slots().count() as u64),
                 )
             });
-        gas.initial_gas += accounts * ACCESS_LIST_ADDRESS; // 2400 per account
-        gas.initial_gas += storages * ACCESS_LIST_STORAGE_KEY; // 1900 per storage
+        gas.initial_gas = gas
+            .initial_gas
+            .try_add(accounts.try_mul(ACCESS_LIST_ADDRESS, spec)?, spec)?;
+        gas.initial_gas = gas
+            .initial_gas
+            .try_add(storages.try_mul(ACCESS_LIST_STORAGE_KEY, spec)?, spec)?;
     }
 
-    // 6. Floor gas  using revm helper
+    // 6. Floor gas using revm helper
     gas.floor_gas = calc_tx_floor_cost(total_tokens); // tokens * 10 + 21000
 
     Ok(gas)
@@ -1301,7 +1349,8 @@ where
     }
 
     // Calculate batch intrinsic gas using helper
-    let mut batch_gas = calculate_aa_batch_intrinsic_gas(aa_env, tx.access_list())?;
+    let spec = evm.ctx_ref().cfg.spec;
+    let mut batch_gas = calculate_aa_batch_intrinsic_gas(aa_env, tx.access_list(), spec)?;
 
     if evm.ctx.cfg.is_eip7623_disabled() {
         batch_gas.floor_gas = 0u64;
@@ -1380,9 +1429,12 @@ where
         evm: &mut Self::Evm,
         init_and_floor_gas: &InitialAndFloorGas,
     ) -> Result<FrameResult, Self::Error> {
+        let spec = evm.ctx().cfg.spec;
         // Add 2D nonce gas to the initial gas (calculated in validate_against_state_and_deduct_caller)
         let adjusted_gas = InitialAndFloorGas::new(
-            init_and_floor_gas.initial_gas + evm.nonce_2d_gas,
+            init_and_floor_gas
+                .initial_gas
+                .try_add(evm.nonce_2d_gas, spec)?,
             init_and_floor_gas.floor_gas,
         );
 
@@ -1580,10 +1632,11 @@ mod tests {
         };
 
         // Calculate AA gas
-        let spec = tempo_chainspec::hardfork::TempoHardfork::default();
+        let spec = TempoHardfork::default();
         let aa_gas = calculate_aa_batch_intrinsic_gas(
             &aa_env,
             None::<std::iter::Empty<&AccessListItem>>, // no access list
+            spec,
         )
         .unwrap();
 
@@ -1638,10 +1691,13 @@ mod tests {
             ..Default::default()
         };
 
-        let spec = tempo_chainspec::hardfork::TempoHardfork::default();
-        let gas =
-            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
-                .unwrap();
+        let spec = TempoHardfork::default();
+        let gas = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            None::<std::iter::Empty<&AccessListItem>>,
+            spec,
+        )
+        .unwrap();
 
         // Calculate base gas for a single normal tx
         let base_tx_gas = calculate_initial_tx_gas(spec.into(), &calldata, false, 0, 0, 0);
@@ -1689,9 +1745,12 @@ mod tests {
             ..Default::default()
         };
 
-        let gas =
-            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
-                .unwrap();
+        let gas = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            None::<std::iter::Empty<&AccessListItem>>,
+            TempoHardfork::default(),
+        )
+        .unwrap();
 
         // Calculate base gas for normal tx
         let base_gas = calculate_initial_tx_gas(spec, &calldata, false, 0, 0, 0);
@@ -1727,9 +1786,12 @@ mod tests {
             ..Default::default()
         };
 
-        let gas =
-            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
-                .unwrap();
+        let gas = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            None::<std::iter::Empty<&AccessListItem>>,
+            TempoHardfork::default(),
+        )
+        .unwrap();
 
         // Calculate expected using revm's function for CREATE tx
         let base_gas = calculate_initial_tx_gas(
@@ -1765,8 +1827,11 @@ mod tests {
             ..Default::default()
         };
 
-        let res =
-            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>);
+        let res = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            None::<std::iter::Empty<&AccessListItem>>,
+            TempoHardfork::default(),
+        );
 
         assert_eq!(
             res.unwrap_err(),
@@ -1801,9 +1866,12 @@ mod tests {
         };
 
         // Test without access list
-        let gas =
-            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
-                .unwrap();
+        let gas = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            None::<std::iter::Empty<&AccessListItem>>,
+            TempoHardfork::default(),
+        )
+        .unwrap();
 
         // Calculate expected using revm's function
         let base_gas = calculate_initial_tx_gas(spec, &calldata, false, 0, 0, 0);
@@ -1898,9 +1966,12 @@ mod tests {
             ..Default::default()
         };
 
-        let gas =
-            calculate_aa_batch_intrinsic_gas(&aa_env, None::<std::iter::Empty<&AccessListItem>>)
-                .unwrap();
+        let gas = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            None::<std::iter::Empty<&AccessListItem>>,
+            TempoHardfork::default(),
+        )
+        .unwrap();
 
         // Calculate expected floor gas using revm's function
         let base_gas = calculate_initial_tx_gas(spec, &calldata, false, 0, 0, 0);
@@ -1979,8 +2050,10 @@ mod tests {
             }
         };
 
+        let spec = TempoHardfork::default();
+
         // Test 0 limits: base (27k) + ecrecover (3k) = 30,000
-        let gas_0 = calculate_key_authorization_gas(&create_key_auth(0));
+        let gas_0 = calculate_key_authorization_gas(&create_key_auth(0), spec).unwrap();
         assert_eq!(
             gas_0,
             KEY_AUTH_BASE_GAS + ECRECOVER_GAS,
@@ -1988,7 +2061,7 @@ mod tests {
         );
 
         // Test 1 limit: 30,000 + 22,000 = 52,000
-        let gas_1 = calculate_key_authorization_gas(&create_key_auth(1));
+        let gas_1 = calculate_key_authorization_gas(&create_key_auth(1), spec).unwrap();
         assert_eq!(
             gas_1,
             KEY_AUTH_BASE_GAS + ECRECOVER_GAS + KEY_AUTH_PER_LIMIT_GAS,
@@ -1996,7 +2069,7 @@ mod tests {
         );
 
         // Test 2 limits: 30,000 + 44,000 = 74,000
-        let gas_2 = calculate_key_authorization_gas(&create_key_auth(2));
+        let gas_2 = calculate_key_authorization_gas(&create_key_auth(2), spec).unwrap();
         assert_eq!(
             gas_2,
             KEY_AUTH_BASE_GAS + ECRECOVER_GAS + 2 * KEY_AUTH_PER_LIMIT_GAS,
@@ -2004,7 +2077,7 @@ mod tests {
         );
 
         // Test 3 limits: 30,000 + 66,000 = 96,000
-        let gas_3 = calculate_key_authorization_gas(&create_key_auth(3));
+        let gas_3 = calculate_key_authorization_gas(&create_key_auth(3), spec).unwrap();
         assert_eq!(
             gas_3,
             KEY_AUTH_BASE_GAS + ECRECOVER_GAS + 3 * KEY_AUTH_PER_LIMIT_GAS,
@@ -2071,10 +2144,13 @@ mod tests {
             ..Default::default()
         };
 
+        let spec = TempoHardfork::default();
+
         // Calculate gas WITH key authorization
         let gas_with_key_auth = calculate_aa_batch_intrinsic_gas(
             &aa_env_with_key_auth,
             None::<std::iter::Empty<&AccessListItem>>,
+            spec,
         )
         .unwrap();
 
@@ -2082,6 +2158,7 @@ mod tests {
         let gas_without_key_auth = calculate_aa_batch_intrinsic_gas(
             &aa_env_without_key_auth,
             None::<std::iter::Empty<&AccessListItem>>,
+            spec,
         )
         .unwrap();
 
@@ -2095,7 +2172,6 @@ mod tests {
         );
 
         // Also verify absolute values
-        let spec = tempo_chainspec::hardfork::TempoHardfork::default();
         let base_tx_gas = calculate_initial_tx_gas(spec.into(), &calldata, false, 0, 0, 0);
         let expected_without = base_tx_gas.initial_gas; // no cold access for single call
         let expected_with = expected_without + expected_key_auth_gas;

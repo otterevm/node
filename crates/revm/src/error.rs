@@ -3,6 +3,7 @@
 use alloy_evm::error::InvalidTxError;
 use alloy_primitives::{Address, U256};
 use revm::context::result::{EVMError, ExecutionResult, HaltReason, InvalidTransaction};
+use tempo_chainspec::hardfork::TempoHardfork;
 
 /// Tempo-specific invalid transaction errors.
 ///
@@ -135,6 +136,10 @@ pub enum TempoInvalidTransaction {
     /// This wraps validation errors from the shared validate_calls function.
     #[error("{0}")]
     CallsValidation(&'static str),
+
+    /// Gas arithmetic overflow during intrinsic gas calculation or execution.
+    #[error("gas arithmetic overflow")]
+    GasArithmeticOverflow,
 }
 
 impl InvalidTxError for TempoInvalidTransaction {
@@ -226,6 +231,49 @@ impl reth_rpc_eth_types::error::api::FromEvmHalt<TempoHaltReason>
         }
     }
 }
+
+/// Extension trait for hardfork-gated checked u64 arithmetic with gas overflow errors.
+///
+/// - Pre-T0 (Genesis): Uses wrapping arithmetic (legacy behavior)
+/// - Post-T0: Uses checked arithmetic that returns `GasArithmeticOverflow` on overflow
+pub(crate) trait CheckedGasOps: Sized {
+    fn try_add(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction>;
+    fn try_sub(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction>;
+    fn try_mul(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction>;
+}
+
+impl CheckedGasOps for u64 {
+    #[inline]
+    fn try_add(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction> {
+        if spec.is_t0_active() {
+            self.checked_add(rhs)
+                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)
+        } else {
+            Ok(self + rhs)
+        }
+    }
+
+    #[inline]
+    fn try_sub(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction> {
+        if spec.is_t0_active() {
+            self.checked_sub(rhs)
+                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)
+        } else {
+            Ok(self - rhs)
+        }
+    }
+
+    #[inline]
+    fn try_mul(self, rhs: Self, spec: TempoHardfork) -> Result<Self, TempoInvalidTransaction> {
+        if spec.is_t0_active() {
+            self.checked_mul(rhs)
+                .ok_or(TempoInvalidTransaction::GasArithmeticOverflow)
+        } else {
+            Ok(self * rhs)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +331,36 @@ mod tests {
             fee: U256::from(1000),
         }
         .into();
+    }
+
+    #[test]
+    fn test_gas_arithmetic_overflow_error_display() {
+        let err = TempoInvalidTransaction::GasArithmeticOverflow;
+        assert_eq!(err.to_string(), "gas arithmetic overflow");
+    }
+
+    #[test]
+    fn test_checked_gas_ops_overflow_t0() {
+        use super::CheckedGasOps;
+        use tempo_chainspec::hardfork::TempoHardfork;
+
+        // Post-T0: checked arithmetic returns errors on overflow
+        assert!(u64::MAX.try_add(1, TempoHardfork::T0).is_err());
+        assert!(0u64.try_sub(1, TempoHardfork::T0).is_err());
+        assert!(u64::MAX.try_mul(2, TempoHardfork::T0).is_err());
+    }
+
+    #[test]
+    fn test_checked_gas_ops_wrapping_genesis() {
+        use super::CheckedGasOps;
+        use tempo_chainspec::hardfork::TempoHardfork;
+
+        // Pre-T0 (Genesis): wrapping arithmetic
+        assert_eq!(u64::MAX.try_add(1, TempoHardfork::Genesis).unwrap(), 0);
+        assert_eq!(0u64.try_sub(1, TempoHardfork::Genesis).unwrap(), u64::MAX);
+        assert_eq!(
+            u64::MAX.try_mul(2, TempoHardfork::Genesis).unwrap(),
+            u64::MAX.wrapping_mul(2)
+        );
     }
 }

@@ -232,9 +232,15 @@ where
         };
 
         // Calculate the intrinsic gas for the AA transaction
-        let init_and_floor_gas =
-            calculate_aa_batch_intrinsic_gas(&aa_env, Some(tx.access_list.iter()))
-                .map_err(|_| TempoPoolTransactionError::NonZeroValue)?;
+        // Use the current hardfork based on tip timestamp for pool validation
+        let tip_timestamp = self.inner.fork_tracker().tip_timestamp();
+        let spec = self.inner.chain_spec().tempo_hardfork_at(tip_timestamp);
+        let init_and_floor_gas = calculate_aa_batch_intrinsic_gas(
+            &aa_env,
+            Some(tx.access_list.iter()),
+            spec,
+        )
+        .map_err(|_| TempoPoolTransactionError::NonZeroValue)?;
 
         let gas_limit = tx.gas_limit;
 

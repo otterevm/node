@@ -39,32 +39,51 @@ hardfork!(
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
     TempoHardfork {
-        /// The current Tempo hardfork (genesis).
-        #[default]
+        /// The initial Tempo hardfork (genesis).
         Genesis,
+        /// T0 hardfork: introduces checked gas arithmetic.
+        #[default]
+        T0,
     }
 );
+
+impl TempoHardfork {
+    /// Returns true if the hardfork is T0 or later.
+    pub const fn is_t0_active(self) -> bool {
+        matches!(self, Self::T0)
+    }
+}
 
 /// Trait for querying Tempo-specific hardfork activations.
 pub trait TempoHardforks: EthereumHardforks {
     /// Retrieves activation condition for a Tempo-specific hardfork
     fn tempo_fork_activation(&self, fork: TempoHardfork) -> ForkCondition;
 
+    /// Returns true if T0 hardfork is active at the given timestamp.
+    fn is_t0_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.tempo_fork_activation(TempoHardfork::T0)
+            .active_at_timestamp(timestamp)
+    }
+
     /// Retrieves the Tempo hardfork active at a given timestamp.
-    fn tempo_hardfork_at(&self, _timestamp: u64) -> TempoHardfork {
+    fn tempo_hardfork_at(&self, timestamp: u64) -> TempoHardfork {
+        if self.is_t0_active_at_timestamp(timestamp) {
+            return TempoHardfork::T0;
+        }
         TempoHardfork::Genesis
     }
 }
 
 impl From<TempoHardfork> for SpecId {
     fn from(_value: TempoHardfork) -> Self {
+        // All Tempo hardforks map to OSAKA (Ethereum's latest spec)
         Self::OSAKA
     }
 }
 
 impl From<SpecId> for TempoHardfork {
     fn from(_spec: SpecId) -> Self {
-        Self::Genesis
+        Self::default()
     }
 }
 
@@ -74,9 +93,9 @@ mod tests {
     use reth_chainspec::Hardfork;
 
     #[test]
-    fn test_genesis_hardfork_name() {
-        let fork = TempoHardfork::Genesis;
-        assert_eq!(fork.name(), "Genesis");
+    fn test_hardfork_name() {
+        assert_eq!(TempoHardfork::Genesis.name(), "Genesis");
+        assert_eq!(TempoHardfork::T0.name(), "T0");
     }
 
     #[test]
@@ -89,13 +108,17 @@ mod tests {
     #[test]
     #[cfg(feature = "serde")]
     fn test_tempo_hardfork_serde() {
+        // Test Genesis
         let fork = TempoHardfork::Genesis;
-
-        // Serialize to JSON
         let json = serde_json::to_string(&fork).unwrap();
         assert_eq!(json, "\"Genesis\"");
+        let deserialized: TempoHardfork = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, fork);
 
-        // Deserialize from JSON
+        // Test T0
+        let fork = TempoHardfork::T0;
+        let json = serde_json::to_string(&fork).unwrap();
+        assert_eq!(json, "\"T0\"");
         let deserialized: TempoHardfork = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, fork);
     }
