@@ -28,8 +28,9 @@ use reth_revm::{
     State,
     context::{Block, BlockEnv},
     database::StateProviderDatabase,
+    instrumented::InstrumentedDatabase,
 };
-use reth_storage_api::{StateProvider, StateProviderFactory};
+use reth_storage_api::StateProviderFactory;
 use reth_transaction_pool::{
     BestTransactions, BestTransactionsAttributes, TransactionPool, ValidPoolTransaction,
     error::InvalidPoolTransactionError,
@@ -230,17 +231,18 @@ where
         self.metrics.block_time_millis_last.set(block_time_millis);
 
         let state_provider = self.provider.state_by_block_hash(parent_header.hash())?;
-        let state_provider: Box<dyn StateProvider> = if self.state_provider_metrics {
-            Box::new(InstrumentedStateProvider::new(state_provider, "builder"))
-        } else {
-            state_provider
-        };
         let state = StateProviderDatabase::new(&state_provider);
+        let database = if self.disable_state_cache {
+            Box::new(state) as Box<dyn Database<Error = ProviderError>>
+        } else {
+            Box::new(cached_reads.as_db_mut(state))
+        };
         let mut db = State::builder()
-            .with_database(if self.disable_state_cache {
-                Box::new(state) as Box<dyn Database<Error = ProviderError>>
+            .with_database(if self.state_provider_metrics {
+                Box::new(InstrumentedDatabase::new(database, "builder"))
+                    as Box<dyn Database<Error = ProviderError>>
             } else {
-                Box::new(cached_reads.as_db_mut(state))
+                database
             })
             .with_bundle_update()
             .build();
