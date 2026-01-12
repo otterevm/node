@@ -62,3 +62,6 @@ reth-provider.workspace = true
 tokio = { workspace = true, features = ["macros", "sync"] }
 tracing.workspace = true
 pin-project = "1.1.10"
+
+[dev-dependencies]
+tracing-subscriber.workspace = true

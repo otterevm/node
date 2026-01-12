@@ -47,8 +47,8 @@ impl ZeroizeOnDrop for EncryptionKey {}
 impl std::fmt::Debug for EncryptionKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EncryptionKey")
-            .field("cipher", &"<CIPHER>")
-            .field("key", &"<KEY>")
+            .field("cipher", &"[REDACTED]")
+            .field("key", &"[REDACTED]")
             .finish()
     }
 }

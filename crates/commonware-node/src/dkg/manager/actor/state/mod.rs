@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap},
     net::SocketAddr,
     num::{NonZeroU16, NonZeroU32, NonZeroUsize},
@@ -35,6 +36,9 @@ use tempo_commonware_node_config::EncryptionKey;
 use tracing::{debug, info, instrument, warn};
 
 use crate::consensus::{Digest, block::Block};
+
+#[cfg(test)]
+mod tests;
 
 const PAGE_SIZE: NonZeroU16 = NZU16!(1 << 12);
 
@@ -548,24 +552,11 @@ impl Builder {
             encryption_key,
         } = self;
         let partition_prefix =
-            partition_prefix.ok_or_eyre("DKG actors state must have its partition prefix set")?;
+            partition_prefix.ok_or_eyre("DKG actor state must have its partition prefix set")?;
         let encryption_key = encryption_key
             .ok_or_eyre("DKG actor must have a secret set to encrypt and decrypt their shares")?;
 
         let buffer_pool = PoolRef::new(PAGE_SIZE, POOL_CAPACITY);
-
-        let events = segmented::variable::Journal::init(
-            context.with_label("events"),
-            segmented::variable::Config {
-                partition: format!("{partition_prefix}_events"),
-                compression: None,
-                codec_config: (),
-                buffer_pool: buffer_pool.clone(),
-                write_buffer: WRITE_BUFFER,
-            },
-        )
-        .await
-        .expect("should be able to initialize events journal");
 
         let mut state = open_or_encrypt_state(
             &mut context,
@@ -575,6 +566,16 @@ impl Builder {
         )
         .await
         .wrap_err("failed to open persistent state store")?;
+
+        let events = open_or_encrypt_events(
+            &mut context,
+            buffer_pool.clone(),
+            &partition_prefix,
+            &encryption_key,
+        )
+        .await
+        .wrap_err("failed to open persistent event store")?;
+
         // Replay states to get current epoch
         if state.get(&STATE_KEY).is_none() {
             let initial_state = match initial_state {
@@ -636,7 +637,7 @@ impl Builder {
 }
 
 /// The outcome of a DKG ceremony.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct InMemory {
     pub(super) epoch: Epoch,
     pub(super) seed: Summary,
@@ -781,6 +782,7 @@ impl Events {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 enum Event {
     /// A message received from a dealer (as a player).
     Dealing {
@@ -1197,7 +1199,7 @@ impl ReducedBlock {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Encrypted<T> {
     bytes: Bytes,
     _type: std::marker::PhantomData<T>,
@@ -1320,4 +1322,135 @@ where
         .wrap_err("failed deleting unencrypted journal")?;
 
     Ok(state_metadata)
+}
+
+async fn open_or_encrypt_events<TContext>(
+    context: &mut TContext,
+    buffer_pool: PoolRef,
+    partition_prefix: &str,
+    key: &EncryptionKey,
+) -> eyre::Result<segmented::variable::Journal<TContext, Encrypted<Event>>>
+where
+    TContext: commonware_runtime::Storage + Metrics + Clock + CryptoRngCore,
+{
+    let mut events_encrypted = segmented::variable::Journal::init(
+        context.with_label("events_encrypted"),
+        segmented::variable::Config {
+            partition: format!("{partition_prefix}_events_encrypted"),
+            compression: None,
+            codec_config: (),
+            buffer_pool: buffer_pool.clone(),
+            write_buffer: WRITE_BUFFER,
+        },
+    )
+    .await
+    .wrap_err("failed to initialize encrypted events journal")?;
+
+    let events_unencrypted = segmented::variable::Journal::<_, Event>::init(
+        context.with_label("events"),
+        segmented::variable::Config {
+            partition: format!("{partition_prefix}_events"),
+            compression: None,
+            codec_config: (),
+            buffer_pool: buffer_pool.clone(),
+            write_buffer: WRITE_BUFFER,
+        },
+    )
+    .await
+    .wrap_err("failed to initialize unencrypted events journal")?;
+
+    // See if the unencrypted journal contains any items. If it does not,
+    // we are either running a fresh node or we have already successfully
+    // migrated.
+    if events_unencrypted.newest_section().is_none() {
+        tracing::debug!("unencrypted journal is empty, there is nothing to encrypt");
+        events_unencrypted
+            .destroy()
+            .await
+            .wrap_err("failed deleting unencrypted events journal")?;
+        return Ok(events_encrypted);
+    }
+
+    // Grab the newest section and number of items in that section..
+    // There is no easy way to get the latter, so we use the Journal::replay API
+    // to walk to it.
+    let latest_section = events_encrypted.newest_section();
+    let mut items_in_latest_section = 0;
+    if let Some(newest_section) = latest_section {
+        let replay = events_encrypted
+            .replay(newest_section, 0, READ_BUFFER)
+            .await
+            .wrap_err("unable to start a over encrypted items to find last item")?;
+        futures::pin_mut!(replay);
+        while let Some(entry) = replay.next().await {
+            let (section, _, _, _) =
+                entry.wrap_err("failed reading entry to figure out last already encrypted item")?;
+            assert!(
+                section == newest_section,
+                "replay stream returned section that was not the newest section"
+            );
+            items_in_latest_section += 1;
+        }
+    }
+
+    tracing::debug!(
+        latest_section = %latest_section.map_or(Cow::Borrowed("None"), |sec| Cow::Owned(sec.to_string())),
+        items_in_latest_section,
+        "opened encrypted events journal, opening unencrypted journal from \
+        latest already encrypted session, if there was any",
+    );
+
+    {
+        let mut current_section = latest_section.unwrap_or_default();
+        let replay = events_unencrypted
+            .replay(current_section, 0, READ_BUFFER)
+            .await
+            .wrap_err("unable to start a replay stream to populate encrypted journal")?;
+        futures::pin_mut!(replay);
+        let mut items_in_section = 0;
+        while let Some(result) = replay.next().await {
+            let (section, _, _, event) =
+                result.wrap_err("unable to read unencrypted event in replay stream")?;
+
+            if section != current_section {
+                current_section = section;
+                items_in_section = 0;
+            }
+
+            items_in_section += 1;
+
+            // Encrypt/write if we don't have any encrypted sections, or if the
+            // current section is ahead of the latest encrypted section, or
+            // if there are more items in the current unencrypted session than
+            // there are items in the latest already encrypted section.
+            let should_write = match latest_section {
+                None => true,
+                Some(newest_section) => {
+                    section > newest_section
+                        || (section == newest_section && items_in_section > items_in_latest_section)
+                }
+            };
+
+            if should_write {
+                events_encrypted
+                    .append(section, Encrypted::encrypt(&event, &key, context))
+                    .await
+                    .wrap_err("failed appending encrypted event to encrypted journal")?;
+                events_encrypted
+                    .sync(section)
+                    .await
+                    .wrap_err("failed persisting encrypted event to disk")?;
+            }
+        }
+    }
+    tracing::debug!(
+        "migration complete, all unencrypted events were encrypted, \
+        deleting unencrypted events journal",
+    );
+
+    events_unencrypted
+        .destroy()
+        .await
+        .wrap_err("failed deleting unencrypted events journal")?;
+    Ok(events_encrypted)
 }

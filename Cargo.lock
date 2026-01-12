@@ -11662,6 +11662,7 @@ dependencies = [
  "tempo-telemetry-util",
  "tokio",
  "tracing",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
