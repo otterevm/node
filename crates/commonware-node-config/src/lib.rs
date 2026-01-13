@@ -90,7 +90,7 @@ impl EncryptionKey {
     pub fn from_env(name: &'static str) -> Result<Self, EncryptionKeyError> {
         let hex = std::env::var(name)
             .map_err(|source| EncryptionKeyErrorKind::EnvVar { source, name })?;
-        Self::from_bytes(hex.as_bytes())
+        Self::from_hex(hex.as_bytes())
     }
 
     pub fn encrypt_encodable(
@@ -126,7 +126,10 @@ impl EncryptionKey {
             return Err(DecryptErrorKind::InvalidLength.into());
         };
         let nonce = Nonce::from_slice(nonce);
-        let plaintext = self.cipher.decrypt(nonce, ciphertext).unwrap();
+        let plaintext = self
+            .cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|source| DecryptErrorKind::BadCipherText(source))?;
         Ok(plaintext)
     }
 
@@ -151,6 +154,8 @@ impl From<DecryptErrorKind> for DecryptError {
 enum DecryptErrorKind {
     #[error("the encoded input length was invalid")]
     InvalidLength,
+    #[error("failed decrypting ciphertext")]
+    BadCipherText(#[source] chacha20poly1305::Error),
     #[error("failed decoding decrypted bytes into target type")]
     Decode(commonware_codec::Error),
 }

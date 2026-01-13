@@ -80,7 +80,7 @@ impl GenerateEncryptionKey {
         EncryptionKey::random(&mut OsRng)
             .write_to_file(&output)
             .wrap_err_with(|| format!("failed writing encryption key to `{}`", output.display()))?;
-        println!("wrote private key to: {}", output.display());
+        println!("wrote encryption key to: {}", output.display());
         Ok(())
     }
 }

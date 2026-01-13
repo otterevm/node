@@ -777,7 +777,7 @@ impl Events {
     ) -> eyre::Result<()> {
         let event = encrypted
             .decrypt_decode(key)
-            .wrap_err("failed to decrypt/decode input as event")?;
+            .wrap_err("failed to decrypt/decode input as an event")?;
         self.insert(event)
     }
 }

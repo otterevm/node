@@ -9,8 +9,22 @@ use rand::SeedableRng as _;
 
 use crate::{SigningKey, SigningShare};
 
-fn key(rng: &mut impl CryptoRngCore) -> super::EncryptionKey {
-    super::EncryptionKey::random(rng)
+use super::EncryptionKey;
+
+fn key(rng: &mut impl CryptoRngCore) -> EncryptionKey {
+    EncryptionKey::random(rng)
+}
+
+#[test]
+fn read_encryption_key_hex_roundtrip() {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let key = key(&mut rng);
+    assert_eq!(
+        key.to_hex(),
+        EncryptionKey::from_hex(key.to_hex().as_bytes())
+            .unwrap()
+            .to_hex(),
+    );
 }
 
 #[test]
