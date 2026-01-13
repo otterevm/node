@@ -96,11 +96,15 @@ export default defineConfig({
   rootDir: '.',
   banner: {
     content: (
-        <div>
-          <strong>Testnet migration:</strong> We've launched a new testnet. You'll need to update your RPC configuration and redeploy any contracts. The old testnet will be deprecated on March 8th.{' '}
-          <a href="/network-upgrades" style={{ textDecoration: 'underline' }}>Learn more →</a>
-        </div>
-      ),
+      <div>
+        <strong>Testnet migration:</strong> We've launched a new testnet. You'll
+        need to update your RPC configuration and redeploy any contracts. The
+        old testnet will be deprecated on March 8th.{' '}
+        <a href="/network-upgrades" style={{ textDecoration: 'underline' }}>
+          Learn more →
+        </a>
+      </div>
+    ),
     dismissable: true,
   },
   socials: [
@@ -151,8 +155,12 @@ export default defineConfig({
             link: '/quickstart/predeployed-contracts',
           },
           {
-            text: "Wallet Developers",
-            link: "/quickstart/wallet-developers",
+            text: 'Token List Registry',
+            link: '/quickstart/tokenlist',
+          },
+          {
+            text: 'Wallet Developers',
+            link: '/quickstart/wallet-developers',
           },
         ],
       },

@@ -7,11 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": [
-      "**",
-      "!specs/lib",
-      "!snippets/unformatted"
-    ]
+    "includes": ["**", "!specs/lib", "!snippets/unformatted"]
   },
   "formatter": {
     "enabled": true,
@@ -73,9 +69,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "env.d.ts"
-      ],
+      "includes": ["env.d.ts"],
       "linter": {
         "enabled": true,
         "rules": {
