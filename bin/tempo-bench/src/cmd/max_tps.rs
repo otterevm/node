@@ -901,7 +901,11 @@ pub async fn generate_report(
 
     info!(path, "Generated JSON report");
 
-    if let Some(ref clickhouse_url) = args.clickhouse_url.as_ref().filter(|_| !args.skip_clickhouse) {
+    if let Some(ref clickhouse_url) = args
+        .clickhouse_url
+        .as_ref()
+        .filter(|_| !args.skip_clickhouse)
+    {
         let run_id = Uuid::new_v4();
 
         let total_transactions: u64 = report.blocks.iter().map(|b| b.tx_count as u64).sum();
