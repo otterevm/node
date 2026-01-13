@@ -24,3 +24,4 @@ zeroize.workspace = true
 [dev-dependencies]
 commonware-utils.workspace = true
 rand.workspace = true
+tempfile.workspace = true

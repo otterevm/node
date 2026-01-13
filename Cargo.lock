@@ -11679,6 +11679,7 @@ dependencies = [
  "crypto-common",
  "derive_more",
  "rand 0.8.5",
+ "tempfile",
  "thiserror 2.0.17",
  "zeroize",
 ]

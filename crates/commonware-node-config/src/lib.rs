@@ -62,7 +62,7 @@ impl EncryptionKey {
         }
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, EncryptionKeyError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, EncryptionKeyError> {
         if bytes.len() != ChaCha20Poly1305::key_size() {
             return Err(EncryptionKeyErrorKind::Invalid(crypto_common::InvalidLength).into());
         }
@@ -79,6 +79,11 @@ impl EncryptionKey {
     /// Converst the encryption to a hex-encoded byte slice.
     pub fn to_hex(&self) -> String {
         const_hex::encode(self.key.as_slice())
+    }
+
+    pub fn read_from_file<P: AsRef<Path>>(path: P) -> Result<Self, EncryptionKeyError> {
+        let bytes = Zeroizing::new(std::fs::read(path).map_err(EncryptionKeyErrorKind::Read)?);
+        Self::from_hex(&bytes)
     }
 
     pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), EncryptionKeyError> {
@@ -190,6 +195,8 @@ enum EncryptionKeyErrorKind {
     Hex(#[source] const_hex::FromHexError),
     #[error("key contained in env var was invalid")]
     Invalid(#[source] crypto_common::InvalidLength),
+    #[error("failed reading the key from the provided file")]
+    Read(#[source] std::io::Error),
     #[error("failed to write encryption key to file")]
     Write(#[source] std::io::Error),
 }

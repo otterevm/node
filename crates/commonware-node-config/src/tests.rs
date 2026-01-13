@@ -16,7 +16,7 @@ fn key(rng: &mut impl CryptoRngCore) -> EncryptionKey {
 }
 
 #[test]
-fn read_encryption_key_hex_roundtrip() {
+fn encryption_key_hex_roundtrip() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let key = key(&mut rng);
     assert_eq!(
@@ -24,6 +24,18 @@ fn read_encryption_key_hex_roundtrip() {
         EncryptionKey::from_hex(key.to_hex().as_bytes())
             .unwrap()
             .to_hex(),
+    );
+}
+
+#[test]
+fn encryption_key_file_roundtrip() {
+    let tmpfile = tempfile::NamedTempFile::new().unwrap();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let key = key(&mut rng);
+    key.write_to_file(&tmpfile).unwrap();
+    assert_eq!(
+        key.to_hex(),
+        EncryptionKey::read_from_file(&tmpfile).unwrap().to_hex(),
     );
 }
 
