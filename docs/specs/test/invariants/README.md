@@ -128,3 +128,47 @@ The FeeManager extends FeeAMM and handles fee token preferences and distribution
 
 - **TEMPO-FEE5**: Collected fees should not exceed AMM token balance for any token.
 - **TEMPO-FEE6**: Fee swap rate M is correctly applied - fee output should always be <= fee input.
+
+## TIP20
+
+TIP20 is the Tempo token standard that extends ERC-20 with transfer policies, memo support, pause functionality, and reward distribution.
+
+### Transfer Invariants
+
+- **TEMPO-TIP1**: Balance conservation - sender balance decreases by exactly `amount`, recipient balance increases by exactly `amount`. Transfer returns `true` on success.
+- **TEMPO-TIP2**: Total supply unchanged after transfer - transfers only move tokens between accounts.
+- **TEMPO-TIP3**: Allowance consumption - `transferFrom` decreases allowance by exactly `amount` transferred.
+- **TEMPO-TIP4**: Infinite allowance preserved - `type(uint256).max` allowance remains infinite after `transferFrom`.
+- **TEMPO-TIP9**: Memo transfers behave identically to regular transfers for balance accounting.
+
+### Approval Invariants
+
+- **TEMPO-TIP5**: Allowance setting - `approve` sets exact allowance amount, returns `true`.
+
+### Mint/Burn Invariants
+
+- **TEMPO-TIP6**: Minting increases total supply and recipient balance by exactly `amount`.
+- **TEMPO-TIP7**: Supply cap enforcement - minting reverts if `totalSupply + amount > supplyCap`.
+- **TEMPO-TIP8**: Burning decreases total supply and burner balance by exactly `amount`.
+
+### Reward Distribution Invariants
+
+- **TEMPO-TIP10**: Reward recipient setting - `setRewardRecipient` updates the stored recipient correctly.
+- **TEMPO-TIP11**: Opted-in supply tracking - `optedInSupply` increases when opting in (by holder's balance) and decreases when opting out.
+- **TEMPO-TIP12**: Global reward per token updates - `distributeReward` increases `globalRewardPerToken` by `(amount * ACC_PRECISION) / optedInSupply`.
+- **TEMPO-TIP13**: Reward token custody - distributed rewards are transferred to the token contract.
+- **TEMPO-TIP14**: Reward claiming - `claimRewards` transfers owed amount from contract to caller, updates balances correctly.
+- **TEMPO-TIP15**: Claim bounded by available - claimed amount cannot exceed contract's token balance.
+
+### Policy Invariants
+
+- **TEMPO-TIP16**: Blacklist enforcement - transfers to/from blacklisted addresses revert with `PolicyForbids`.
+- **TEMPO-TIP17**: Pause enforcement - transfers revert with `ContractPaused` when paused.
+
+### Global Invariants
+
+- **TEMPO-TIP18**: Supply conservation - `totalSupply = initialSupply + totalMints - totalBurns`.
+- **TEMPO-TIP19**: Opted-in supply bounded - `optedInSupply <= totalSupply`.
+- **TEMPO-TIP20**: Balance sum equals supply - sum of all holder balances equals `totalSupply`.
+- **TEMPO-TIP21**: Decimals constant - `decimals()` always returns 6.
+- **TEMPO-TIP22**: Supply cap enforced - `totalSupply <= supplyCap` always holds.
