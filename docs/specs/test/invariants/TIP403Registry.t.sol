@@ -11,7 +11,7 @@ import { InvariantBaseTest } from "./InvariantBaseTest.t.sol";
 contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
     /// @dev Log file path for recording actions
-    string private constant LOG_FILE = "registry.log";
+    string private constant LOG_FILE = "tip403.log";
 
     /// @dev Ghost variables for tracking operations
     uint256 private _totalPoliciesCreated;
@@ -127,7 +127,7 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         uint256 numAccounts = (numAccountsSeed % 5) + 1; // 1-5 accounts
         address[] memory accounts = new address[](numAccounts);
         for (uint256 i = 0; i < numAccounts; i++) {
-            accounts[i] = _selectActor(actorSeed + i + 1);
+            accounts[i] = _selectActor(uint256(keccak256(abi.encodePacked(actorSeed, i))));
         }
 
         vm.startPrank(actor);
@@ -254,8 +254,9 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         // Find a whitelist policy
         uint64 policyId = 0;
         bool found = false;
+        uint256 startIdx = policySeed % _createdPolicies.length;
         for (uint256 i = 0; i < _createdPolicies.length; i++) {
-            uint256 idx = (policySeed + i) % _createdPolicies.length;
+            uint256 idx = (startIdx + i) % _createdPolicies.length;
             if (_policyTypes[_createdPolicies[idx]] == ITIP403Registry.PolicyType.WHITELIST) {
                 policyId = _createdPolicies[idx];
                 found = true;
@@ -306,8 +307,9 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         // Find a blacklist policy
         uint64 policyId = 0;
         bool found = false;
+        uint256 startIdx = policySeed % _createdPolicies.length;
         for (uint256 i = 0; i < _createdPolicies.length; i++) {
-            uint256 idx = (policySeed + i) % _createdPolicies.length;
+            uint256 idx = (startIdx + i) % _createdPolicies.length;
             if (_policyTypes[_createdPolicies[idx]] == ITIP403Registry.PolicyType.BLACKLIST) {
                 policyId = _createdPolicies[idx];
                 found = true;
@@ -430,6 +432,52 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         assertFalse(
             registry.policyExists(nonExistentId),
             "TEMPO-REG14: Non-existent policy should not exist"
+        );
+    }
+
+    /// @notice Handler for attempting to modify special policies (0 and 1)
+    /// @dev Tests TEMPO-REG17 (special policies cannot be modified) and TEMPO-REG18 (admin cannot change)
+    function tryModifySpecialPolicies(uint256 actorSeed, uint256 accountSeed, uint8 policyChoice) external {
+        address actor = _selectActor(actorSeed);
+        address account = _selectActor(accountSeed);
+        uint64 policyId = (policyChoice % 2 == 0) ? 0 : 1;
+
+        // Try whitelist modification - should fail
+        vm.startPrank(actor);
+        try registry.modifyPolicyWhitelist(policyId, account, true) {
+            vm.stopPrank();
+            revert("TEMPO-REG17: Should not be able to modify special policy");
+        } catch (bytes memory reason) {
+            vm.stopPrank();
+            _assertKnownError(reason);
+        }
+
+        // Try blacklist modification - should fail
+        vm.startPrank(actor);
+        try registry.modifyPolicyBlacklist(policyId, account, true) {
+            vm.stopPrank();
+            revert("TEMPO-REG17: Should not be able to modify special policy");
+        } catch (bytes memory reason) {
+            vm.stopPrank();
+            _assertKnownError(reason);
+        }
+
+        // Try admin change - should fail
+        vm.startPrank(actor);
+        try registry.setPolicyAdmin(policyId, account) {
+            vm.stopPrank();
+            revert("TEMPO-REG18: Should not be able to change special policy admin");
+        } catch {
+            vm.stopPrank();
+        }
+
+        _log(
+            string.concat(
+                "TRY_MODIFY_SPECIAL_POLICY: ",
+                _getActorIndex(actor),
+                " blocked on policy ",
+                vm.toString(policyId)
+            )
         );
     }
 

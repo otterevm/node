@@ -238,6 +238,49 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
         }
     }
 
+    /// @notice Handler for attempting to create USD token with non-USD quote
+    /// @dev Tests TEMPO-FAC12 (USD tokens must have USD quote tokens)
+    function createUsdTokenWithNonUsdQuote(uint256 actorSeed, bytes32 salt) external {
+        address actor = _selectActor(actorSeed);
+
+        // First create a non-USD token to use as quote
+        bytes32 eurSalt = keccak256(abi.encode(salt, "EUR"));
+        address eurToken;
+        
+        vm.startPrank(actor);
+        try factory.createToken("EUR Token", "EUR", "EUR", pathUSD, admin, eurSalt) returns (address addr) {
+            eurToken = addr;
+        } catch {
+            vm.stopPrank();
+            return; // Can't proceed if EUR token creation failed
+        }
+        vm.stopPrank();
+
+        // Now try to create a USD token with EUR quote - should fail
+        bytes32 usdSalt = keccak256(abi.encode(salt, "USD_WITH_EUR"));
+        
+        vm.startPrank(actor);
+        try factory.createToken("Bad USD", "BUSD", "USD", ITIP20(eurToken), admin, usdSalt) {
+            vm.stopPrank();
+            revert("TEMPO-FAC12: USD token with non-USD quote should fail");
+        } catch (bytes memory reason) {
+            vm.stopPrank();
+            // Expected - USD tokens must have USD quote tokens
+            assertEq(
+                bytes4(reason),
+                ITIP20Factory.InvalidQuoteToken.selector,
+                "TEMPO-FAC12: Should revert with InvalidQuoteToken"
+            );
+            _log(
+                string.concat(
+                    "CREATE_USD_WITH_NON_USD_QUOTE: ",
+                    _getActorIndex(actor),
+                    " correctly rejected"
+                )
+            );
+        }
+    }
+
     /// @notice Handler for verifying isTIP20 on random addresses
     /// @dev Tests TEMPO-FAC8 (isTIP20 consistency)
     function checkIsTIP20(uint256 addrSeed) external view {
@@ -306,6 +349,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
         _invariantAllCreatedTokensAreTIP20();
         _invariantAddressUniqueness();
         _invariantAddressFormat();
+        _invariantUsdTokensHaveUsdQuote();
     }
 
     /// @notice TEMPO-FAC2: All created tokens are recognized as TIP20
@@ -342,6 +386,26 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
                 0x20C000000000000000000000,
                 "TEMPO-FAC11: Token address has incorrect prefix"
             );
+        }
+    }
+
+    /// @notice TEMPO-FAC12: USD tokens must have USD quote tokens
+    function _invariantUsdTokensHaveUsdQuote() internal view {
+        for (uint256 i = 0; i < _createdTokens.length; i++) {
+            TIP20 token = TIP20(_createdTokens[i]);
+            
+            // Check if this is a USD token
+            if (keccak256(bytes(token.currency())) == keccak256(bytes("USD"))) {
+                // Its quote token must also be USD
+                ITIP20 quote = token.quoteToken();
+                if (address(quote) != address(0)) {
+                    assertEq(
+                        keccak256(bytes(TIP20(address(quote)).currency())),
+                        keccak256(bytes("USD")),
+                        "TEMPO-FAC12: USD token has non-USD quote token"
+                    );
+                }
+            }
         }
     }
 

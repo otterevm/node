@@ -309,7 +309,9 @@ abstract contract InvariantBaseTest is BaseTest {
             || selector == ITIP20.InvalidAmount.selector
             || selector == ITIP20.PolicyForbids.selector
             || selector == ITIP20.SupplyCapExceeded.selector
-            || selector == ITIP20.NoOptedInSupply.selector;
+            || selector == ITIP20.NoOptedInSupply.selector
+            || selector == ITIP20.InvalidTransferPolicyId.selector
+            || selector == ITIP20.InvalidQuoteToken.selector;
     }
 
 }
