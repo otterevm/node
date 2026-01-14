@@ -240,11 +240,10 @@ impl TipFeeManager {
         }
     }
 
-
     /// Set the current transaction's fee token (transient storage)
     ///
-    /// NOTE: Thishis function is only called by the execution handler before 
-    /// transaction execution begins and allows smart contracts to introspect which 
+    /// NOTE: Thishis function is only called by the execution handler before
+    /// transaction execution begins and allows smart contracts to introspect which
     /// token is paying for gas fees by calling `getFeeToken()`.
     ///
     /// This is a protocol-internal function, not exposed via the dispatch interface.
