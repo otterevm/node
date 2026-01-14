@@ -278,8 +278,7 @@ contract TempoTransactionInvariantTest is InvariantBase {
         uint256 senderIdx = actorSeed % actors.length;
         uint256 recipientIdx = (senderIdx + 1) % actors.length;
 
-        SignatureType sigType = _getRandomSignatureType(sigTypeSeed);
-        address sender = _getSenderForSigType(senderIdx, sigType);
+        _getRandomSignatureType(sigTypeSeed);
         address recipient = actors[recipientIdx];
 
         // Get actual sender from build function (may differ for P256/WebAuthn)
@@ -365,6 +364,7 @@ contract TempoTransactionInvariantTest is InvariantBase {
                 ghost_totalTxExecuted++;
                 ghost_totalCreatesExecuted++;
                 ghost_totalProtocolNonceTxs++;
+                ghost_createCount[actualSender]++;
             }
             ghost_totalTxReverted++;
         }
@@ -408,6 +408,7 @@ contract TempoTransactionInvariantTest is InvariantBase {
                 ghost_totalTxExecuted++;
                 ghost_totalCreatesExecuted++;
                 ghost_totalProtocolNonceTxs++;
+                ghost_createCount[actualSender]++;
             }
             ghost_totalTxReverted++;
         }
