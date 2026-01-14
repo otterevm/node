@@ -33,8 +33,20 @@ contract TIP20InvariantTest is InvariantBaseTest {
     mapping(address => uint256) private _tokenRewardsDistributed;
     mapping(address => uint256) private _tokenRewardsClaimed;
 
+    /// @dev Track all addresses that have held tokens (per token)
+    mapping(address => mapping(address => bool)) private _tokenHolderSeen;
+    mapping(address => address[]) private _tokenHolders;
+
     /// @dev Constants
     uint256 internal constant ACC_PRECISION = 1e18;
+
+    /// @dev Register an address as a potential token holder
+    function _registerHolder(address token, address holder) internal {
+        if (!_tokenHolderSeen[token][holder]) {
+            _tokenHolderSeen[token][holder] = true;
+            _tokenHolders[token].push(holder);
+        }
+    }
 
     /// @notice Sets up the test environment
     function setUp() public override {
@@ -48,6 +60,27 @@ contract TIP20InvariantTest is InvariantBaseTest {
         // Track initial mints from _buildActors
         for (uint256 i = 0; i < _tokens.length; i++) {
             _tokenMintSum[address(_tokens[i])] = 20 * 1_000_000_000_000;
+        }
+
+        // Register all initially known addresses for each token
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            address tokenAddr = address(_tokens[i]);
+
+            // Register actors
+            for (uint256 j = 0; j < _actors.length; j++) {
+                _registerHolder(tokenAddr, _actors[j]);
+            }
+
+            // Register system addresses
+            _registerHolder(tokenAddr, admin);
+            _registerHolder(tokenAddr, tokenAddr); // token contract itself
+            _registerHolder(tokenAddr, address(amm));
+            _registerHolder(tokenAddr, address(exchange));
+            _registerHolder(tokenAddr, address(pathUSD));
+            _registerHolder(tokenAddr, alice);
+            _registerHolder(tokenAddr, bob);
+            _registerHolder(tokenAddr, charlie);
+            _registerHolder(tokenAddr, pathUSDAdmin);
         }
 
         _initLogFile(LOG_FILE, "TIP20 Invariant Test Log");
@@ -86,6 +119,8 @@ contract TIP20InvariantTest is InvariantBaseTest {
             assertTrue(success, "TEMPO-TIP1: Transfer should return true");
 
             _totalTransfers++;
+            _registerHolder(address(token), actor);
+            _registerHolder(address(token), recipient);
 
             // TEMPO-TIP1: Balance conservation
             assertEq(
@@ -162,6 +197,8 @@ contract TIP20InvariantTest is InvariantBaseTest {
             assertTrue(success, "TEMPO-TIP3: TransferFrom should return true");
 
             _totalTransfers++;
+            _registerHolder(address(token), owner);
+            _registerHolder(address(token), recipient);
 
             // TEMPO-TIP3/TIP4: Allowance handling
             if (isInfiniteAllowance) {
@@ -272,6 +309,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
 
             _totalMints++;
             _tokenMintSum[address(token)] += amount;
+            _registerHolder(address(token), recipient);
 
             // TEMPO-TIP6: Total supply should increase
             assertEq(
@@ -323,6 +361,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
 
             _totalBurns++;
             _tokenBurnSum[address(token)] += amount;
+            _registerHolder(address(token), admin);
 
             // TEMPO-TIP8: Total supply should decrease
             assertEq(
@@ -376,6 +415,8 @@ contract TIP20InvariantTest is InvariantBaseTest {
             vm.stopPrank();
 
             _totalTransfers++;
+            _registerHolder(address(token), actor);
+            _registerHolder(address(token), recipient);
 
             // TEMPO-TIP9: Balance changes same as regular transfer
             assertEq(
@@ -442,6 +483,11 @@ contract TIP20InvariantTest is InvariantBaseTest {
         vm.startPrank(actor);
         try token.setRewardRecipient(newRecipient) {
             vm.stopPrank();
+
+            _registerHolder(address(token), actor);
+            if (newRecipient != address(0)) {
+                _registerHolder(address(token), newRecipient);
+            }
 
             (address storedRecipient,,) = token.userRewardInfo(actor);
 
@@ -519,6 +565,8 @@ contract TIP20InvariantTest is InvariantBaseTest {
             _totalRewardsDistributed++;
             _ghostRewardInputSum += amount;
             _tokenRewardsDistributed[address(token)] += amount;
+            _registerHolder(address(token), actor);
+            _registerHolder(address(token), address(token));
 
             // TEMPO-TIP12: Global reward per token should increase (or stay same for very small amounts)
             uint256 globalRPTAfter = token.globalRewardPerToken();
@@ -568,6 +616,8 @@ contract TIP20InvariantTest is InvariantBaseTest {
         vm.startPrank(actor);
         try token.claimRewards() returns (uint256 claimed) {
             vm.stopPrank();
+
+            _registerHolder(address(token), actor);
 
             if (rewardBalance > 0 || claimed > 0) {
                 _totalRewardsClaimed++;
@@ -1085,35 +1135,17 @@ contract TIP20InvariantTest is InvariantBaseTest {
     }
 
     /// @notice TEMPO-TIP20: Balance sum equals supply - sum of all holder balances equals totalSupply
-    /// @dev Note: This may not be perfectly accurate if there are holders outside of tracked addresses.
-    ///      We sum: _actors balances + admin + token contract (self-balance for rewards) +
-    ///      known system addresses (FeeManager, StablecoinDEX, pathUSD)
+    /// @dev Iterates over all dynamically tracked token holders to ensure no balances are missed.
     function _invariantBalanceSumEqualsSupply() internal view {
         for (uint256 i = 0; i < _tokens.length; i++) {
             TIP20 token = _tokens[i];
+            address tokenAddr = address(token);
             uint256 balanceSum = 0;
 
-            // Sum all actor balances
-            for (uint256 j = 0; j < _actors.length; j++) {
-                balanceSum += token.balanceOf(_actors[j]);
+            address[] storage holders = _tokenHolders[tokenAddr];
+            for (uint256 j = 0; j < holders.length; j++) {
+                balanceSum += token.balanceOf(holders[j]);
             }
-
-            // Add admin balance
-            balanceSum += token.balanceOf(admin);
-
-            // Add token contract's own balance (for rewards)
-            balanceSum += token.balanceOf(address(token));
-
-            // Add known system addresses
-            balanceSum += token.balanceOf(address(amm)); // FeeManager
-            balanceSum += token.balanceOf(address(exchange)); // StablecoinDEX
-            balanceSum += token.balanceOf(address(pathUSD)); // pathUSD contract
-
-            // Add other known addresses from BaseTest
-            balanceSum += token.balanceOf(alice);
-            balanceSum += token.balanceOf(bob);
-            balanceSum += token.balanceOf(charlie);
-            balanceSum += token.balanceOf(pathUSDAdmin);
 
             assertEq(
                 balanceSum,
