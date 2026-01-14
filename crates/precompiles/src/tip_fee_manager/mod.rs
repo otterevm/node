@@ -26,9 +26,7 @@ pub struct TipFeeManager {
     total_supply: Mapping<B256, U256>,
     liquidity_balances: Mapping<B256, Mapping<Address, U256>>,
 
-    // -----------------------------------------------------------------
-    // Transient fields - MUST remain at the end of the struct
-    // -----------------------------------------------------------------
+    // Transient fields MUST remain at the end of the struct
     /// Current transaction's fee token, set by the handler before execution.
     /// Allows smart contracts to introspect the fee token via `getFeeToken()`.
     tx_fee_token: Address,
@@ -266,17 +264,15 @@ impl TipFeeManager {
 
 #[cfg(test)]
 mod tests {
-    use alloy::sol_types::{SolCall, SolValue};
-    use tempo_contracts::precompiles::{IFeeManager, TIP20Error};
-
     use super::*;
     use crate::{
-        Precompile, TIP_FEE_MANAGER_ADDRESS,
+        TIP_FEE_MANAGER_ADDRESS,
         error::TempoPrecompileError,
         storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
         tip20::{ITIP20, TIP20Token},
     };
+    use tempo_contracts::precompiles::{IFeeManager, TIP20Error};
 
     #[test]
     fn test_set_user_token() -> eyre::Result<()> {
