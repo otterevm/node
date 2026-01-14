@@ -291,6 +291,39 @@ abstract contract InvariantBaseTest is BaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
+                        CONSOLIDATED HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Consolidated setup helper for invariant tests
+    /// @param actorCount Number of actors to create
+    /// @param spender Address to approve for spending (0 for no approvals)
+    /// @param logFile Log file path
+    /// @param title Log file title
+    function _setupInvariantTest(
+        uint256 actorCount,
+        address spender,
+        string memory logFile,
+        string memory title
+    ) internal {
+        _setupInvariantBase();
+        _actors = spender == address(0)
+            ? _buildActors(actorCount)
+            : _buildActorsWithApprovals(actorCount, spender);
+        _initLogFile(logFile, title);
+    }
+
+    /// @dev Helper to assert error selector is in allowed list
+    /// @param reason The revert reason bytes
+    /// @param allowed Array of allowed error selectors
+    function _assertSelectorIn(bytes memory reason, bytes4[] memory allowed) internal pure {
+        bytes4 selector = bytes4(reason);
+        for (uint256 i = 0; i < allowed.length; i++) {
+            if (selector == allowed[i]) return;
+        }
+        revert("Unknown error encountered");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                           ERROR HANDLING
     //////////////////////////////////////////////////////////////*/
 

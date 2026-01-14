@@ -9,7 +9,7 @@ import { Vm } from "forge-std/Vm.sol";
 
 /// @title StablecoinDEX Invariant Tests
 /// @notice Fuzz-based invariant tests for the StablecoinDEX orderbook exchange
-/// @dev Tests invariants TEMPO-DEX1 through TEMPO-DEX12 as documented in README.md
+/// @dev Tests invariants TEMPO-DEX1 through TEMPO-DEX19 as documented in README.md
 contract StablecoinDEXInvariantTest is InvariantBaseTest {
 
     /// @dev Mapping of actor address to their placed order IDs
@@ -26,6 +26,9 @@ contract StablecoinDEXInvariantTest is InvariantBaseTest {
 
     /// @dev Maximum amount of dust that can be left in the protocol. This is used to verify TEMPO-DEX19.
     uint64 private _maxDust;
+
+    /// @dev Dust level before each swap, used to verify TEMPO-DEX18 (each swap increases dust by at most 1).
+    uint256 private _dustBeforeSwap;
 
     /// @notice Sets up the test environment
     /// @dev Initializes BaseTest, creates trading pair, builds actors, and sets initial state
@@ -121,6 +124,8 @@ contract StablecoinDEXInvariantTest is InvariantBaseTest {
         placeOrder(actorRnd, amount, tickRnd, tokenRnd, isBid, false);
     }
 
+    /// @notice Places an order and immediately cancels it
+    /// @dev Increases coverage of TEMPO-DEX3 (cancel refund) path
     function placeOrder2(
         uint256 actorRnd,
         uint128 amount,
@@ -128,7 +133,7 @@ contract StablecoinDEXInvariantTest is InvariantBaseTest {
         uint256 tokenRnd,
         bool isBid
     ) external {
-        placeOrder(actorRnd, amount, tickRnd, tokenRnd, isBid, false);
+        placeOrder(actorRnd, amount, tickRnd, tokenRnd, isBid, true);
     }
 
     /// @dev Helper to verify order was created correctly (TEMPO-DEX2)
@@ -752,6 +757,33 @@ contract StablecoinDEXInvariantTest is InvariantBaseTest {
         }
     }
 
+    /// @notice Computes the current dust in the DEX
+    /// @dev Dust is the difference between DEX balance and (internal balances + escrowed amounts)
+    /// @return dust The total dust across all tokens
+    function _computeDust() internal view returns (uint256 dust) {
+        (uint256 pathUsdEscrowed, uint256[] memory tokenEscrowed,) = _computeExpectedEscrow();
+
+        uint256 dexPathUsdBalance = pathUSD.balanceOf(address(exchange));
+        uint256 totalUserPathUsd = 0;
+        for (uint256 i = 0; i < _actors.length; i++) {
+            totalUserPathUsd += exchange.balanceOf(_actors[i], address(pathUSD));
+        }
+        if (dexPathUsdBalance > totalUserPathUsd + pathUsdEscrowed) {
+            dust += dexPathUsdBalance - totalUserPathUsd - pathUsdEscrowed;
+        }
+
+        for (uint256 t = 0; t < _tokens.length; t++) {
+            uint256 dexTokenBalance = _tokens[t].balanceOf(address(exchange));
+            uint256 totalUserTokenBalance = 0;
+            for (uint256 i = 0; i < _actors.length; i++) {
+                totalUserTokenBalance += exchange.balanceOf(_actors[i], address(_tokens[t]));
+            }
+            if (dexTokenBalance > totalUserTokenBalance + tokenEscrowed[t]) {
+                dust += dexTokenBalance - totalUserTokenBalance - tokenEscrowed[t];
+            }
+        }
+    }
+
     /// @notice Computes expected escrowed amounts by iterating through all orders
     /// @dev Iterates all order IDs to catch flip-created orders not in _placedOrders
     /// @return pathUsdEscrowed Total pathUSD escrowed in active bid orders
@@ -811,13 +843,25 @@ contract StablecoinDEXInvariantTest is InvariantBaseTest {
             quotedOut = 0;
         }
 
+        // TEMPO-DEX18: Record dust before swap
+        _dustBeforeSwap = _computeDust();
+
         vm.recordLogs();
         try exchange.swapExactAmountIn(
             before.tokenIn, before.tokenOut, amount, amount - 100
         ) returns (
             uint128 amountOut
         ) {
-            _maxDust += _countOrderFilledEvents();
+            uint64 ordersFilled = _countOrderFilledEvents();
+            _maxDust += ordersFilled;
+
+            // TEMPO-DEX18: Each swap can increase dust by at most 1 per order filled
+            uint256 dustAfterSwap = _computeDust();
+            assertLe(
+                dustAfterSwap,
+                _dustBeforeSwap + ordersFilled,
+                "TEMPO-DEX18: swap increased dust by more than 1 per order filled"
+            );
             // TEMPO-DEX4: amountOut >= minAmountOut
             assertTrue(
                 amountOut >= amount - 100, "TEMPO-DEX4: swap exact amountOut less than minAmountOut"
@@ -870,13 +914,26 @@ contract StablecoinDEXInvariantTest is InvariantBaseTest {
             quotedIn = 0;
         }
 
+        // TEMPO-DEX18: Record dust before swap
+        _dustBeforeSwap = _computeDust();
+
         vm.recordLogs();
         try exchange.swapExactAmountOut(
             before.tokenIn, before.tokenOut, amount, amount + 100
         ) returns (
             uint128 amountIn
         ) {
-            _maxDust += _countOrderFilledEvents();
+            uint64 ordersFilled = _countOrderFilledEvents();
+            _maxDust += ordersFilled;
+
+            // TEMPO-DEX18: Each swap can increase dust by at most 1 per order filled
+            uint256 dustAfterSwap = _computeDust();
+            assertLe(
+                dustAfterSwap,
+                _dustBeforeSwap + ordersFilled,
+                "TEMPO-DEX18: swap increased dust by more than 1 per order filled"
+            );
+
             // TEMPO-DEX5: amountIn <= maxAmountIn
             assertTrue(
                 amountIn <= amount + 100, "TEMPO-DEX5: swap exact amountIn greater than maxAmountIn"

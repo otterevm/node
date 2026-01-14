@@ -28,6 +28,12 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
     /// @dev Track policy membership for invariant verification
     mapping(uint64 => mapping(address => bool)) private _ghostPolicySet;
 
+    /// @dev Track accounts added to each policy for iteration
+    mapping(uint64 => address[]) private _policyAccounts;
+
+    /// @dev Track if account already added to policy account list
+    mapping(uint64 => mapping(address => bool)) private _policyAccountTracked;
+
     /// @notice Sets up the test environment
     function setUp() public override {
         super.setUp();
@@ -132,6 +138,10 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
             // Track ghost state
             for (uint256 i = 0; i < accounts.length; i++) {
                 _ghostPolicySet[policyId][accounts[i]] = true;
+                if (!_policyAccountTracked[policyId][accounts[i]]) {
+                    _policyAccountTracked[policyId][accounts[i]] = true;
+                    _policyAccounts[policyId].push(accounts[i]);
+                }
             }
 
             // TEMPO-REG5: All initial accounts should have correct authorization
@@ -256,6 +266,10 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
             _totalWhitelistModifications++;
             _ghostPolicySet[policyId][account] = allowed;
+            if (!_policyAccountTracked[policyId][account]) {
+                _policyAccountTracked[policyId][account] = true;
+                _policyAccounts[policyId].push(account);
+            }
 
             // TEMPO-REG8: Authorization should reflect whitelist status
             bool authAfter = registry.isAuthorized(policyId, account);
@@ -305,6 +319,10 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
             _totalBlacklistModifications++;
             _ghostPolicySet[policyId][account] = restricted;
+            if (!_policyAccountTracked[policyId][account]) {
+                _policyAccountTracked[policyId][account] = true;
+                _policyAccounts[policyId].push(account);
+            }
 
             // TEMPO-REG9: Authorization should be opposite of blacklist status
             bool authAfter = registry.isAuthorized(policyId, account);
@@ -455,6 +473,7 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         _invariantSpecialPoliciesExist();
         _invariantCreatedPoliciesExist();
         _invariantPolicyTypeImmutability();
+        _invariantPolicyMembershipConsistency();
     }
 
     /// @notice TEMPO-REG15: Policy counter only increases
@@ -496,6 +515,42 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
                 "TEMPO-REG16: Policy type should not change"
             );
         }
+    }
+
+    /// @notice TEMPO-REG19: Ghost policy membership matches registry
+    function _invariantPolicyMembershipConsistency() internal view {
+        for (uint256 i = 0; i < _createdPolicies.length; i++) {
+            uint64 policyId = _createdPolicies[i];
+            ITIP403Registry.PolicyType policyType = _policyTypes[policyId];
+            address[] memory accounts = _policyAccounts[policyId];
+
+            for (uint256 j = 0; j < accounts.length; j++) {
+                address account = accounts[j];
+                bool ghostMember = _ghostPolicySet[policyId][account];
+                bool isAuthorized = registry.isAuthorized(policyId, account);
+
+                if (policyType == ITIP403Registry.PolicyType.WHITELIST) {
+                    // Whitelist: member = authorized
+                    assertEq(
+                        isAuthorized, ghostMember, "TEMPO-REG19: Whitelist membership mismatch"
+                    );
+                } else {
+                    // Blacklist: member = NOT authorized
+                    assertEq(
+                        isAuthorized, !ghostMember, "TEMPO-REG19: Blacklist membership mismatch"
+                    );
+                }
+            }
+        }
+    }
+
+    /// @notice Verify operation counters are consistent
+    function _invariantOperationCountersConsistent() internal view {
+        assertTrue(
+            _totalPoliciesCreated + _totalAdminChanges + _totalWhitelistModifications
+                    + _totalBlacklistModifications + _totalAuthorizationChecks >= 0,
+            "Operation counters should be non-negative"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////

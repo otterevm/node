@@ -22,6 +22,10 @@ contract NonceInvariantTest is InvariantBaseTest {
     /// @dev Track if a nonce key has been used by an account
     mapping(address => mapping(uint256 => bool)) private _nonceKeyUsed;
 
+    /// @dev Track last-seen nonce values for decrease detection
+    /// account => nonceKey => lastSeenNonce
+    mapping(address => mapping(uint256 => uint64)) private _lastSeenNonces;
+
     /// @dev Total increments performed
     uint256 private _totalIncrements;
 
@@ -97,6 +101,7 @@ contract NonceInvariantTest is InvariantBaseTest {
 
         // Update ghost state
         _ghostNonces[actor][nonceKey] = newNonce;
+        _lastSeenNonces[actor][nonceKey] = newNonce;
 
         // Track nonce key usage
         if (!_nonceKeyUsed[actor][nonceKey]) {
@@ -173,8 +178,9 @@ contract NonceInvariantTest is InvariantBaseTest {
         uint64 nonce2Before = nonce.getNonce(actor2, nonceKey);
 
         // Increment actor1's nonce
-        _incrementNonceViaStorage(actor1, nonceKey);
-        _ghostNonces[actor1][nonceKey]++;
+        uint64 newNonce1 = _incrementNonceViaStorage(actor1, nonceKey);
+        _ghostNonces[actor1][nonceKey] = newNonce1;
+        _lastSeenNonces[actor1][nonceKey] = newNonce1;
 
         if (!_nonceKeyUsed[actor1][nonceKey]) {
             _nonceKeyUsed[actor1][nonceKey] = true;
@@ -209,8 +215,9 @@ contract NonceInvariantTest is InvariantBaseTest {
         uint64 nonce2Before = nonce.getNonce(actor, key2);
 
         // Increment key1's nonce
-        _incrementNonceViaStorage(actor, key1);
-        _ghostNonces[actor][key1]++;
+        uint64 newNonce1 = _incrementNonceViaStorage(actor, key1);
+        _ghostNonces[actor][key1] = newNonce1;
+        _lastSeenNonces[actor][key1] = newNonce1;
 
         if (!_nonceKeyUsed[actor][key1]) {
             _nonceKeyUsed[actor][key1] = true;
@@ -248,6 +255,7 @@ contract NonceInvariantTest is InvariantBaseTest {
         // Increment and verify
         uint64 newNonce = _incrementNonceViaStorage(actor, largeKey);
         _ghostNonces[actor][largeKey] = newNonce;
+        _lastSeenNonces[actor][largeKey] = newNonce;
 
         if (!_nonceKeyUsed[actor][largeKey]) {
             _nonceKeyUsed[actor][largeKey] = true;
@@ -280,6 +288,7 @@ contract NonceInvariantTest is InvariantBaseTest {
             uint64 beforeIncrement = nonce.getNonce(actor, nonceKey);
             uint64 newNonce = _incrementNonceViaStorage(actor, nonceKey);
             _ghostNonces[actor][nonceKey] = newNonce;
+            _lastSeenNonces[actor][nonceKey] = newNonce;
 
             // TEMPO-NON8: Each increment should be exactly +1
             assertEq(
@@ -336,7 +345,7 @@ contract NonceInvariantTest is InvariantBaseTest {
         }
     }
 
-    /// @notice TEMPO-NON1: Nonces should never decrease (implicit from increment-only)
+    /// @notice TEMPO-NON1: Nonces should never decrease
     function _invariantNonceNeverDecrease() internal view {
         for (uint256 a = 0; a < _actors.length; a++) {
             address actor = _actors[a];
@@ -345,7 +354,10 @@ contract NonceInvariantTest is InvariantBaseTest {
             for (uint256 k = 0; k < keys.length; k++) {
                 uint256 nonceKey = keys[k];
                 uint64 actual = nonce.getNonce(actor, nonceKey);
-                assertTrue(actual >= 0, "TEMPO-NON1: Nonce should be non-negative");
+                uint64 lastSeen = _lastSeenNonces[actor][nonceKey];
+
+                // Current value should be >= last seen value
+                assertGe(actual, lastSeen, "TEMPO-NON1: Nonce decreased from last seen value");
             }
         }
     }

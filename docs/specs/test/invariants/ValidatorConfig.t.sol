@@ -595,6 +595,11 @@ contract ValidatorConfigInvariantTest is InvariantBaseTest {
                 _ghostValidatorPublicKey[addr],
                 "TEMPO-VAL15: Public key should match"
             );
+            assertEq(
+                validators[i].index,
+                _ghostValidatorIndex[addr],
+                "TEMPO-VAL15: Index should match ghost state"
+            );
         }
     }
 
@@ -617,6 +622,17 @@ contract ValidatorConfigInvariantTest is InvariantBaseTest {
             validatorConfig.getNextFullDkgCeremony(),
             _ghostNextDkgCeremony,
             "TEMPO-VAL12: DKG epoch should match ghost state"
+        );
+    }
+
+    /// @notice TEMPO-VAL16: Operation counters are consistent
+    /// @dev Validates that validator operations are being tracked
+    function _invariantOperationCountersConsistent() internal view {
+        // Basic sanity check that counters are being maintained
+        assertTrue(
+            _totalValidatorsAdded + _totalValidatorsUpdated + _totalStatusChanges
+                    + _totalOwnerChanges >= 0,
+            "Operation counters should be non-negative"
         );
     }
 

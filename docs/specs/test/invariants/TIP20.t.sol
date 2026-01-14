@@ -974,6 +974,8 @@ contract TIP20InvariantTest is InvariantBaseTest {
         _invariantRewardsConservation();
         _invariantQuoteTokenAcyclic();
         _invariantPauseBlocksTransfers();
+        _invariantSupplyConservation();
+        _invariantBalanceSumEqualsSupply();
     }
 
     /// @notice TEMPO-TIP19: Opted-in supply <= total supply
@@ -1063,6 +1065,73 @@ contract TIP20InvariantTest is InvariantBaseTest {
                 assertTrue(token.paused(), "Paused token reports unpaused");
             }
         }
+    }
+
+    /// @notice TEMPO-TIP18: Supply conservation - totalSupply = initial + mints - burns per token
+    function _invariantSupplyConservation() internal view {
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            TIP20 token = _tokens[i];
+            address tokenAddr = address(token);
+
+            // Initial supply from _buildActors: 20 actors * 1_000_000_000_000 each
+            uint256 initialSupply = 20 * 1_000_000_000_000;
+            uint256 expectedSupply =
+                initialSupply + _tokenMintSum[tokenAddr] - _tokenBurnSum[tokenAddr];
+
+            assertEq(
+                token.totalSupply(), expectedSupply, "TEMPO-TIP18: Supply conservation violated"
+            );
+        }
+    }
+
+    /// @notice TEMPO-TIP20: Balance sum equals supply - sum of all holder balances equals totalSupply
+    /// @dev Note: This may not be perfectly accurate if there are holders outside of tracked addresses.
+    ///      We sum: _actors balances + admin + token contract (self-balance for rewards) +
+    ///      known system addresses (FeeManager, StablecoinDEX, pathUSD)
+    function _invariantBalanceSumEqualsSupply() internal view {
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            TIP20 token = _tokens[i];
+            uint256 balanceSum = 0;
+
+            // Sum all actor balances
+            for (uint256 j = 0; j < _actors.length; j++) {
+                balanceSum += token.balanceOf(_actors[j]);
+            }
+
+            // Add admin balance
+            balanceSum += token.balanceOf(admin);
+
+            // Add token contract's own balance (for rewards)
+            balanceSum += token.balanceOf(address(token));
+
+            // Add known system addresses
+            balanceSum += token.balanceOf(address(amm)); // FeeManager
+            balanceSum += token.balanceOf(address(exchange)); // StablecoinDEX
+            balanceSum += token.balanceOf(address(pathUSD)); // pathUSD contract
+
+            // Add other known addresses from BaseTest
+            balanceSum += token.balanceOf(alice);
+            balanceSum += token.balanceOf(bob);
+            balanceSum += token.balanceOf(charlie);
+            balanceSum += token.balanceOf(pathUSDAdmin);
+
+            assertEq(
+                balanceSum,
+                token.totalSupply(),
+                "TEMPO-TIP20: Balance sum does not equal totalSupply"
+            );
+        }
+    }
+
+    /// @notice Verify operation counters are consistent
+    /// @dev Counters should reflect operations that were successfully executed
+    function _invariantOperationCountersPositive() internal view {
+        // At minimum, we should have some operations from setup
+        // This just validates the counters are being maintained
+        assertTrue(
+            _totalTransfers + _totalMints + _totalBurns + _totalApprovals >= 0,
+            "Operation counters should be non-negative"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////

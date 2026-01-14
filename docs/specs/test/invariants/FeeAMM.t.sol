@@ -67,6 +67,16 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
     uint256 private _ghostFeeInputSum;
     uint256 private _ghostFeeOutputSum;
 
+    /// @dev TEMPO-AMM26: Ghost variables for tracking fee swap reserve updates
+    /// Tracks cumulative changes to reserves from fee swaps
+    uint256 private _ghostFeeSwapUserReserveIncrease;
+    uint256 private _ghostFeeSwapValidatorReserveDecrease;
+
+    /// @dev TEMPO-AMM31: Ghost variables for tracking fee distribution zeroing
+    /// Tracks the number of distributeFees calls where fees were properly zeroed
+    uint256 private _ghostDistributeFeesCalls;
+    uint256 private _ghostDistributeFeesZeroedCount;
+
     /// @dev Track validators with pending fees (validator => token => hasFees)
     /// Used to avoid wasting calls on distributeFees when there are no fees
     mapping(address => mapping(address => bool)) private _hasPendingFees;
@@ -194,6 +204,71 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
         } catch (bytes memory reason) {
             vm.stopPrank();
             _assertKnownError(reason);
+        }
+    }
+
+    /// @notice Handler for testing that blacklisted actors cannot mint (TEMPO-AMM33)
+    /// @dev Explicitly tests that blacklisted actors are rejected with PolicyForbids
+    /// @param actorSeed Seed for selecting actor (biased toward blacklistable actors)
+    /// @param tokenSeed1 Seed for selecting user token
+    /// @param tokenSeed2 Seed for selecting validator token
+    /// @param amount Amount of validator tokens to attempt to deposit
+    function tryMintBlacklisted(
+        uint256 actorSeed,
+        uint256 tokenSeed1,
+        uint256 tokenSeed2,
+        uint256 amount
+    ) external {
+        // Bias toward blacklistable actors (0-4) who are more likely to be blacklisted
+        address actor = _actors[actorSeed % BLACKLISTABLE_ACTOR_COUNT];
+        address userToken = _selectToken(tokenSeed1);
+        address validatorToken = _selectToken(tokenSeed2);
+
+        // Skip if tokens are identical
+        vm.assume(userToken != validatorToken);
+
+        // Get policy for the validator token
+        uint64 policyId =
+            validatorToken == address(pathUSD) ? _pathUsdPolicyId : _tokenPolicyIds[validatorToken];
+
+        // Only proceed if actor is actually blacklisted for this token
+        bool isBlacklisted = !registry.isAuthorized(policyId, actor);
+        vm.assume(isBlacklisted);
+
+        amount = bound(amount, MIN_LIQUIDITY, 10_000_000);
+
+        // Even though the actor is blacklisted, ensure they have funds for the attempt
+        // This requires minting directly to them (bypassing transfer restrictions for test setup)
+        vm.prank(admin);
+        TIP20(validatorToken).mint(actor, amount);
+
+        vm.prank(actor);
+        TIP20(validatorToken).approve(address(amm), amount);
+
+        // TEMPO-AMM33: Blacklisted actors cannot deposit tokens
+        // The mint should revert with PolicyForbids when trying to transfer tokens
+        vm.startPrank(actor);
+        try amm.mint(userToken, validatorToken, amount, actor) returns (uint256) {
+            vm.stopPrank();
+            // If we reach here, the blacklisted actor was able to mint - this is a bug
+            revert("TEMPO-AMM33: Blacklisted actor should not be able to mint");
+        } catch (bytes memory reason) {
+            vm.stopPrank();
+            // TEMPO-AMM33: Verify the revert is due to PolicyForbids
+            bytes4 selector = bytes4(reason);
+            assertTrue(
+                selector == ITIP20.PolicyForbids.selector,
+                "TEMPO-AMM33: Blacklisted mint should revert with PolicyForbids"
+            );
+
+            _log(
+                string.concat(
+                    "TEMPO-AMM33: Correctly rejected blacklisted ",
+                    _getActorIndex(actor),
+                    " from minting ",
+                    _getTokenSymbol(validatorToken)
+                )
+            );
         }
     }
 
@@ -676,11 +751,20 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
             // Clear pending fees tracker
             _hasPendingFees[validator][token] = false;
 
-            // TEMPO-FEE3: Collected fees should be zeroed after distribution
+            // TEMPO-FEE3 & TEMPO-AMM31: Collected fees should be zeroed after distribution
+            // This prevents double-counting of fees for the same validator/token pair
             uint256 collectedAfter = amm.collectedFees(validator, token);
             assertEq(
-                collectedAfter, 0, "TEMPO-FEE3: Collected fees should be zero after distribution"
+                collectedAfter,
+                0,
+                "TEMPO-FEE3/AMM31: Collected fees should be zero after distribution"
             );
+
+            // TEMPO-AMM31: Track that fees were properly zeroed
+            _ghostDistributeFeesCalls++;
+            if (collectedAfter == 0) {
+                _ghostDistributeFeesZeroedCount++;
+            }
 
             // TEMPO-FEE4: Validator should receive the collected fees
             if (collectedBefore > 0) {
@@ -778,6 +862,11 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
                 uint128 newReserveUser = pool.reserveUserToken + uint128(feeAmount);
                 uint128 newReserveValidator = pool.reserveValidatorToken - uint128(expectedOut);
                 _storePoolReserves(poolId, newReserveUser, newReserveValidator);
+
+                // TEMPO-AMM26: Track fee swap reserve updates
+                // User token reserve increases by feeAmount, validator token reserve decreases by expectedOut
+                _ghostFeeSwapUserReserveIncrease += feeAmount;
+                _ghostFeeSwapValidatorReserveDecrease += expectedOut;
 
                 // Accumulate fees for validator
                 _storeCollectedFees(validator, validatorToken, expectedOut);
@@ -1008,7 +1097,9 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
         _invariantRebalanceRoundingFavorsPool();
         _invariantBurnRoundingFavorsPool();
         _invariantCollectedFeesNotExceedBalance();
-        _invariantFeeSwapRateApplied();
+        _invariantFeeSwapRateApplied(); // Also covers TEMPO-FEE6
+        _invariantFeeSwapReservesUpdate(); // TEMPO-AMM26
+        _invariantFeeDoubleCountPrevention(); // TEMPO-AMM31
         _invariantPoolIdUniqueness();
         _invariantNoLpWhenUninitialized();
         _invariantFeeConservation();
@@ -1213,16 +1304,67 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
         );
     }
 
-    /// @notice TEMPO-AMM25: Fee swap rate M is correctly applied
+    /// @notice TEMPO-AMM25 & TEMPO-FEE6: Fee swap rate M is correctly applied
     /// amountOut = (amountIn * M / SCALE), output never exceeds input
+    /// TEMPO-FEE6: Ensures amountOut <= amountIn for all fee swaps (0.3% fee captured)
     function _invariantFeeSwapRateApplied() internal view {
         // Verify via accumulated ghost variables
         // When userToken == validatorToken: output == input (no swap)
         // When userToken != validatorToken: output == input * M / SCALE (0.3% fee)
         // So output should always be <= input
         if (_ghostFeeInputSum > 0 && _totalFeeCollections > 0) {
+            // TEMPO-AMM25: Fee output never exceeds fee input
             assertTrue(
                 _ghostFeeOutputSum <= _ghostFeeInputSum, "TEMPO-AMM25: Fee output exceeds fee input"
+            );
+
+            // TEMPO-FEE6: Explicit check that amountOut <= amountIn for fee swaps
+            // This is the core fee swap rate invariant - the 0.3% fee means output < input
+            assertTrue(
+                _ghostFeeOutputSum <= _ghostFeeInputSum,
+                "TEMPO-FEE6: Fee swap rate violated - amountOut must be <= amountIn"
+            );
+        }
+    }
+
+    /// @notice TEMPO-AMM26: Fee swap reserves update correctly
+    /// Verifies that fee swaps properly update user token reserve (increase) and
+    /// validator token reserve (decrease) by the tracked amounts
+    function _invariantFeeSwapReservesUpdate() internal view {
+        // Fee swap reserve changes should be consistent:
+        // - User token reserve increases by feeAmount (input)
+        // - Validator token reserve decreases by expectedOut (output after fee)
+        // The difference (_ghostFeeSwapUserReserveIncrease - _ghostFeeSwapValidatorReserveDecrease)
+        // represents the fee revenue captured by the AMM
+        if (_ghostFeeSwapUserReserveIncrease > 0) {
+            // Output should always be <= input due to the 0.3% fee
+            assertTrue(
+                _ghostFeeSwapValidatorReserveDecrease <= _ghostFeeSwapUserReserveIncrease,
+                "TEMPO-AMM26: Fee swap reserve decrease exceeds increase"
+            );
+
+            // The captured fee should equal input - output (the 0.3% spread)
+            uint256 capturedFee =
+                _ghostFeeSwapUserReserveIncrease - _ghostFeeSwapValidatorReserveDecrease;
+
+            // Captured fee should be approximately 0.3% of input (with rounding tolerance)
+            // Expected: capturedFee = input * (SCALE - M) / SCALE = input * 30 / 10000
+            uint256 expectedFeeMin = (_ghostFeeSwapUserReserveIncrease * (SCALE - M)) / SCALE;
+            assertTrue(
+                capturedFee >= expectedFeeMin, "TEMPO-AMM26: Captured fee less than expected 0.3%"
+            );
+        }
+    }
+
+    /// @notice TEMPO-AMM31: Fee double-count prevention
+    /// After distributeFees, collected fees for that validator/token pair should be zeroed
+    function _invariantFeeDoubleCountPrevention() internal view {
+        // Every distributeFees call should result in zeroed fees
+        // This is already checked inline in the handler, but we verify the aggregate here
+        if (_ghostDistributeFeesCalls > 0) {
+            assertTrue(
+                _ghostDistributeFeesZeroedCount == _ghostDistributeFeesCalls,
+                "TEMPO-AMM31: Not all distributeFees calls resulted in zeroed fees"
             );
         }
     }

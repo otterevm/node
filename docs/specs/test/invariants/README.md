@@ -14,7 +14,8 @@
 - **TEMPO-DEX5**: `amountIn <= maxAmountIn` when executing `swapExactAmountOut`.
 - **TEMPO-DEX14**: Swapper total balance (external + internal) changes correctly - loses exact `amountIn` of tokenIn and gains exact `amountOut` of tokenOut. Skipped when swapper has active orders (self-trade makes accounting complex).
 - **TEMPO-DEX16**: Quote functions (`quoteSwapExactAmountIn/Out`) return values matching actual swap execution.
-- **TEMPO-DEX18**: Dust invariant - each swap can at maximum increase the dust in the DEX by 1.
+- **TEMPO-DEX18**: Dust invariant - each swap can at maximum increase the dust in the DEX by the number of orders filled.
+- **TEMPO-DEX19**: Post-swap dust bounded - maximum dust accumulation in the protocol is bounded and tracked via `_maxDust`.
 
 ### Balance Invariants
 
@@ -150,11 +151,13 @@ TIP20 is the Tempo token standard that extends ERC-20 with transfer policies, me
 - **TEMPO-TIP6**: Minting increases total supply and recipient balance by exactly `amount`.
 - **TEMPO-TIP7**: Supply cap enforcement - minting reverts if `totalSupply + amount > supplyCap`.
 - **TEMPO-TIP8**: Burning decreases total supply and burner balance by exactly `amount`.
+- **TEMPO-TIP23**: Burn blocked - `burnBlocked` decreases target balance and total supply by exactly `amount` when target is blacklisted.
 
 ### Reward Distribution Invariants
 
 - **TEMPO-TIP10**: Reward recipient setting - `setRewardRecipient` updates the stored recipient correctly.
 - **TEMPO-TIP11**: Opted-in supply tracking - `optedInSupply` increases when opting in (by holder's balance) and decreases when opting out.
+- **TEMPO-TIP25**: Reward delegation - users can delegate their rewards to another address via `setRewardRecipient`.
 - **TEMPO-TIP12**: Global reward per token updates - `distributeReward` increases `globalRewardPerToken` by `(amount * ACC_PRECISION) / optedInSupply`.
 - **TEMPO-TIP13**: Reward token custody - distributed rewards are transferred to the token contract.
 - **TEMPO-TIP14**: Reward claiming - `claimRewards` transfers owed amount from contract to caller, updates balances correctly.
@@ -205,6 +208,7 @@ The TIP20Factory is the factory contract for creating TIP-20 compliant tokens wi
 ### Global Invariants
 
 - **TEMPO-FAC11**: Address format - all created tokens have addresses with the correct TIP-20 prefix (`0x20C0...`).
+- **TEMPO-FAC12**: Salt-to-token consistency - ghost mappings `saltToToken` and `tokenToSalt` match factory's `getTokenAddress` for all tracked sender/salt combinations.
 
 ## TIP403Registry
 
@@ -242,6 +246,7 @@ The TIP403Registry manages transfer policies (whitelists and blacklists) that co
 
 - **TEMPO-REG15**: Counter monotonicity - `policyIdCounter` only increases and equals `2 + totalPoliciesCreated`.
 - **TEMPO-REG16**: Policy type immutability - a policy's type cannot change after creation.
+- **TEMPO-REG19**: Policy membership consistency - ghost policy membership state matches registry `isAuthorized` for all tracked accounts, respecting whitelist/blacklist semantics.
 
 ## Nonce
 
@@ -308,7 +313,8 @@ The ValidatorConfig precompile manages the set of validators that participate in
 ### Global Invariants
 
 - **TEMPO-VAL14**: Owner consistency - contract owner always matches ghost state.
-- **TEMPO-VAL15**: Validator data consistency - all validator data (active status, public key) matches ghost state.
+- **TEMPO-VAL15**: Validator data consistency - all validator data (active status, public key, index) matches ghost state.
+- **TEMPO-VAL16**: Index consistency - each validator's index matches the ghost-tracked index assigned at creation.
 
 ## AccountKeychain
 
@@ -346,3 +352,4 @@ The AccountKeychain precompile manages authorized Access Keys for accounts, enab
 - **TEMPO-KEY13**: Key data consistency - all key data (expiry, enforceLimits, signatureType) matches ghost state for tracked keys.
 - **TEMPO-KEY14**: Spending limit consistency - all spending limits match ghost state for active keys with limits enforced.
 - **TEMPO-KEY15**: Revocation permanence - revoked keys remain revoked (isRevoked stays true).
+- **TEMPO-KEY16**: Signature type consistency - key signature type matches ghost state for all active keys.
