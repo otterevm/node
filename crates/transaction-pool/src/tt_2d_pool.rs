@@ -3475,7 +3475,10 @@ mod tests {
         )
         .unwrap();
         pool.add_transaction(
-            Arc::new(wrap_valid_tx(tx_normal_gas_high_fee, TransactionOrigin::Local)),
+            Arc::new(wrap_valid_tx(
+                tx_normal_gas_high_fee,
+                TransactionOrigin::Local,
+            )),
             0,
         )
         .unwrap();
@@ -3542,11 +3545,17 @@ mod tests {
             .build();
 
         // Add tx_first first
-        pool.add_transaction(Arc::new(wrap_valid_tx(tx_first, TransactionOrigin::Local)), 0)
-            .unwrap();
+        pool.add_transaction(
+            Arc::new(wrap_valid_tx(tx_first, TransactionOrigin::Local)),
+            0,
+        )
+        .unwrap();
         // Add tx_second second
-        pool.add_transaction(Arc::new(wrap_valid_tx(tx_second, TransactionOrigin::Local)), 0)
-            .unwrap();
+        pool.add_transaction(
+            Arc::new(wrap_valid_tx(tx_second, TransactionOrigin::Local)),
+            0,
+        )
+        .unwrap();
 
         let mut best = pool.best_transactions();
 
@@ -3645,13 +3654,13 @@ mod tests {
             .max_fee(12_000_000_000)
             .build();
 
-        let result = pool.add_transaction(
-            Arc::new(wrap_valid_tx(tx, TransactionOrigin::Local)),
-            0,
-        );
+        let result = pool.add_transaction(Arc::new(wrap_valid_tx(tx, TransactionOrigin::Local)), 0);
 
         // Pool should accept it - gas validation is done elsewhere
-        assert!(result.is_ok(), "Pool should accept 21k gas limit transaction");
+        assert!(
+            result.is_ok(),
+            "Pool should accept 21k gas limit transaction"
+        );
 
         let (pending, queued) = pool.pending_and_queued_txn_count();
         assert_eq!(pending, 1);
@@ -3719,10 +3728,26 @@ mod tests {
 
         // Create 4 transactions with different gas limits but descending fees
         let configs = [
-            (Address::from_word(B256::from(U256::from(1))), 21_000u64, 4_000_000_000u128),
-            (Address::from_word(B256::from(U256::from(2))), 100_000, 3_000_000_000),
-            (Address::from_word(B256::from(U256::from(3))), 50_000, 2_000_000_000),
-            (Address::from_word(B256::from(U256::from(4))), 30_000_000, 1_000_000_000),
+            (
+                Address::from_word(B256::from(U256::from(1))),
+                21_000u64,
+                4_000_000_000u128,
+            ),
+            (
+                Address::from_word(B256::from(U256::from(2))),
+                100_000,
+                3_000_000_000,
+            ),
+            (
+                Address::from_word(B256::from(U256::from(3))),
+                50_000,
+                2_000_000_000,
+            ),
+            (
+                Address::from_word(B256::from(U256::from(4))),
+                30_000_000,
+                1_000_000_000,
+            ),
         ];
 
         // Add in random order (by gas limit: 100k, 30M, 21k, 50k)
@@ -3734,21 +3759,27 @@ mod tests {
                 .max_priority_fee(fee)
                 .max_fee(fee + 10_000_000_000)
                 .build();
-            pool.add_transaction(
-                Arc::new(wrap_valid_tx(tx, TransactionOrigin::Local)),
-                0,
-            )
-            .unwrap();
+            pool.add_transaction(Arc::new(wrap_valid_tx(tx, TransactionOrigin::Local)), 0)
+                .unwrap();
         }
 
         let mut best = pool.best_transactions();
 
         // Should come out ordered by fee (highest first): 4 gwei, 3 gwei, 2 gwei, 1 gwei
-        let expected_fees = [4_000_000_000u128, 3_000_000_000, 2_000_000_000, 1_000_000_000];
+        let expected_fees = [
+            4_000_000_000u128,
+            3_000_000_000,
+            2_000_000_000,
+            1_000_000_000,
+        ];
         let expected_gas = [21_000u64, 100_000, 50_000, 30_000_000];
 
-        for (i, (expected_fee, expected_gas)) in expected_fees.iter().zip(expected_gas.iter()).enumerate() {
-            let tx = best.next().unwrap_or_else(|| panic!("Should have transaction {}", i));
+        for (i, (expected_fee, expected_gas)) in
+            expected_fees.iter().zip(expected_gas.iter()).enumerate()
+        {
+            let tx = best
+                .next()
+                .unwrap_or_else(|| panic!("Should have transaction {}", i));
             assert_eq!(
                 tx.transaction.max_priority_fee_per_gas(),
                 Some(*expected_fee),
