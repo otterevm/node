@@ -48,12 +48,9 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
 
     /// @notice Handler for creating tokens
     /// @dev Tests TEMPO-FAC1 (deterministic addresses), TEMPO-FAC2 (address uniqueness)
-    function createToken(
-        uint256 actorSeed,
-        bytes32 salt,
-        uint256 nameIdx,
-        uint256 symbolIdx
-    ) external {
+    function createToken(uint256 actorSeed, bytes32 salt, uint256 nameIdx, uint256 symbolIdx)
+        external
+    {
         address actor = _selectActor(actorSeed);
 
         // Generate varied names and symbols
@@ -106,7 +103,9 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
         }
 
         vm.startPrank(actor);
-        try factory.createToken(name, symbol, "USD", pathUSD, admin, salt) returns (address tokenAddr) {
+        try factory.createToken(name, symbol, "USD", pathUSD, admin, salt) returns (
+            address tokenAddr
+        ) {
             vm.stopPrank();
 
             _totalTokensCreated++;
@@ -127,8 +126,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
 
             // TEMPO-FAC2: Token is recognized as TIP20
             assertTrue(
-                factory.isTIP20(tokenAddr),
-                "TEMPO-FAC2: Created token not recognized as TIP20"
+                factory.isTIP20(tokenAddr), "TEMPO-FAC2: Created token not recognized as TIP20"
             );
 
             // TEMPO-FAC6: Token has correct properties
@@ -183,9 +181,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
                 _totalInvalidQuoteAttempts++;
                 _log(
                     string.concat(
-                        "CREATE_TOKEN_INVALID_QUOTE: ",
-                        _getActorIndex(actor),
-                        " with invalid quote"
+                        "CREATE_TOKEN_INVALID_QUOTE: ", _getActorIndex(actor), " with invalid quote"
                     )
                 );
             } else {
@@ -196,11 +192,9 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
 
     /// @notice Handler for creating tokens with mismatched currency
     /// @dev Tests TEMPO-FAC7 (currency/quote token consistency)
-    function createTokenMismatchedCurrency(
-        uint256 actorSeed,
-        bytes32 salt,
-        uint256 currencyIdx
-    ) external {
+    function createTokenMismatchedCurrency(uint256 actorSeed, bytes32 salt, uint256 currencyIdx)
+        external
+    {
         address actor = _selectActor(actorSeed);
 
         // Use a non-USD currency with a USD quote token
@@ -209,7 +203,9 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
         // This should succeed - non-USD tokens can have USD quote tokens
         // But USD tokens must have USD quote tokens
         vm.startPrank(actor);
-        try factory.createToken("Test", "TST", currency, pathUSD, admin, salt) returns (address tokenAddr) {
+        try factory.createToken("Test", "TST", currency, pathUSD, admin, salt) returns (
+            address tokenAddr
+        ) {
             vm.stopPrank();
 
             if (tokenAddr != address(0)) {
@@ -225,10 +221,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
 
                 _log(
                     string.concat(
-                        "CREATE_TOKEN_NON_USD: ",
-                        _getActorIndex(actor),
-                        " currency=",
-                        currency
+                        "CREATE_TOKEN_NON_USD: ", _getActorIndex(actor), " currency=", currency
                     )
                 );
             }
@@ -246,9 +239,11 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
         // First create a non-USD token to use as quote
         bytes32 eurSalt = keccak256(abi.encode(salt, "EUR"));
         address eurToken;
-        
+
         vm.startPrank(actor);
-        try factory.createToken("EUR Token", "EUR", "EUR", pathUSD, admin, eurSalt) returns (address addr) {
+        try factory.createToken("EUR Token", "EUR", "EUR", pathUSD, admin, eurSalt) returns (
+            address addr
+        ) {
             eurToken = addr;
         } catch {
             vm.stopPrank();
@@ -258,7 +253,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
 
         // Now try to create a USD token with EUR quote - should fail
         bytes32 usdSalt = keccak256(abi.encode(salt, "USD_WITH_EUR"));
-        
+
         vm.startPrank(actor);
         try factory.createToken("Bad USD", "BUSD", "USD", ITIP20(eurToken), admin, usdSalt) {
             vm.stopPrank();
@@ -273,9 +268,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
             );
             _log(
                 string.concat(
-                    "CREATE_USD_WITH_NON_USD_QUOTE: ",
-                    _getActorIndex(actor),
-                    " correctly rejected"
+                    "CREATE_USD_WITH_NON_USD_QUOTE: ", _getActorIndex(actor), " correctly rejected"
                 )
             );
         }
@@ -289,24 +282,17 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
         if (addrSeed % 3 == 0 && _createdTokens.length > 0) {
             // Check a created token
             checkAddr = _createdTokens[addrSeed % _createdTokens.length];
-            assertTrue(
-                factory.isTIP20(checkAddr),
-                "TEMPO-FAC8: Created token should be TIP20"
-            );
+            assertTrue(factory.isTIP20(checkAddr), "TEMPO-FAC8: Created token should be TIP20");
         } else if (addrSeed % 3 == 1) {
             // Check pathUSD (known TIP20)
-            assertTrue(
-                factory.isTIP20(address(pathUSD)),
-                "TEMPO-FAC8: pathUSD should be TIP20"
-            );
+            assertTrue(factory.isTIP20(address(pathUSD)), "TEMPO-FAC8: pathUSD should be TIP20");
         } else {
             // Check a random non-TIP20 address
             checkAddr = address(uint160(addrSeed));
             // Skip addresses in TIP20 range
             if ((uint160(checkAddr) >> 64) != 0x20C000000000000000000000) {
                 assertFalse(
-                    factory.isTIP20(checkAddr),
-                    "TEMPO-FAC8: Random address should not be TIP20"
+                    factory.isTIP20(checkAddr), "TEMPO-FAC8: Random address should not be TIP20"
                 );
             }
         }
@@ -321,11 +307,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
             address addr2 = factory.getTokenAddress(actor, salt);
 
             // TEMPO-FAC9: Same inputs always produce same output
-            assertEq(
-                addr1,
-                addr2,
-                "TEMPO-FAC9: getTokenAddress not deterministic"
-            );
+            assertEq(addr1, addr2, "TEMPO-FAC9: getTokenAddress not deterministic");
 
             // TEMPO-FAC10: Different senders produce different addresses
             address otherActor = _selectActor(actorSeed + 1);
@@ -335,9 +317,9 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
                         addr1 != otherAddr,
                         "TEMPO-FAC10: Different senders should produce different addresses"
                     );
-                } catch {}
+                } catch { }
             }
-        } catch {}
+        } catch { }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -393,7 +375,7 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
     function _invariantUsdTokensHaveUsdQuote() internal view {
         for (uint256 i = 0; i < _createdTokens.length; i++) {
             TIP20 token = TIP20(_createdTokens[i]);
-            
+
             // Check if this is a USD token
             if (keccak256(bytes(token.currency())) == keccak256(bytes("USD"))) {
                 // Its quote token must also be USD
@@ -415,7 +397,8 @@ contract TIP20FactoryInvariantTest is InvariantBaseTest {
 
     /// @dev Generates a token name based on index
     function _generateName(uint256 idx) internal pure returns (string memory) {
-        string[5] memory names = ["Token Alpha", "Token Beta", "Token Gamma", "Token Delta", "Token Epsilon"];
+        string[5] memory names =
+            ["Token Alpha", "Token Beta", "Token Gamma", "Token Delta", "Token Epsilon"];
         return names[idx % names.length];
     }
 

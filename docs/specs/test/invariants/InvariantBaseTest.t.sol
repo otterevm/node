@@ -83,11 +83,7 @@ abstract contract InvariantBaseTest is BaseTest {
         _log("================================================================================");
         _log(string.concat("                         ", title));
         _log("================================================================================");
-        _log(
-            string.concat(
-                "Actors: ", vm.toString(_actors.length), " | Tokens: T1, T2, T3, T4"
-            )
-        );
+        _log(string.concat("Actors: ", vm.toString(_actors.length), " | Tokens: T1, T2, T3, T4"));
         _log("--------------------------------------------------------------------------------");
         _log("");
     }

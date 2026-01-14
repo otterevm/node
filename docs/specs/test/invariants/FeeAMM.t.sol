@@ -1847,8 +1847,7 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
             || selector == IFeeAMM.InvalidAmount.selector
             || selector == IFeeAMM.DivisionByZero.selector
             || selector == IFeeAMM.InvalidSwapCalculation.selector
-            || selector == IFeeAMM.InvalidCurrency.selector
-            || _isKnownTIP20Error(selector);
+            || selector == IFeeAMM.InvalidCurrency.selector || _isKnownTIP20Error(selector);
         assertTrue(isKnownError, "Failed with unknown error");
     }
 
@@ -1859,8 +1858,7 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
         bool isKnownError = selector == IFeeAMM.IdenticalAddresses.selector
             || selector == IFeeAMM.InvalidToken.selector
             || selector == IFeeAMM.InsufficientLiquidity.selector
-            || selector == IFeeAMM.InvalidCurrency.selector
-            || _isKnownTIP20Error(selector)
+            || selector == IFeeAMM.InvalidCurrency.selector || _isKnownTIP20Error(selector)
             // FeeManager specific (string reverts)
             || keccak256(reason)
                 == keccak256(abi.encodeWithSignature("Error(string)", "ONLY_DIRECT_CALL"))

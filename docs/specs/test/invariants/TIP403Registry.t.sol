@@ -78,23 +78,13 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
             );
 
             // TEMPO-REG3: Policy should exist
-            assertTrue(
-                registry.policyExists(policyId),
-                "TEMPO-REG3: Created policy should exist"
-            );
+            assertTrue(registry.policyExists(policyId), "TEMPO-REG3: Created policy should exist");
 
             // TEMPO-REG4: Policy data should be correct
-            (ITIP403Registry.PolicyType storedType, address storedAdmin) = registry.policyData(policyId);
-            assertEq(
-                uint256(storedType),
-                uint256(policyType),
-                "TEMPO-REG4: Policy type mismatch"
-            );
-            assertEq(
-                storedAdmin,
-                actor,
-                "TEMPO-REG4: Policy admin mismatch"
-            );
+            (ITIP403Registry.PolicyType storedType, address storedAdmin) =
+                registry.policyData(policyId);
+            assertEq(uint256(storedType), uint256(policyType), "TEMPO-REG4: Policy type mismatch");
+            assertEq(storedAdmin, actor, "TEMPO-REG4: Policy admin mismatch");
 
             _log(
                 string.concat(
@@ -114,11 +104,9 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
     /// @notice Handler for creating policies with initial accounts
     /// @dev Tests TEMPO-REG5 (bulk creation)
-    function createPolicyWithAccounts(
-        uint256 actorSeed,
-        bool isWhitelist,
-        uint8 numAccountsSeed
-    ) external {
+    function createPolicyWithAccounts(uint256 actorSeed, bool isWhitelist, uint8 numAccountsSeed)
+        external
+    {
         address actor = _selectActor(actorSeed);
         ITIP403Registry.PolicyType policyType = isWhitelist
             ? ITIP403Registry.PolicyType.WHITELIST
@@ -131,7 +119,9 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         }
 
         vm.startPrank(actor);
-        try registry.createPolicyWithAccounts(actor, policyType, accounts) returns (uint64 policyId) {
+        try registry.createPolicyWithAccounts(actor, policyType, accounts) returns (
+            uint64 policyId
+        ) {
             vm.stopPrank();
 
             _totalPoliciesCreated++;
@@ -149,15 +139,11 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
                 bool isAuthorized = registry.isAuthorized(policyId, accounts[i]);
                 if (isWhitelist) {
                     // Whitelist: accounts in list are authorized
-                    assertTrue(
-                        isAuthorized,
-                        "TEMPO-REG5: Whitelist account should be authorized"
-                    );
+                    assertTrue(isAuthorized, "TEMPO-REG5: Whitelist account should be authorized");
                 } else {
                     // Blacklist: accounts in list are NOT authorized
                     assertFalse(
-                        isAuthorized,
-                        "TEMPO-REG5: Blacklist account should not be authorized"
+                        isAuthorized, "TEMPO-REG5: Blacklist account should not be authorized"
                     );
                 }
             }
@@ -197,11 +183,7 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
             // TEMPO-REG6: Admin should be updated
             (, address storedAdmin) = registry.policyData(policyId);
-            assertEq(
-                storedAdmin,
-                newAdmin,
-                "TEMPO-REG6: Admin not updated correctly"
-            );
+            assertEq(storedAdmin, newAdmin, "TEMPO-REG6: Admin not updated correctly");
 
             _log(
                 string.concat(
@@ -277,11 +259,7 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
             // TEMPO-REG8: Authorization should reflect whitelist status
             bool authAfter = registry.isAuthorized(policyId, account);
-            assertEq(
-                authAfter,
-                allowed,
-                "TEMPO-REG8: Whitelist authorization mismatch"
-            );
+            assertEq(authAfter, allowed, "TEMPO-REG8: Whitelist authorization mismatch");
 
             _log(
                 string.concat(
@@ -330,11 +308,7 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
             // TEMPO-REG9: Authorization should be opposite of blacklist status
             bool authAfter = registry.isAuthorized(policyId, account);
-            assertEq(
-                authAfter,
-                !restricted,
-                "TEMPO-REG9: Blacklist authorization mismatch"
-            );
+            assertEq(authAfter, !restricted, "TEMPO-REG9: Blacklist authorization mismatch");
 
             _log(
                 string.concat(
@@ -400,26 +374,14 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
         _totalAuthorizationChecks++;
 
         // TEMPO-REG11: Policy 0 is always-reject
-        assertFalse(
-            registry.isAuthorized(0, account),
-            "TEMPO-REG11: Policy 0 should always reject"
-        );
+        assertFalse(registry.isAuthorized(0, account), "TEMPO-REG11: Policy 0 should always reject");
 
         // TEMPO-REG12: Policy 1 is always-allow
-        assertTrue(
-            registry.isAuthorized(1, account),
-            "TEMPO-REG12: Policy 1 should always allow"
-        );
+        assertTrue(registry.isAuthorized(1, account), "TEMPO-REG12: Policy 1 should always allow");
 
         // TEMPO-REG13: Special policies always exist
-        assertTrue(
-            registry.policyExists(0),
-            "TEMPO-REG13: Policy 0 should always exist"
-        );
-        assertTrue(
-            registry.policyExists(1),
-            "TEMPO-REG13: Policy 1 should always exist"
-        );
+        assertTrue(registry.policyExists(0), "TEMPO-REG13: Policy 0 should always exist");
+        assertTrue(registry.policyExists(1), "TEMPO-REG13: Policy 1 should always exist");
     }
 
     /// @notice Handler for checking non-existent policies
@@ -437,7 +399,9 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
 
     /// @notice Handler for attempting to modify special policies (0 and 1)
     /// @dev Tests TEMPO-REG17 (special policies cannot be modified) and TEMPO-REG18 (admin cannot change)
-    function tryModifySpecialPolicies(uint256 actorSeed, uint256 accountSeed, uint8 policyChoice) external {
+    function tryModifySpecialPolicies(uint256 actorSeed, uint256 accountSeed, uint8 policyChoice)
+        external
+    {
         address actor = _selectActor(actorSeed);
         address account = _selectActor(accountSeed);
         uint64 policyId = (policyChoice % 2 == 0) ? 0 : 1;
@@ -497,28 +461,18 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
     function _invariantCounterMonotonicity() internal view {
         uint64 counter = registry.policyIdCounter();
         // Counter starts at 2 (skipping special policies)
-        assertTrue(
-            counter >= 2,
-            "TEMPO-REG15: Counter should be at least 2"
-        );
+        assertTrue(counter >= 2, "TEMPO-REG15: Counter should be at least 2");
         // Counter should be at least 2 + policies created in base + policies created in this test
         uint64 expectedMin = 2 + uint64(_totalPoliciesCreatedInBase());
         assertTrue(
-            counter >= expectedMin,
-            "TEMPO-REG15: Counter should be at least base policies + 2"
+            counter >= expectedMin, "TEMPO-REG15: Counter should be at least base policies + 2"
         );
     }
 
     /// @notice TEMPO-REG13: Special policies 0 and 1 always exist
     function _invariantSpecialPoliciesExist() internal view {
-        assertTrue(
-            registry.policyExists(0),
-            "TEMPO-REG13: Policy 0 should always exist"
-        );
-        assertTrue(
-            registry.policyExists(1),
-            "TEMPO-REG13: Policy 1 should always exist"
-        );
+        assertTrue(registry.policyExists(0), "TEMPO-REG13: Policy 0 should always exist");
+        assertTrue(registry.policyExists(1), "TEMPO-REG13: Policy 1 should always exist");
     }
 
     /// @notice TEMPO-REG3: All created policies exist
@@ -535,7 +489,7 @@ contract TIP403RegistryInvariantTest is InvariantBaseTest {
     function _invariantPolicyTypeImmutability() internal view {
         for (uint256 i = 0; i < _createdPolicies.length; i++) {
             uint64 policyId = _createdPolicies[i];
-            (ITIP403Registry.PolicyType currentType, ) = registry.policyData(policyId);
+            (ITIP403Registry.PolicyType currentType,) = registry.policyData(policyId);
             assertEq(
                 uint256(currentType),
                 uint256(_policyTypes[policyId]),

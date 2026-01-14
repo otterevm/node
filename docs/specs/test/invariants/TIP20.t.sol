@@ -228,9 +228,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
             _totalApprovals++;
 
             assertEq(
-                token.allowance(actor, spender),
-                amount,
-                "TEMPO-TIP5: Allowance not set correctly"
+                token.allowance(actor, spender), amount, "TEMPO-TIP5: Allowance not set correctly"
             );
 
             _log(
@@ -283,11 +281,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
             );
 
             // TEMPO-TIP7: Total supply should not exceed cap
-            assertLe(
-                token.totalSupply(),
-                supplyCap,
-                "TEMPO-TIP7: Total supply exceeds supply cap"
-            );
+            assertLe(token.totalSupply(), supplyCap, "TEMPO-TIP7: Total supply exceeds supply cap");
 
             assertEq(
                 token.balanceOf(recipient),
@@ -343,14 +337,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
                 "TEMPO-TIP8: Admin balance not decreased"
             );
 
-            _log(
-                string.concat(
-                    "BURN: ",
-                    vm.toString(amount),
-                    " ",
-                    token.symbol()
-                )
-            );
+            _log(string.concat("BURN: ", vm.toString(amount), " ", token.symbol()));
         } catch (bytes memory reason) {
             vm.stopPrank();
             _assertKnownError(reason);
@@ -401,11 +388,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
                 recipientBalanceBefore + amount,
                 "TEMPO-TIP9: Recipient balance not increased"
             );
-            assertEq(
-                token.totalSupply(),
-                totalSupplyBefore,
-                "TEMPO-TIP9: Total supply changed"
-            );
+            assertEq(token.totalSupply(), totalSupplyBefore, "TEMPO-TIP9: Total supply changed");
 
             _log(
                 string.concat(
@@ -432,7 +415,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
     {
         address actor = _selectActor(actorSeed);
         TIP20 token = _selectBaseToken(tokenSeed);
-        
+
         // 0 = opt-out, 1 = opt-in to self, 2+ = delegate to another actor
         uint256 choice = recipientSeed % 3;
         address newRecipient;
@@ -607,9 +590,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
 
             // TEMPO-TIP15: Claimed amount should not exceed available
             assertLe(
-                claimed,
-                contractBalanceBefore,
-                "TEMPO-TIP15: Claimed more than contract balance"
+                claimed, contractBalanceBefore, "TEMPO-TIP15: Claimed more than contract balance"
             );
 
             if (claimed > 0) {
@@ -785,11 +766,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
         try token.changeTransferPolicyId(newPolicyId) {
             vm.stopPrank();
 
-            assertEq(
-                token.transferPolicyId(),
-                newPolicyId,
-                "Transfer policy ID not updated"
-            );
+            assertEq(token.transferPolicyId(), newPolicyId, "Transfer policy ID not updated");
 
             _log(
                 string.concat(
@@ -850,9 +827,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
         try token.setNextQuoteToken(ITIP20(address(newQuoteToken))) {
             // Next quote token should be set
             assertEq(
-                address(token.nextQuoteToken()),
-                address(newQuoteToken),
-                "Next quote token not set"
+                address(token.nextQuoteToken()), address(newQuoteToken), "Next quote token not set"
             );
 
             // Try to complete the update
@@ -861,18 +836,10 @@ contract TIP20InvariantTest is InvariantBaseTest {
 
                 // Quote token should be updated
                 assertEq(
-                    address(token.quoteToken()),
-                    address(newQuoteToken),
-                    "Quote token not updated"
+                    address(token.quoteToken()), address(newQuoteToken), "Quote token not updated"
                 );
 
-                _log(
-                    string.concat(
-                        "UPDATE_QUOTE_TOKEN: ",
-                        token.symbol(),
-                        " quote changed"
-                    )
-                );
+                _log(string.concat("UPDATE_QUOTE_TOKEN: ", token.symbol(), " quote changed"));
             } catch (bytes memory reason) {
                 vm.stopPrank();
                 // Cycle detection may reject
@@ -925,11 +892,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
 
         // TEMPO-TIP16: Authorization status should be updated
         bool afterAuthorized = _isAuthorized(address(token), actor);
-        assertEq(
-            afterAuthorized,
-            !blacklist,
-            "TEMPO-TIP16: Blacklist status not updated correctly"
-        );
+        assertEq(afterAuthorized, !blacklist, "TEMPO-TIP16: Blacklist status not updated correctly");
 
         _log(
             string.concat(
@@ -961,19 +924,14 @@ contract TIP20InvariantTest is InvariantBaseTest {
         }
         vm.stopPrank();
 
-        _log(
-            string.concat(
-                "TOGGLE_PAUSE: ",
-                token.symbol(),
-                " ",
-                pause ? "PAUSED" : "UNPAUSED"
-            )
-        );
+        _log(string.concat("TOGGLE_PAUSE: ", token.symbol(), " ", pause ? "PAUSED" : "UNPAUSED"));
     }
 
     /// @notice Handler that verifies paused tokens reject transfers
     /// @dev Tests that pause actually blocks operations
-    function tryTransferWhilePaused(uint256 actorSeed, uint256 tokenSeed, uint256 recipientSeed) external {
+    function tryTransferWhilePaused(uint256 actorSeed, uint256 tokenSeed, uint256 recipientSeed)
+        external
+    {
         address actor = _selectActor(actorSeed);
         address recipient = _selectActor(recipientSeed);
         TIP20 token = _selectBaseToken(tokenSeed);
@@ -1033,11 +991,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
     /// @notice TEMPO-TIP21: Decimals is always 6
     function _invariantDecimalsConstant() internal view {
         for (uint256 i = 0; i < _tokens.length; i++) {
-            assertEq(
-                _tokens[i].decimals(),
-                6,
-                "TEMPO-TIP21: Decimals should always be 6"
-            );
+            assertEq(_tokens[i].decimals(), 6, "TEMPO-TIP21: Decimals should always be 6");
         }
     }
 
@@ -1061,11 +1015,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
             uint256 claimed = _tokenRewardsClaimed[address(token)];
 
             // Claimed should never exceed distributed
-            assertLe(
-                claimed,
-                distributed,
-                "Rewards claimed exceeds rewards distributed"
-            );
+            assertLe(claimed, distributed, "Rewards claimed exceeds rewards distributed");
 
             // Token contract balance should hold unclaimed rewards
             // (balance >= distributed - claimed, accounting for rounding)
@@ -1084,22 +1034,19 @@ contract TIP20InvariantTest is InvariantBaseTest {
     function _invariantQuoteTokenAcyclic() internal view {
         for (uint256 i = 0; i < _tokens.length; i++) {
             TIP20 token = _tokens[i];
-            
+
             // Walk the quote token chain, should terminate without cycle
             ITIP20 current = token.quoteToken();
             uint256 maxDepth = 20;
             uint256 depth = 0;
-            
+
             while (address(current) != address(0) && depth < maxDepth) {
                 // Should never point back to itself
-                assertTrue(
-                    address(current) != address(token),
-                    "Quote token cycle detected"
-                );
+                assertTrue(address(current) != address(token), "Quote token cycle detected");
                 current = current.quoteToken();
                 depth++;
             }
-            
+
             // Should not hit max depth (indicates infinite loop)
             assertLt(depth, maxDepth, "Quote token chain too deep (possible cycle)");
         }
@@ -1109,7 +1056,7 @@ contract TIP20InvariantTest is InvariantBaseTest {
     function _invariantPauseBlocksTransfers() internal view {
         for (uint256 i = 0; i < _tokens.length; i++) {
             TIP20 token = _tokens[i];
-            
+
             // If paused, verify pause state is consistent
             if (token.paused()) {
                 // Pause state should be true
