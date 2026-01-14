@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Vm} from "forge-std/Vm.sol";
 import {VmRlp} from "tempo-std/StdVm.sol";
 import {LegacyTransaction, LegacyTransactionLib} from "./tx/LegacyTransactionLib.sol";
-import {TempoTransaction, TempoCall, TempoTransactionLib} from "./tx/TempoTransactionLib.sol";
+import {TempoTransaction, TempoCall, TempoAuthorization, TempoTransactionLib} from "./tx/TempoTransactionLib.sol";
 import {TxRlp} from "./tx/TxRlp.sol";
 
 /// @title TxBuilder - Transaction Building Library
@@ -436,6 +436,155 @@ library TxBuilder {
             .withNonce(txNonce);
 
         return _signTempoKeychainP256(vmRlp, vm, tx_, accessKeyP256PrivateKey, pubKeyX, pubKeyY, userAddress);
+    }
+
+    // ============ Tempo CREATE Transactions ============
+
+    /// @notice Build and sign a Tempo CREATE transaction (CREATE as first call with to=0)
+    function buildTempoCreate(
+        VmRlp vmRlp,
+        Vm vm,
+        bytes memory initcode,
+        uint64 nonceKey,
+        uint64 txNonce,
+        uint256 privateKey
+    ) internal view returns (bytes memory) {
+        TempoCall[] memory calls = new TempoCall[](1);
+        calls[0] = TempoCall({to: address(0), value: 0, data: initcode});
+
+        TempoTransaction memory tx_ = TempoTransactionLib.create()
+            .withChainId(uint64(block.chainid))
+            .withMaxFeePerGas(DEFAULT_GAS_PRICE)
+            .withGasLimit(DEFAULT_CREATE_GAS_LIMIT)
+            .withCalls(calls)
+            .withNonceKey(nonceKey)
+            .withNonce(txNonce);
+
+        return _signTempo(vmRlp, vm, tx_, privateKey);
+    }
+
+    /// @notice Build and sign a Tempo CREATE transaction with custom gas limit
+    function buildTempoCreateWithGas(
+        VmRlp vmRlp,
+        Vm vm,
+        bytes memory initcode,
+        uint64 nonceKey,
+        uint64 txNonce,
+        uint64 gasLimit,
+        uint256 privateKey
+    ) internal view returns (bytes memory) {
+        TempoCall[] memory calls = new TempoCall[](1);
+        calls[0] = TempoCall({to: address(0), value: 0, data: initcode});
+
+        TempoTransaction memory tx_ = TempoTransactionLib.create()
+            .withChainId(uint64(block.chainid))
+            .withMaxFeePerGas(DEFAULT_GAS_PRICE)
+            .withGasLimit(gasLimit)
+            .withCalls(calls)
+            .withNonceKey(nonceKey)
+            .withNonce(txNonce);
+
+        return _signTempo(vmRlp, vm, tx_, privateKey);
+    }
+
+    /// @notice Build Tempo multicall with CREATE as second call (invalid - C1)
+    function buildTempoCreateNotFirst(
+        VmRlp vmRlp,
+        Vm vm,
+        address callTarget,
+        bytes memory callData,
+        bytes memory initcode,
+        uint64 nonceKey,
+        uint64 txNonce,
+        uint256 privateKey
+    ) internal view returns (bytes memory) {
+        TempoCall[] memory calls = new TempoCall[](2);
+        calls[0] = TempoCall({to: callTarget, value: 0, data: callData});
+        calls[1] = TempoCall({to: address(0), value: 0, data: initcode}); // CREATE as second call
+
+        TempoTransaction memory tx_ = TempoTransactionLib.create()
+            .withChainId(uint64(block.chainid))
+            .withMaxFeePerGas(DEFAULT_GAS_PRICE)
+            .withGasLimit(DEFAULT_CREATE_GAS_LIMIT + DEFAULT_GAS_LIMIT)
+            .withCalls(calls)
+            .withNonceKey(nonceKey)
+            .withNonce(txNonce);
+
+        return _signTempo(vmRlp, vm, tx_, privateKey);
+    }
+
+    /// @notice Build Tempo multicall with two CREATEs (invalid - C2)
+    function buildTempoMultipleCreates(
+        VmRlp vmRlp,
+        Vm vm,
+        bytes memory initcode1,
+        bytes memory initcode2,
+        uint64 nonceKey,
+        uint64 txNonce,
+        uint256 privateKey
+    ) internal view returns (bytes memory) {
+        TempoCall[] memory calls = new TempoCall[](2);
+        calls[0] = TempoCall({to: address(0), value: 0, data: initcode1}); // First CREATE
+        calls[1] = TempoCall({to: address(0), value: 0, data: initcode2}); // Second CREATE
+
+        TempoTransaction memory tx_ = TempoTransactionLib.create()
+            .withChainId(uint64(block.chainid))
+            .withMaxFeePerGas(DEFAULT_GAS_PRICE)
+            .withGasLimit(DEFAULT_CREATE_GAS_LIMIT * 2)
+            .withCalls(calls)
+            .withNonceKey(nonceKey)
+            .withNonce(txNonce);
+
+        return _signTempo(vmRlp, vm, tx_, privateKey);
+    }
+
+    /// @notice Build Tempo CREATE with value > 0 (invalid for Tempo - C4)
+    function buildTempoCreateWithValue(
+        VmRlp vmRlp,
+        Vm vm,
+        bytes memory initcode,
+        uint256 value,
+        uint64 nonceKey,
+        uint64 txNonce,
+        uint256 privateKey
+    ) internal view returns (bytes memory) {
+        TempoCall[] memory calls = new TempoCall[](1);
+        calls[0] = TempoCall({to: address(0), value: value, data: initcode});
+
+        TempoTransaction memory tx_ = TempoTransactionLib.create()
+            .withChainId(uint64(block.chainid))
+            .withMaxFeePerGas(DEFAULT_GAS_PRICE)
+            .withGasLimit(DEFAULT_CREATE_GAS_LIMIT)
+            .withCalls(calls)
+            .withNonceKey(nonceKey)
+            .withNonce(txNonce);
+
+        return _signTempo(vmRlp, vm, tx_, privateKey);
+    }
+
+    /// @notice Build Tempo CREATE with authorization list (invalid - C3)
+    function buildTempoCreateWithAuthList(
+        VmRlp vmRlp,
+        Vm vm,
+        bytes memory initcode,
+        TempoAuthorization[] memory authList,
+        uint64 nonceKey,
+        uint64 txNonce,
+        uint256 privateKey
+    ) internal view returns (bytes memory) {
+        TempoCall[] memory calls = new TempoCall[](1);
+        calls[0] = TempoCall({to: address(0), value: 0, data: initcode});
+
+        TempoTransaction memory tx_ = TempoTransactionLib.create()
+            .withChainId(uint64(block.chainid))
+            .withMaxFeePerGas(DEFAULT_GAS_PRICE)
+            .withGasLimit(DEFAULT_CREATE_GAS_LIMIT)
+            .withCalls(calls)
+            .withNonceKey(nonceKey)
+            .withNonce(txNonce)
+            .withAuthorizationList(authList);
+
+        return _signTempo(vmRlp, vm, tx_, privateKey);
     }
 
     // ============ Internal Helpers - Legacy Signing ============

@@ -28,6 +28,28 @@ abstract contract GhostState {
 
     mapping(address => uint256) public ghost_feeTokenBalance;
 
+    // ============ CREATE Rejection Tracking ============
+
+    uint256 public ghost_createRejectedStructure;  // C1, C2, C3, C4 rejections
+    uint256 public ghost_createRejectedSize;       // C8 rejections
+    uint256 public ghost_createGasTracked;         // C9 gas tracking count
+
+    // ============ Fee Collection Tracking (F1-F12) ============
+
+    uint256 public ghost_totalFeesCollected;
+    uint256 public ghost_totalFeesRefunded;
+    mapping(address => uint256) public ghost_feesPaidByAccount;
+    uint256 public ghost_feePrecollectedCount;
+    uint256 public ghost_feeRefundOnSuccessCount;
+    uint256 public ghost_feeNoRefundOnFailureCount;
+    uint256 public ghost_feePaidOnRevertCount;
+    uint256 public ghost_invalidFeeTokenRejected;
+    uint256 public ghost_explicitFeeTokenUsed;
+    uint256 public ghost_feeTokenFallbackUsed;
+    uint256 public ghost_insufficientLiquidityRejected;
+    uint256 public ghost_subblockFeesRejected;
+    uint256 public ghost_subblockKeychainRejected;
+
     // ============ Access Key Tracking ============
 
     mapping(address => mapping(address => bool)) public ghost_keyAuthorized;
@@ -35,6 +57,30 @@ abstract contract GhostState {
     mapping(address => mapping(address => bool)) public ghost_keyEnforceLimits;
     mapping(address => mapping(address => mapping(address => uint256))) public ghost_keySpendingLimit;
     mapping(address => mapping(address => mapping(address => uint256))) public ghost_keySpentAmount;
+    mapping(address => mapping(address => uint256)) public ghost_keySpendingPeriodStart;
+    mapping(address => mapping(address => uint256)) public ghost_keySpendingPeriodDuration;
+    mapping(address => mapping(address => uint8)) public ghost_keySignatureType;
+    mapping(address => mapping(address => bool)) public ghost_keyUnlimitedSpending;
+
+    // ============ Access Key Invariant Tracking (K1-K3, K6, K10-K12, K16) ============
+
+    uint256 public ghost_keyAuthRejectedWrongSigner;
+    uint256 public ghost_keyAuthRejectedNotSelf;
+    uint256 public ghost_keyAuthRejectedChainId;
+    uint256 public ghost_keySameTxUsed;
+    uint256 public ghost_keyPeriodReset;
+    uint256 public ghost_keyUnlimitedUsed;
+    uint256 public ghost_keyZeroLimitRejected;
+    uint256 public ghost_keySigMismatchRejected;
+
+    // ============ Gas Tracking (G1-G10) ============
+
+    uint256 public ghost_totalGasTracked;
+    uint256 public ghost_gasTrackingBasic;
+    uint256 public ghost_gasTrackingMulticall;
+    uint256 public ghost_gasTrackingCreate;
+    uint256 public ghost_gasTrackingSignature;
+    uint256 public ghost_gasTrackingKeyAuth;
 
     // ============ Update Functions ============
 
@@ -89,5 +135,95 @@ abstract contract GhostState {
 
     function _recordKeySpending(address owner, address keyId, address token, uint256 amount) internal {
         ghost_keySpentAmount[owner][keyId][token] += amount;
+    }
+
+    function _recordCreateRejectedStructure() internal {
+        ghost_createRejectedStructure++;
+    }
+
+    function _recordCreateRejectedSize() internal {
+        ghost_createRejectedSize++;
+    }
+
+    function _recordCreateGasTracked() internal {
+        ghost_createGasTracked++;
+    }
+
+    // ============ Fee Recording Functions ============
+
+    function _recordFeeCollection(address account, uint256 amount) internal {
+        ghost_totalFeesCollected += amount;
+        ghost_feesPaidByAccount[account] += amount;
+    }
+
+    function _recordFeeRefund(uint256 amount) internal {
+        ghost_totalFeesRefunded += amount;
+    }
+
+    function _recordFeePrecollected() internal {
+        ghost_feePrecollectedCount++;
+    }
+
+    function _recordFeeRefundOnSuccess() internal {
+        ghost_feeRefundOnSuccessCount++;
+    }
+
+    function _recordFeeNoRefundOnFailure() internal {
+        ghost_feeNoRefundOnFailureCount++;
+    }
+
+    function _recordFeePaidOnRevert() internal {
+        ghost_feePaidOnRevertCount++;
+    }
+
+    function _recordInvalidFeeTokenRejected() internal {
+        ghost_invalidFeeTokenRejected++;
+    }
+
+    function _recordExplicitFeeTokenUsed() internal {
+        ghost_explicitFeeTokenUsed++;
+    }
+
+    function _recordFeeTokenFallbackUsed() internal {
+        ghost_feeTokenFallbackUsed++;
+    }
+
+    function _recordInsufficientLiquidityRejected() internal {
+        ghost_insufficientLiquidityRejected++;
+    }
+
+    function _recordSubblockFeesRejected() internal {
+        ghost_subblockFeesRejected++;
+    }
+
+    function _recordSubblockKeychainRejected() internal {
+        ghost_subblockKeychainRejected++;
+    }
+
+    // ============ Gas Recording Functions ============
+
+    function _recordGasTrackingBasic() internal {
+        ghost_gasTrackingBasic++;
+        ghost_totalGasTracked++;
+    }
+
+    function _recordGasTrackingMulticall() internal {
+        ghost_gasTrackingMulticall++;
+        ghost_totalGasTracked++;
+    }
+
+    function _recordGasTrackingCreate() internal {
+        ghost_gasTrackingCreate++;
+        ghost_totalGasTracked++;
+    }
+
+    function _recordGasTrackingSignature() internal {
+        ghost_gasTrackingSignature++;
+        ghost_totalGasTracked++;
+    }
+
+    function _recordGasTrackingKeyAuth() internal {
+        ghost_gasTrackingKeyAuth++;
+        ghost_totalGasTracked++;
     }
 }
