@@ -138,7 +138,7 @@ interface IMultisigFactory {
 
     /// @notice Creates a new multisig wallet
     /// @param owners Array of owner addresses (will be sorted internally, max 50)
-    /// @param threshold Number of required confirmations (1 <= threshold <= owners.length)
+    /// @param threshold Number of required confirmations (1 ≤ threshold ≤ owners.length)
     /// @return multisig The address of the created multisig
     function createMultisig(
         address[] calldata owners,
@@ -507,7 +507,7 @@ Cancellation requires threshold confirmations, similar to execution:
 3. Revert with `TransactionAlreadyExecuted` if already executed
 4. Revert with `TransactionCancelled` if already cancelled
 5. Record cancellation vote from `msg.sender`
-6. If cancellation votes >= threshold:
+6. If cancellation votes ≥ threshold:
    - Set `cancelled = true`
    - Emit `TransactionCancelled`
 
@@ -525,8 +525,8 @@ Cancellation requires threshold confirmations, similar to execution:
 6. Revert with `TransactionExpired` if `block.timestamp > expiresAt`
 7. **Count valid confirmations** (lazy invalidation/transfer check):
    - For each confirmer:
-     - **Follow replacement chain**: while `replacedBy[confirmer] != 0` AND `replacedAt[confirmer] > txId`: `confirmer = replacedBy[confirmer]`
-     - If `removedAt[confirmer] != 0` AND `removedAt[confirmer] <= txId`: invalid (removed before tx)
+     - **Follow replacement chain**: while `replacedBy[confirmer] ≠ 0` AND `replacedAt[confirmer] > txId`: `confirmer = replacedBy[confirmer]`
+     - If `removedAt[confirmer] ≠ 0` AND `removedAt[confirmer] ≤ txId`: invalid (removed before tx)
      - If confirmer is not a current owner: invalid
      - Otherwise: valid confirmation attributed to final `confirmer`
    - Deduplicate: count unique valid confirmers only
@@ -577,7 +577,7 @@ When executed, the multisig calls itself, triggering the management function wit
 1. Revert with `NotMultisig` if `msg.sender != address(this)` (must be self-call)
 2. Revert with `ZeroAddressOwner` if `owner` is `address(0)`
 3. Revert with `AlreadyOwner` if `owner` is already an owner
-4. Revert with `TooManyOwners` if `ownerCount >= MAX_OWNERS`
+4. Revert with `TooManyOwners` if `ownerCount ≥ MAX_OWNERS`
 5. Add owner to owners array (binary search insert to maintain sorted order)
 6. Increment `ownerCount`
 7. Clear `removedAt[owner] = 0` (in case owner was previously removed and re-added)
@@ -607,7 +607,7 @@ When executed, the multisig calls itself, triggering the management function wit
 6. Record `replacedBy[oldOwner] = newOwner` and `replacedAt[oldOwner] = transactionCount` (for lazy transfer)
 7. Emit `OwnerReplaced`
 
-> **Note**: `replaceOwner` uses lazy confirmation transfer. At execution time, when validating confirmations, if `replacedBy[confirmer] != 0` AND `replacedAt[confirmer] > txId`, the confirmation is attributed to `replacedBy[confirmer]` instead. This enables seamless key rotation without O(n) iteration.
+> **Note**: `replaceOwner` uses lazy confirmation transfer. At execution time, when validating confirmations, if `replacedBy[confirmer] ≠ 0` AND `replacedAt[confirmer] > txId`, the confirmation is attributed to `replacedBy[confirmer]` instead. This enables seamless key rotation without O(n) iteration.
 
 #### `changeThreshold`
 
@@ -717,7 +717,7 @@ multisig.submitTransaction(
 3. `isMultisig` must return `true` if and only if the address was created by the factory
 4. Owner lists must be sorted ascending before address derivation
 5. Duplicate owners must be rejected
-6. Owner count must be <= `MAX_OWNERS` (50)
+6. Owner count must be ≤ `MAX_OWNERS` (50)
 
 ## Multisig Invariants
 
@@ -730,10 +730,10 @@ multisig.submitTransaction(
 7. Expired transactions cannot be executed or confirmed
 8. `confirmations` count must equal the number of **current** owners who have confirmed
 9. `transactionCount` must be monotonically increasing
-10. Transaction `data` size must be <= `MAX_DATA_SIZE` (64KB)
+10. Transaction `data` size must be ≤ `MAX_DATA_SIZE` (64KB)
 11. Transaction `value` must be empty or exactly 64 bytes (valid encoding)
-12. `ownerCount` must always be >= 1 (cannot remove last owner)
-13. `threshold` must always be >= 1 and <= `ownerCount`
+12. `ownerCount` must always be ≥ 1 (cannot remove last owner)
+13. `threshold` must always be ≥ 1 and ≤ `ownerCount`
 14. Owner management functions can only be called by the multisig itself (self-call)
 15. Removed owners' confirmations are lazily invalidated via `removedAt` tracking
 16. Replaced owners' confirmations are lazily transferred via `replacedBy`/`replacedAt` tracking
