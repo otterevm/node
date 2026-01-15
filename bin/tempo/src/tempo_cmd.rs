@@ -33,7 +33,7 @@ struct ConsensusCommand {
 #[derive(Debug, Subcommand)]
 enum ConsensusSubcommand {
     /// Encrypts an input file with the DKG encryption and writes it
-    /// to a file in hex format..
+    /// to a file in hex format.
     EncryptWithDkgEncryptionKey(EncryptWithDkgEncryptionKey),
     /// Generates an encryption/decryption key.
     GenerateEncryptionKey(GenerateEncryptionKey),
