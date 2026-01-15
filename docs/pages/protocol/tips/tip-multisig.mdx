@@ -286,6 +286,10 @@ interface IMultisig {
     /// @notice Returns the list of owners
     function owners() external view returns (address[] memory);
 
+    /// @notice Returns whether an address is a current owner
+    /// @param addr The address to check
+    function isOwner(address addr) external view returns (bool);
+
     /// @notice Returns the confirmation threshold
     function threshold() external view returns (uint8);
 
@@ -517,19 +521,24 @@ Cancellation requires threshold confirmations, similar to execution:
 4. Revert with `TransactionAlreadyExecuted` if already executed
 5. Revert with `TransactionCancelled` if cancelled
 6. Revert with `TransactionExpired` if `block.timestamp > expiresAt`
-7. Revert with `InsufficientConfirmations` if `confirmations < threshold`
-8. Set reentrancy guard
-9. Mark as executed
-10. If `value` is non-empty:
+7. **Count valid confirmations** (lazy invalidation check):
+   - For each confirmer, check: `removedAt[confirmer] == 0` OR `removedAt[confirmer] > txId`
+   - Only count confirmations from owners who weren't removed before this tx was created
+8. Revert with `InsufficientConfirmations` if `validConfirmations < threshold`
+9. Set reentrancy guard
+10. Mark as executed
+11. If `value` is non-empty:
     - Decode `(token, amount)` from `value`
     - Transfer `amount` of `token` from multisig to `to`
-11. If `data` is non-empty:
+12. If `data` is non-empty:
     - Execute `to.call(data)` with multisig as `msg.sender`
-12. Clear reentrancy guard
-13. Emit `TransactionExecuted`
-14. Revert with `ExecutionFailed` if the call failed
+13. Clear reentrancy guard
+14. Emit `TransactionExecuted`
+15. Revert with `ExecutionFailed` if the call failed
 
 > **Security Note**: Only owners can trigger execution. This prevents MEV attacks where attackers front-run or sandwich multisig transactions.
+
+> **Implementation Note**: The lazy confirmation validation at step 7 requires iterating over confirmers for this transaction. Since each transaction can have at most `MAX_OWNERS` (50) confirmations, this is O(50) = O(1) bounded, not O(pending_transactions).
 
 #### `execute`
 
@@ -575,10 +584,10 @@ When executed, the multisig calls itself, triggering the management function wit
 4. Revert with `ThresholdExceedsOwners` if `threshold > ownerCount - 1`
 5. Remove owner from owners array
 6. Decrement `ownerCount`
-7. **Invalidate all confirmations by this owner** on pending transactions
+7. Record `removedAt[owner] = transactionCount` (for lazy invalidation)
 8. Emit `OwnerRemoved`
 
-> **Security Note**: When an owner is removed, their confirmations on all pending transactions are invalidated and confirmation counts decremented. This prevents "stale confirmation" attacks where a removed owner's old confirmations still count toward threshold.
+> **Security Note**: Confirmation invalidation uses **lazy evaluation**. Instead of iterating over all pending transactions (which would be O(n) and a DoS vector), we record when each owner was removed. At execution time, when counting confirmations, we check: for each confirmer, is `removedAt[confirmer] == 0` (not removed) OR `removedAt[confirmer] > txId` (removed after this tx was created)? Only valid confirmations count toward threshold. This prevents "stale confirmation" attacks where a removed owner's old confirmations count toward threshold.
 
 #### `replaceOwner`
 
@@ -650,6 +659,9 @@ Cancellation votes mapping (at keccak256("cancellations", txId, owner)):
 
 Cancellation count (at keccak256("cancellationCount", txId)):
   uint8 count
+
+Owner removal tracking (at keccak256("removedAt", owner)):
+  uint256 transactionCountAtRemoval  // 0 if not removed, else txCount when removed
 ```
 
 ---
@@ -709,8 +721,9 @@ multisig.submitTransaction(
 12. `ownerCount` must always be >= 1 (cannot remove last owner)
 13. `threshold` must always be >= 1 and <= `ownerCount`
 14. Owner management functions can only be called by the multisig itself (self-call)
-15. When an owner is removed, their confirmations on pending transactions are invalidated
-16. When an owner is replaced, their confirmations transfer to the new owner
+15. Removed owners' confirmations are lazily invalidated via `removedAt` tracking
+16. A confirmation is valid iff `removedAt[confirmer] == 0` OR `removedAt[confirmer] > txId`
+17. When an owner is replaced, their confirmations transfer to the new owner
 
 ## Security Invariants
 
@@ -811,9 +824,11 @@ multisig.submitTransaction(
 - Reject removing non-existent owner
 - Reject removing last owner (`CannotRemoveLastOwner`)
 - Reject if would make threshold > ownerCount (`ThresholdExceedsOwners`)
-- **Removed owner's confirmations are invalidated on all pending transactions**
 - Removed owner cannot confirm new transactions
-- Confirmation count decrements correctly after removal
+- **Lazy invalidation**: removed owner's confirmations on txs created BEFORE removal are invalid
+- **Lazy invalidation**: removed owner's confirmations on txs created AFTER removal don't exist
+- Execution correctly counts only valid confirmations after owner removal
+- `removedAt[owner]` is set to `transactionCount` at removal time
 
 ### Replace Owner
 - Replace owner atomically via self-call
