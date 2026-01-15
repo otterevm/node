@@ -39,6 +39,14 @@ By implementing multisig as a precompile:
 
 # Specification
 
+## Constants and Limits
+
+| Constant | Value | Rationale |
+|----------|-------|-----------|
+| `MAX_OWNERS` | 50 | Prevents gas DoS on confirmation loops |
+| `MAX_DATA_SIZE` | 65536 (64KB) | Bounds storage and execution costs |
+| `DEFAULT_EXPIRY` | 30 days | Prevents stale transaction execution |
+
 ## Address Scheme
 
 ### Multisig Factory Address
@@ -53,14 +61,14 @@ The `F15C` prefix is derived from "mUltiSig" → hex representation mnemonic.
 
 ### Multisig Address Derivation
 
-Multisig addresses use a dedicated prefix and deterministic derivation:
+Multisig addresses use a dedicated prefix and deterministic derivation. To prevent birthday-attack collisions, we use 16 bytes of the hash (128 bits of entropy):
 
 ```
-MULTISIG_PREFIX (12 bytes) || keccak256(owners, threshold)[0:8] (8 bytes)
+MULTISIG_PREFIX (4 bytes) || keccak256(owners, threshold)[0:16] (16 bytes)
 ```
 
 Where:
-- `MULTISIG_PREFIX` = `0xF15C000000000000000000000000000000` (12 bytes)
+- `MULTISIG_PREFIX` = `0xF15C0000` (4 bytes)
 - `owners` = sorted array of owner addresses (ascending order)
 - `threshold` = required number of confirmations (uint8)
 
@@ -71,12 +79,14 @@ function computeMultisigAddress(address[] memory owners, uint8 threshold) pure r
     bytes32 hash = keccak256(abi.encode(sorted, threshold));
     
     bytes20 addr;
-    addr[0:12] = MULTISIG_PREFIX;
-    addr[12:20] = hash[0:8];
+    addr[0:4] = MULTISIG_PREFIX;   // 4 bytes prefix
+    addr[4:20] = hash[0:16];       // 16 bytes from hash (128-bit collision resistance)
     
     return address(addr);
 }
 ```
+
+> **Security Note**: Using 16 bytes (128 bits) of the hash provides birthday-attack resistance of ~2^64 operations, making collision attacks computationally infeasible.
 
 ### Reserved Addresses
 
@@ -97,7 +107,7 @@ The first 1024 addresses in the multisig address space are reserved for protocol
 interface IMultisigFactory {
     /// @notice Emitted when a new multisig wallet is created
     /// @param multisig The address of the created multisig
-    /// @param owners Array of owner addresses
+    /// @param owners Array of owner addresses (sorted ascending)
     /// @param threshold Number of required confirmations
     event MultisigCreated(
         address indexed multisig,
@@ -117,6 +127,9 @@ interface IMultisigFactory {
     /// @notice Owner list is empty
     error NoOwners();
 
+    /// @notice Too many owners (exceeds MAX_OWNERS)
+    error TooManyOwners(uint8 count, uint8 max);
+
     /// @notice Duplicate owner in the list
     error DuplicateOwner(address owner);
 
@@ -124,7 +137,7 @@ interface IMultisigFactory {
     error ZeroAddressOwner();
 
     /// @notice Creates a new multisig wallet
-    /// @param owners Array of owner addresses (will be sorted internally)
+    /// @param owners Array of owner addresses (will be sorted internally, max 50)
     /// @param threshold Number of required confirmations (1 <= threshold <= owners.length)
     /// @return multisig The address of the created multisig
     function createMultisig(
@@ -154,6 +167,7 @@ interface IMultisigFactory {
 
 1. Validate inputs:
    - Revert with `NoOwners` if `owners.length == 0`
+   - Revert with `TooManyOwners` if `owners.length > MAX_OWNERS` (50)
    - Revert with `ZeroAddressOwner` if any owner is `address(0)`
    - Revert with `DuplicateOwner` if any owner appears twice
    - Revert with `InvalidThreshold` if `threshold == 0` or `threshold > owners.length`
@@ -187,12 +201,14 @@ interface IMultisig {
     /// @param to Target address for the transaction
     /// @param value TIP-20 token address and amount (encoded)
     /// @param data Calldata for the transaction
+    /// @param expiresAt Timestamp after which the transaction cannot be executed
     event TransactionSubmitted(
         uint256 indexed txId,
         address indexed proposer,
-        address to,
+        address indexed to,
         bytes value,
-        bytes data
+        bytes data,
+        uint256 expiresAt
     );
 
     /// @notice An owner has confirmed a transaction
@@ -218,13 +234,17 @@ interface IMultisig {
     /// @notice A transaction has been executed
     /// @param txId The transaction ID
     /// @param executor The address that triggered execution
-    /// @param success Whether the transaction succeeded
-    /// @param returnData Return data from the call
     event TransactionExecuted(
         uint256 indexed txId,
-        address indexed executor,
-        bool success,
-        bytes returnData
+        address indexed executor
+    );
+
+    /// @notice A transaction has been cancelled
+    /// @param txId The transaction ID
+    /// @param canceller The owner who initiated cancellation
+    event TransactionCancelled(
+        uint256 indexed txId,
+        address indexed canceller
     );
 
     /// @notice Caller is not an owner
@@ -235,6 +255,12 @@ interface IMultisig {
 
     /// @notice Transaction already executed
     error TransactionAlreadyExecuted(uint256 txId);
+
+    /// @notice Transaction has been cancelled
+    error TransactionCancelled(uint256 txId);
+
+    /// @notice Transaction has expired
+    error TransactionExpired(uint256 txId, uint256 expiresAt, uint256 currentTime);
 
     /// @notice Owner has already confirmed this transaction
     error AlreadyConfirmed(uint256 txId, address owner);
@@ -247,6 +273,15 @@ interface IMultisig {
 
     /// @notice Transaction execution failed
     error ExecutionFailed(uint256 txId, bytes returnData);
+
+    /// @notice Transaction data exceeds maximum size
+    error DataTooLarge(uint256 size, uint256 max);
+
+    /// @notice Invalid value encoding (must be empty or abi.encode(address, uint256))
+    error InvalidValueEncoding();
+
+    /// @notice Reentrancy detected
+    error ReentrancyGuard();
 
     /// @notice Returns the list of owners
     function owners() external view returns (address[] memory);
@@ -263,13 +298,17 @@ interface IMultisig {
     /// @return value Encoded token transfer (token address + amount), or empty for pure calls
     /// @return data Calldata
     /// @return executed Whether the transaction has been executed
+    /// @return cancelled Whether the transaction has been cancelled
     /// @return confirmations Number of confirmations
+    /// @return expiresAt Timestamp after which the transaction cannot be executed
     function getTransaction(uint256 txId) external view returns (
         address to,
         bytes memory value,
         bytes memory data,
         bool executed,
-        uint8 confirmations
+        bool cancelled,
+        uint8 confirmations,
+        uint256 expiresAt
     );
 
     /// @notice Returns whether an owner has confirmed a transaction
@@ -282,15 +321,28 @@ interface IMultisig {
     function getConfirmations(uint256 txId) external view returns (address[] memory);
 
     /// @notice Submits a new transaction for confirmation
-    /// @dev Also counts as a confirmation from msg.sender
+    /// @dev Also counts as a confirmation from msg.sender. Validates value encoding.
     /// @param to Target address
     /// @param value Encoded token transfer: abi.encode(tokenAddress, amount), or empty bytes
-    /// @param data Calldata for the transaction
+    /// @param data Calldata for the transaction (max 64KB)
     /// @return txId The ID of the submitted transaction
     function submitTransaction(
         address to,
         bytes calldata value,
         bytes calldata data
+    ) external returns (uint256 txId);
+
+    /// @notice Submits a new transaction with custom expiry
+    /// @param to Target address
+    /// @param value Encoded token transfer: abi.encode(tokenAddress, amount), or empty bytes
+    /// @param data Calldata for the transaction (max 64KB)
+    /// @param expiresAt Timestamp after which the transaction cannot be executed
+    /// @return txId The ID of the submitted transaction
+    function submitTransactionWithExpiry(
+        address to,
+        bytes calldata value,
+        bytes calldata data,
+        uint256 expiresAt
     ) external returns (uint256 txId);
 
     /// @notice Confirms a pending transaction
@@ -301,22 +353,26 @@ interface IMultisig {
     /// @param txId The transaction ID
     function revokeConfirmation(uint256 txId) external;
 
+    /// @notice Cancels a pending transaction (requires threshold confirmations to cancel)
+    /// @dev Creates a cancellation "meta-transaction" that owners must confirm
+    /// @param txId The transaction ID to cancel
+    function cancelTransaction(uint256 txId) external;
+
     /// @notice Executes a transaction that has sufficient confirmations
+    /// @dev Only callable by owners. Reverts on execution failure.
     /// @param txId The transaction ID to execute
     function executeTransaction(uint256 txId) external;
 
     /// @notice Submits, confirms, and executes a transaction in one call
-    /// @dev Reverts if threshold > 1 (cannot execute without other confirmations)
+    /// @dev Only works if threshold == 1, otherwise reverts
     /// @param to Target address
     /// @param value Encoded token transfer
     /// @param data Calldata
-    /// @return success Whether execution succeeded
-    /// @return returnData Return data from the call
     function execute(
         address to,
         bytes calldata value,
         bytes calldata data
-    ) external returns (bool success, bytes memory returnData);
+    ) external;
 }
 ```
 
@@ -328,66 +384,108 @@ Transactions are stored with the following data:
 struct Transaction {
     address to;           // Target address
     bytes value;          // Encoded: abi.encode(address token, uint256 amount) or empty
-    bytes data;           // Calldata to execute
+    bytes data;           // Calldata to execute (max 64KB)
     bool executed;        // Has been executed
+    bool cancelled;       // Has been cancelled
     uint8 confirmations;  // Current confirmation count
+    uint256 expiresAt;    // Timestamp after which execution is blocked
 }
 ```
 
 The `value` field encodes a TIP-20 transfer:
 - Empty bytes (`0x`): No token transfer, just a call
 - `abi.encode(token, amount)`: Transfer `amount` of `token` to `to` before executing `data`
+- Any other encoding: **Invalid**, reverts with `InvalidValueEncoding` at submission time
 
 ### Multisig Behavior
 
 #### `submitTransaction`
 
 1. Revert with `NotOwner` if `msg.sender` is not an owner
-2. Create transaction with `txId = transactionCount++`
-3. Store transaction data
-4. Auto-confirm for `msg.sender`
-5. Emit `TransactionSubmitted` and `TransactionConfirmed`
-6. Return `txId`
+2. Revert with `DataTooLarge` if `data.length > MAX_DATA_SIZE` (64KB)
+3. Validate `value` encoding:
+   - If `value.length == 0`: valid (no token transfer)
+   - If `value.length == 64`: valid (abi.encode(address, uint256))
+   - Otherwise: revert with `InvalidValueEncoding`
+4. Create transaction with `txId = transactionCount++`
+5. Set `expiresAt = block.timestamp + DEFAULT_EXPIRY` (30 days)
+6. Store transaction data
+7. Auto-confirm for `msg.sender`
+8. Emit `TransactionSubmitted` and `TransactionConfirmed`
+9. Return `txId`
+
+#### `submitTransactionWithExpiry`
+
+Same as `submitTransaction`, but:
+- Uses provided `expiresAt` instead of default
+- `expiresAt` must be in the future (`> block.timestamp`)
 
 #### `confirmTransaction`
 
 1. Revert with `NotOwner` if `msg.sender` is not an owner
 2. Revert with `TransactionNotFound` if transaction doesn't exist
 3. Revert with `TransactionAlreadyExecuted` if already executed
-4. Revert with `AlreadyConfirmed` if already confirmed by sender
-5. Record confirmation and increment count
-6. Emit `TransactionConfirmed`
+4. Revert with `TransactionCancelled` if cancelled
+5. Revert with `TransactionExpired` if `block.timestamp > expiresAt`
+6. Revert with `AlreadyConfirmed` if already confirmed by sender
+7. Record confirmation and increment count
+8. Emit `TransactionConfirmed`
 
 #### `revokeConfirmation`
 
 1. Revert with `NotOwner` if `msg.sender` is not an owner
 2. Revert with `TransactionNotFound` if transaction doesn't exist
 3. Revert with `TransactionAlreadyExecuted` if already executed
-4. Revert with `NotConfirmed` if sender hasn't confirmed
-5. Remove confirmation and decrement count
-6. Emit `ConfirmationRevoked`
+4. Revert with `TransactionCancelled` if cancelled
+5. Revert with `NotConfirmed` if sender hasn't confirmed
+6. Remove confirmation and decrement count
+7. Emit `ConfirmationRevoked`
+
+#### `cancelTransaction`
+
+Cancellation requires threshold confirmations, similar to execution:
+
+1. Revert with `NotOwner` if `msg.sender` is not an owner
+2. Revert with `TransactionNotFound` if transaction doesn't exist
+3. Revert with `TransactionAlreadyExecuted` if already executed
+4. Revert with `TransactionCancelled` if already cancelled
+5. Record cancellation vote from `msg.sender`
+6. If cancellation votes >= threshold:
+   - Set `cancelled = true`
+   - Emit `TransactionCancelled`
+
+> **Note**: Cancellation uses a separate vote count from confirmation. An owner can confirm a transaction AND vote to cancel it (allowing them to change their mind).
 
 #### `executeTransaction`
 
-1. Revert with `TransactionNotFound` if transaction doesn't exist
-2. Revert with `TransactionAlreadyExecuted` if already executed
-3. Revert with `InsufficientConfirmations` if `confirmations < threshold`
-4. Mark as executed
-5. If `value` is non-empty:
-   - Decode `(token, amount)` from `value`
-   - Transfer `amount` of `token` from multisig to `to`
-6. If `data` is non-empty:
-   - Execute `to.call(data)` with multisig as `msg.sender`
-7. Emit `TransactionExecuted`
-8. Revert with `ExecutionFailed` if the call failed and user expects success
+1. Revert with `NotOwner` if `msg.sender` is not an owner
+2. Revert with `ReentrancyGuard` if already in execution context
+3. Revert with `TransactionNotFound` if transaction doesn't exist
+4. Revert with `TransactionAlreadyExecuted` if already executed
+5. Revert with `TransactionCancelled` if cancelled
+6. Revert with `TransactionExpired` if `block.timestamp > expiresAt`
+7. Revert with `InsufficientConfirmations` if `confirmations < threshold`
+8. Set reentrancy guard
+9. Mark as executed
+10. If `value` is non-empty:
+    - Decode `(token, amount)` from `value`
+    - Transfer `amount` of `token` from multisig to `to`
+11. If `data` is non-empty:
+    - Execute `to.call(data)` with multisig as `msg.sender`
+12. Clear reentrancy guard
+13. Emit `TransactionExecuted`
+14. Revert with `ExecutionFailed` if the call failed
+
+> **Security Note**: Only owners can trigger execution. This prevents MEV attacks where attackers front-run or sandwich multisig transactions.
 
 #### `execute`
 
-Convenience function for 1-of-N multisigs or when all confirmations are ready:
+Convenience function for 1-of-1 multisigs only:
 
-1. Submit transaction
-2. If `confirmations >= threshold`: execute immediately
-3. Otherwise, revert (cannot execute without sufficient confirmations)
+1. Revert if `threshold != 1`
+2. Submit transaction (which auto-confirms)
+3. Execute immediately (since 1 confirmation = threshold)
+4. Revert with `ExecutionFailed` if execution fails
 
 ---
 
@@ -406,7 +504,7 @@ No additional storage needed; all validation is stateless.
 Each multisig uses the following storage layout at its deterministic address:
 
 ```
-Slot 0: initialized (bool)
+Slot 0: initialized (bool) | locked (bool, reentrancy guard)
 Slot 1: threshold (uint8)
 Slot 2: ownerCount (uint8)
 Slot 3: transactionCount (uint256)
@@ -416,13 +514,20 @@ Owners array (starting at keccak256("owners")):
 
 Transactions mapping (at keccak256("transactions", txId)):
   +0: to (address)
-  +1: value length + first 24 bytes
-  +2+: value continuation (if needed)
+  +1: expiresAt (uint256)
+  +2: value length + first 24 bytes
+  +3+: value continuation (if needed)
   +N: data length + bytes
-  +N+1: executed (bool) | confirmations (uint8)
+  +N+1: executed (bool) | cancelled (bool) | confirmations (uint8)
 
 Confirmations mapping (at keccak256("confirmations", txId, owner)):
   bool confirmed
+
+Cancellation votes mapping (at keccak256("cancellations", txId, owner)):
+  bool votedToCancel
+
+Cancellation count (at keccak256("cancellationCount", txId)):
+  uint8 count
 ```
 
 ---
@@ -464,24 +569,32 @@ multisig.submitTransaction(
 3. `isMultisig` must return `true` if and only if the address was created by the factory
 4. Owner lists must be sorted ascending before address derivation
 5. Duplicate owners must be rejected
+6. Owner count must be <= `MAX_OWNERS` (50)
 
 ## Multisig Invariants
 
-1. Only owners can submit, confirm, or revoke transactions
+1. Only owners can submit, confirm, revoke, cancel, or execute transactions
 2. A transaction can only be executed once
 3. A transaction requires exactly `threshold` confirmations to execute
 4. An owner can only confirm a transaction once
 5. Executed transactions cannot be modified or re-executed
-6. `confirmations` count must equal the number of owners who have confirmed
-7. `transactionCount` must be monotonically increasing
-8. The `owners()` and `threshold()` values must never change after creation
+6. Cancelled transactions cannot be executed or confirmed
+7. Expired transactions cannot be executed or confirmed
+8. `confirmations` count must equal the number of owners who have confirmed
+9. `transactionCount` must be monotonically increasing
+10. The `owners()` and `threshold()` values must never change after creation
+11. Transaction `data` size must be <= `MAX_DATA_SIZE` (64KB)
+12. Transaction `value` must be empty or exactly 64 bytes (valid encoding)
 
 ## Security Invariants
 
 1. No transaction can execute with fewer than `threshold` confirmations
-2. Non-owners cannot influence transaction state
+2. Non-owners cannot influence transaction state (submit, confirm, revoke, cancel, execute)
 3. Revoked confirmations must decrease the confirmation count
 4. Token transfers in `value` field must respect TIP-403 policies
+5. Reentrancy during `executeTransaction` must be blocked
+6. Cancellation requires `threshold` votes (same as execution)
+7. Address derivation uses 128 bits of entropy (collision-resistant)
 
 ---
 
@@ -496,23 +609,61 @@ multisig.submitTransaction(
 - Reject threshold = 0
 - Reject threshold > owner count
 - Reject creation if multisig exists
+- Reject creation with > 50 owners (`TooManyOwners`)
 - Verify deterministic address matches prediction
 - Verify owner order doesn't affect address (sorted internally)
+- Verify 128-bit address derivation (no collisions with different configs)
 
 ## Multisig Tests
 
+### Submission
 - Submit transaction as owner
 - Reject submission from non-owner
+- Reject submission with data > 64KB (`DataTooLarge`)
+- Reject submission with invalid value encoding (`InvalidValueEncoding`)
+- Verify default expiry is set (30 days)
+- Submit with custom expiry via `submitTransactionWithExpiry`
+
+### Confirmation
 - Confirm transaction as different owner
 - Reject double confirmation
-- Execute when threshold reached
-- Reject execution with insufficient confirmations
+- Reject confirmation from non-owner
+- Reject confirmation of cancelled transaction
+- Reject confirmation of expired transaction
+- Reject confirmation of executed transaction
+
+### Revocation
 - Revoke confirmation
 - Reject revoke if not confirmed
+- Reject revoke of cancelled transaction
+- Reject revoke of executed transaction
+
+### Cancellation
+- Cancel transaction with threshold votes
+- Reject cancel from non-owner
+- Reject cancel of already-cancelled transaction
+- Reject cancel of executed transaction
+- Verify cancellation requires threshold votes (not just 1)
+- Owner can confirm AND vote to cancel same transaction
+
+### Execution
+- Execute when threshold reached
+- Reject execution with insufficient confirmations
+- Reject execution from non-owner
+- Reject execution of cancelled transaction
+- Reject execution of expired transaction
+- Reject double execution
 - Execute TIP-20 transfer via value field
 - Execute arbitrary call via data field
 - Execute combined value + data transaction
+- Verify reentrancy is blocked
 - Verify events are emitted correctly
+
+### Edge Cases
+- 1-of-1 immediate execution via `execute()`
+- `execute()` reverts if threshold > 1
+- Transaction with empty value and empty data (no-op)
+- Transaction targeting multisig itself (self-call)
 
 ## Integration Tests
 
@@ -521,3 +672,6 @@ multisig.submitTransaction(
 - 1-of-1 immediate execution via `execute()`
 - Multisig receiving tokens from another account
 - Multisig interacting with DEX
+- Multisig as owner of another multisig (nested multisig)
+- Cancel race condition: execute vs cancel reaching threshold simultaneously
+- Expiry edge case: confirm just before expiry, execute just after
