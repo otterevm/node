@@ -1,10 +1,11 @@
 # BUG-001: Oversized Initcode Not Rejected (C8 Violation)
 
 **Severity**: High  
-**Status**: Open  
+**Status**: Fixed  
 **Found By**: Invariant Fuzzer  
 **Date**: 2026-01-15  
-**Component**: Tempo Transaction Handler (EVM)
+**Fixed**: 2026-01-15  
+**Component**: tempo-foundry (EVM Config)
 
 ---
 
@@ -82,15 +83,18 @@ cd docs/specs
 
 ## Root Cause Analysis
 
-The Tempo transaction handler in `tempo-foundry` (and likely the main `tempo` node) does not validate initcode size before executing CREATE operations.
+The tempo-revm handler correctly validates initcode size in `validate_aa_initial_tx_gas()`. However, tempo-foundry's `configure_env()` function in `crates/evm/core/src/fork/init.rs` was setting:
 
-### Affected Code Paths
+```rust
+cfg.limit_contract_code_size = Some(usize::MAX);
+```
 
-1. **Tempo Transaction Validation** (`tempo-foundry/crates/tempo/src/...`)
-   - Missing check: `if initcode.len() > MAX_INITCODE_SIZE { return Err(...) }`
+This caused `max_initcode_size()` to return `usize::MAX` (since it falls back to `code_size * 2` when `limit_contract_initcode_size` is None), effectively disabling the EIP-3860 limit.
 
-2. **CREATE Call Execution**
-   - The EVM's CREATE opcode handler may also need size validation
+### Affected Code Path
+
+- **tempo-foundry** `crates/evm/core/src/fork/init.rs:121`
+  - `configure_env()` set unlimited code size, which cascaded to unlimited initcode size
 
 ---
 
@@ -102,44 +106,22 @@ The Tempo transaction handler in `tempo-foundry` (and likely the main `tempo` no
 
 ---
 
-## Recommended Fix
+## Fix Applied
 
-### Option 1: Transaction Validation Layer
+### tempo-foundry: `crates/cheatcodes/src/evm.rs` (executeTransactionCall)
 
-Add size check during Tempo transaction validation:
-
-```rust
-// In tempo transaction handler
-const MAX_INITCODE_SIZE: usize = 49152; // 2 * 24576
-
-fn validate_tempo_transaction(tx: &TempoTransaction) -> Result<(), Error> {
-    for call in &tx.calls {
-        if call.to.is_zero() {
-            // This is a CREATE operation
-            if call.data.len() > MAX_INITCODE_SIZE {
-                return Err(Error::InitcodeTooLarge {
-                    size: call.data.len(),
-                    max: MAX_INITCODE_SIZE,
-                });
-            }
-        }
-    }
-    Ok(())
-}
-```
-
-### Option 2: EVM Layer
-
-Ensure the EVM's CREATE handler validates initcode size:
+Enforce initcode size limit specifically for `executeTransaction` cheatcode:
 
 ```rust
-fn create(&mut self, initcode: &[u8], ...) -> Result<Address, Error> {
-    if initcode.len() > MAX_INITCODE_SIZE {
-        return Err(Error::InitcodeTooLarge);
-    }
-    // ... rest of CREATE logic
-}
+// EIP-3860: Enforce initcode size limit for executeTransaction to match production behavior.
+// The global config sets limit_contract_code_size = usize::MAX for test flexibility,
+// which causes max_initcode_size() to return usize::MAX. We override this here to
+// enforce the EIP-3860 limit (49152 bytes) for realistic transaction simulation.
+env.cfg.limit_contract_initcode_size =
+    Some(revm::primitives::eip3860::MAX_INITCODE_SIZE);
 ```
+
+This applies the initcode limit only when simulating real transactions via `executeTransaction`, while keeping unlimited initcode for regular test contract deployments (which need flexibility for large test contracts).
 
 ---
 
@@ -171,5 +153,6 @@ The invariant `ghost_createOversizedAllowed == 0` should hold.
 |------|-------|
 | 2026-01-15 | Bug discovered by invariant fuzzer |
 | 2026-01-15 | Bug report created |
-| TBD | Fix implemented |
-| TBD | Fix verified |
+| 2026-01-15 | Root cause identified: tempo-foundry config disabled initcode limit |
+| 2026-01-15 | Fix implemented in tempo-foundry `crates/cheatcodes/src/evm.rs` |
+| 2026-01-15 | Fix verified with test cases |

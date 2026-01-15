@@ -65,9 +65,7 @@ contract TempoTransactionInvariantTest is InvariantChecker {
         targetContract(address(this));
 
         // Define which handlers the fuzzer should call
-        // NOTE: handler_createOversized disabled - found legitimate bug (see task #48)
-        // NOTE: handler_invalidFeeToken disabled - causes EVM panic (see task #49 / BUG-002)
-        bytes4[] memory selectors = new bytes4[](40);
+        bytes4[] memory selectors = new bytes4[](42);
         // Legacy transaction handlers (core)
         selectors[0] = this.handler_transfer.selector;
         selectors[1] = this.handler_sequentialTransfers.selector;
@@ -92,36 +90,36 @@ contract TempoTransactionInvariantTest is InvariantChecker {
         selectors[15] = this.handler_replay2dNonce.selector;
         selectors[16] = this.handler_nonceTooHigh.selector;
         selectors[17] = this.handler_nonceTooLow.selector;
-        // CREATE structure handlers (C1-C4)
-        // NOTE: C8 (handler_createOversized) disabled - found legitimate bug (see task #48)
-        selectors[18] = this.handler_createNotFirst.selector;
-        selectors[19] = this.handler_createMultiple.selector;
-        selectors[20] = this.handler_createWithAuthList.selector;
-        selectors[21] = this.handler_createWithValue.selector;
+        // CREATE structure handlers (C1-C4, C8)
+        selectors[18] = this.handler_createOversized.selector;
+        selectors[19] = this.handler_createNotFirst.selector;
+        selectors[20] = this.handler_createMultiple.selector;
+        selectors[21] = this.handler_createWithAuthList.selector;
+        selectors[22] = this.handler_createWithValue.selector;
         // Tempo access key handlers (TX11)
-        selectors[22] = this.handler_tempoUseAccessKey.selector;
+        selectors[23] = this.handler_tempoUseAccessKey.selector;
         // Multicall handlers (M1-M9)
-        selectors[23] = this.handler_tempoMulticall.selector;
-        selectors[24] = this.handler_tempoMulticallWithFailure.selector;
-        selectors[25] = this.handler_tempoMulticallStateVisibility.selector;
+        selectors[24] = this.handler_tempoMulticall.selector;
+        selectors[25] = this.handler_tempoMulticallWithFailure.selector;
+        selectors[26] = this.handler_tempoMulticallStateVisibility.selector;
         // Key authorization handlers (K1-K3, K6, K10-K12, K16)
-        selectors[26] = this.handler_keyAuthWrongSigner.selector;
-        selectors[27] = this.handler_keyAuthNotSelf.selector;
-        selectors[28] = this.handler_keyAuthWrongChainId.selector;
-        selectors[29] = this.handler_keySameTxAuthorizeAndUse.selector;
-        selectors[30] = this.handler_keySpendingPeriodReset.selector;
-        selectors[31] = this.handler_keyUnlimitedSpending.selector;
-        selectors[32] = this.handler_keyZeroSpendingLimit.selector;
-        selectors[33] = this.handler_keySigTypeMismatch.selector;
+        selectors[27] = this.handler_keyAuthWrongSigner.selector;
+        selectors[28] = this.handler_keyAuthNotSelf.selector;
+        selectors[29] = this.handler_keyAuthWrongChainId.selector;
+        selectors[30] = this.handler_keySameTxAuthorizeAndUse.selector;
+        selectors[31] = this.handler_keySpendingPeriodReset.selector;
+        selectors[32] = this.handler_keyUnlimitedSpending.selector;
+        selectors[33] = this.handler_keyZeroSpendingLimit.selector;
+        selectors[34] = this.handler_keySigTypeMismatch.selector;
         // Fee handlers (F1-F8)
-        // NOTE: handler_invalidFeeToken disabled - causes EVM panic (see task #49 / BUG-002)
-        selectors[34] = this.handler_feeCollection.selector;
-        selectors[35] = this.handler_feeRefundSuccess.selector;
-        selectors[36] = this.handler_feeNoRefundFailure.selector;
-        selectors[37] = this.handler_feeOnRevert.selector;
-        selectors[38] = this.handler_explicitFeeToken.selector;
+        selectors[35] = this.handler_feeCollection.selector;
+        selectors[36] = this.handler_feeRefundSuccess.selector;
+        selectors[37] = this.handler_feeNoRefundFailure.selector;
+        selectors[38] = this.handler_feeOnRevert.selector;
+        selectors[39] = this.handler_explicitFeeToken.selector;
+        selectors[40] = this.handler_invalidFeeToken.selector;
         // 2D nonce gas tracking (N10/N11)
-        selectors[39] = this.handler_2dNonceGasCost.selector;
+        selectors[41] = this.handler_2dNonceGasCost.selector;
         targetSelector(FuzzSelector({addr: address(this), selectors: selectors}));
 
         // Initialize previous nonce tracking for secp256k1 actors
