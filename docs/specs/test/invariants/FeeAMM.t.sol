@@ -770,14 +770,19 @@ contract FeeAMMInvariantTest is InvariantBaseTest {
             validatorToken == address(pathUSD) ? _pathUsdPolicyId : _tokenPolicyIds[validatorToken];
         vm.assume(registry.isAuthorized(policyId, actor));
 
+        // Ensure pool has sufficient liquidity (initialize if needed)
         IFeeAMM.Pool memory pool = amm.getPool(userToken, validatorToken);
-        vm.assume(pool.reserveUserToken > 0);
+        if (pool.reserveUserToken < 10_000) {
+            _ensureFunds(actor, TIP20(validatorToken), 1_000_000);
+            vm.prank(actor);
+            amm.mint(userToken, validatorToken, 1_000_000, actor);
+            pool = amm.getPool(userToken, validatorToken);
+        }
 
         // Find an amount where (amountOut * N) % SCALE == 0
         // N = 9985, SCALE = 10000, GCD(9985, 10000) = 5
         // So (amountOut * 9985) % 10000 == 0 when amountOut is a multiple of 2000
         uint256 amountOut = 2000;
-        vm.assume(amountOut <= pool.reserveUserToken);
 
         // Verify this is indeed exact division
         vm.assume((amountOut * N) % SCALE == 0);

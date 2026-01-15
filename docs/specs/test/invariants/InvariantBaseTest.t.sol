@@ -108,6 +108,7 @@ abstract contract InvariantBaseTest is BaseTest {
     /// @return actorsAddress Array of created actor addresses
     function _buildActors(uint256 noOfActors_) internal virtual returns (address[] memory) {
         address[] memory actorsAddress = new address[](noOfActors_);
+        uint256 initialBalance = 1_000_000_000_000;
 
         for (uint256 i = 0; i < noOfActors_; i++) {
             address actor = makeAddr(string(abi.encodePacked("Actor", vm.toString(i))));
@@ -115,12 +116,12 @@ abstract contract InvariantBaseTest is BaseTest {
 
             // Initial actor balance for all tokens
             vm.startPrank(admin);
-            if (pathUSD.balanceOf(actor) < amount) {
-                pathUSD.mint(actor, amount + 100_000_000);
+            if (pathUSD.balanceOf(actor) < initialBalance) {
+                pathUSD.mint(actor, initialBalance + 100_000_000);
             }
-            for (uint256 i = 0; i < _tokens.length; i++) {
-                if (_tokens[i].balanceOf(actor) < amount) {
-                    _tokens[i].mint(actor, amount + 100_000_000);
+            for (uint256 j = 0; j < _tokens.length; j++) {
+                if (_tokens[j].balanceOf(actor) < initialBalance) {
+                    _tokens[j].mint(actor, initialBalance + 100_000_000);
                 }
             }
             vm.stopPrank();
