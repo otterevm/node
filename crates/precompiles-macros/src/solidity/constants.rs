@@ -146,7 +146,12 @@ fn generate_calls_enum(constants: &[ConstantDef]) -> TokenStream {
         .iter()
         .map(|c| {
             let name = c.sol_name();
-            (format_ident!("{}", name), format_ident!("{}Call", name), format!("{name}()"), 0usize)
+            (
+                format_ident!("{}", name),
+                format_ident!("{}Call", name),
+                format!("{name}()"),
+                0usize,
+            )
         })
         .unzip4();
 

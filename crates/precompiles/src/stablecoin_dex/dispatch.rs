@@ -6,9 +6,8 @@ use revm::precompile::{PrecompileError, PrecompileResult};
 use tempo_contracts::precompiles::IStablecoinDEX::IStablecoinDEXCalls;
 
 use crate::{
-    Precompile, dispatch_call, input_cost, mutate, mutate_void,
+    dispatch::{Precompile, dispatch_call, input_cost, mutate, mutate_void, view},
     stablecoin_dex::{StablecoinDEX, orderbook::compute_book_key},
-    view,
 };
 
 impl Precompile for StablecoinDEX {

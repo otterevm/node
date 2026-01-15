@@ -203,7 +203,10 @@ impl abi::IToken for TIP20Token {
 
         self.transfer_policy_id.write(new_policy_id)?;
 
-        self.emit_event(TIP20Event::transfer_policy_update(msg_sender, new_policy_id))
+        self.emit_event(TIP20Event::transfer_policy_update(
+            msg_sender,
+            new_policy_id,
+        ))
     }
 
     fn set_supply_cap(&mut self, msg_sender: Address, new_supply_cap: U256) -> Result<()> {
@@ -263,7 +266,10 @@ impl abi::IToken for TIP20Token {
 
         self.next_quote_token.write(new_quote_token)?;
 
-        self.emit_event(TIP20Event::next_quote_token_set(msg_sender, new_quote_token))
+        self.emit_event(TIP20Event::next_quote_token_set(
+            msg_sender,
+            new_quote_token,
+        ))
     }
 
     fn complete_quote_token_update(&mut self, msg_sender: Address) -> Result<()> {
@@ -305,7 +311,12 @@ impl abi::IToken for TIP20Token {
     ) -> Result<()> {
         self._mint(msg_sender, to, amount)?;
 
-        self.emit_event(TIP20Event::transfer_with_memo(Address::ZERO, to, amount, memo))?;
+        self.emit_event(TIP20Event::transfer_with_memo(
+            Address::ZERO,
+            to,
+            amount,
+            memo,
+        ))?;
         self.emit_event(TIP20Event::mint(to, amount))
     }
 
@@ -319,7 +330,12 @@ impl abi::IToken for TIP20Token {
     fn burn_with_memo(&mut self, msg_sender: Address, amount: U256, memo: B256) -> Result<()> {
         self._burn(msg_sender, amount)?;
 
-        self.emit_event(TIP20Event::transfer_with_memo(msg_sender, Address::ZERO, amount, memo))?;
+        self.emit_event(TIP20Event::transfer_with_memo(
+            msg_sender,
+            Address::ZERO,
+            amount,
+            memo,
+        ))?;
         self.emit_event(TIP20Event::burn(msg_sender, amount))
     }
 
@@ -341,9 +357,14 @@ impl abi::IToken for TIP20Token {
         self._transfer(from, Address::ZERO, amount)?;
 
         let total_supply = self.total_supply()?;
-        let new_supply = total_supply
-            .checked_sub(amount)
-            .ok_or(TIP20Error::insufficient_balance(total_supply, amount, self.address))?;
+        let new_supply =
+            total_supply
+                .checked_sub(amount)
+                .ok_or(TIP20Error::insufficient_balance(
+                    total_supply,
+                    amount,
+                    self.address,
+                ))?;
         self.set_total_supply(new_supply)?;
 
         self.emit_event(TIP20Event::burn_blocked(from, amount))
@@ -437,36 +458,36 @@ impl TIP20Token {
     }
 
     /// Only called internally from the factory, which won't try to re-initialize a token.
-        pub fn initialize(
-            &mut self,
-            msg_sender: Address,
-            name: &str,
-            symbol: &str,
-            currency: &str,
-            quote_token: Address,
-            admin: Address,
-        ) -> Result<()> {
-            trace!(%name, address=%self.address, "Initializing token");
+    pub fn initialize(
+        &mut self,
+        msg_sender: Address,
+        name: &str,
+        symbol: &str,
+        currency: &str,
+        quote_token: Address,
+        admin: Address,
+    ) -> Result<()> {
+        trace!(%name, address=%self.address, "Initializing token");
 
-            // must ensure the account is not empty, by setting some code
-            self.__initialize()?;
+        // must ensure the account is not empty, by setting some code
+        self.__initialize()?;
 
-            self.name.write(name.to_string())?;
-            self.symbol.write(symbol.to_string())?;
-            self.currency.write(currency.to_string())?;
+        self.name.write(name.to_string())?;
+        self.symbol.write(symbol.to_string())?;
+        self.currency.write(currency.to_string())?;
 
-            self.quote_token.write(quote_token)?;
-            // Initialize nextQuoteToken to the same value as quoteToken
-            self.next_quote_token.write(quote_token)?;
+        self.quote_token.write(quote_token)?;
+        // Initialize nextQuoteToken to the same value as quoteToken
+        self.next_quote_token.write(quote_token)?;
 
-            // Set default values
-            self.supply_cap.write(U256::from(u128::MAX))?;
-            self.transfer_policy_id.write(1)?;
+        // Set default values
+        self.supply_cap.write(U256::from(u128::MAX))?;
+        self.transfer_policy_id.write(1)?;
 
-            // Initialize roles system and grant admin role
-            self.initialize_roles()?;
-            self.grant_default_admin(msg_sender, admin)
-        }
+        // Initialize roles system and grant admin role
+        self.initialize_roles()?;
+        self.grant_default_admin(msg_sender, admin)
+    }
 
     pub fn get_balance(&self, account: Address) -> Result<U256> {
         self.balances[account].read()
@@ -1542,7 +1563,6 @@ pub(crate) mod tests {
             Ok(())
         })
     }
-
 
     #[test]
     fn test_set_next_quote_token_rejects_path_usd() -> eyre::Result<()> {

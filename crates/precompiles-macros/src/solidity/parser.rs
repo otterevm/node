@@ -92,9 +92,10 @@ impl SolidityModule {
         let name = item.ident.clone();
         let vis = item.vis.clone();
 
-        let content = item.content.as_ref().ok_or_else(|| {
-            syn::Error::new_spanned(&item, "#[abi] requires a module with body")
-        })?;
+        let content = item
+            .content
+            .as_ref()
+            .ok_or_else(|| syn::Error::new_spanned(&item, "#[abi] requires a module with body"))?;
 
         let mut imports = Vec::new();
         let mut structs = Vec::new();
@@ -579,10 +580,7 @@ impl InterfaceDef {
         if methods.is_empty() {
             return Err(syn::Error::new_spanned(
                 item,
-                format!(
-                    "trait `{}` must have at least one method",
-                    item.ident
-                ),
+                format!("trait `{}` must have at least one method", item.ident),
             ));
         }
 
@@ -768,7 +766,9 @@ mod tests {
         // Empty module
         let module = parse_module(quote! { pub mod test {} })?;
         assert_eq!(module.name.to_string(), "test");
-        assert!(module.structs.is_empty() && module.error.is_none() && module.interfaces.is_empty());
+        assert!(
+            module.structs.is_empty() && module.error.is_none() && module.interfaces.is_empty()
+        );
 
         // Struct with derives
         let module = parse_module(quote! {

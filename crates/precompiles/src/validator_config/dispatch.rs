@@ -1,6 +1,7 @@
 use super::ValidatorConfig;
 use crate::{
-    Precompile, dispatch_call, error::TempoPrecompileError, input_cost, mutate_void, view,
+    dispatch::{Precompile, dispatch_call, input_cost, mutate_void, view},
+    error::TempoPrecompileError,
 };
 use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
@@ -61,7 +62,7 @@ impl Precompile for ValidatorConfig {
 mod tests {
     use super::*;
     use crate::{
-        expect_precompile_revert,
+        dispatch::expect_precompile_revert,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
         test_util::{assert_full_coverage, check_selector_coverage},
     };

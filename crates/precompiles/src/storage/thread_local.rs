@@ -9,7 +9,7 @@ use std::{cell::RefCell, fmt::Debug};
 use tempo_chainspec::hardfork::TempoHardfork;
 
 use crate::{
-    Precompile,
+    dispatch::Precompile,
     error::{Result, TempoPrecompileError},
     storage::{PrecompileStorageProvider, evm::EvmPrecompileStorageProvider},
 };

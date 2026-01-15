@@ -6,7 +6,7 @@ use alloy::{
 };
 use futures::future::try_join_all;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_contracts::precompiles::{ITIP20, ITIP403Registry, TIP20Error, ITIP20::grantRoleCall};
+use tempo_contracts::precompiles::{ITIP20, ITIP20::grantRoleCall, ITIP403Registry, TIP20Error};
 use tempo_precompiles::TIP403_REGISTRY_ADDRESS;
 
 use crate::utils::{TestNodeBuilder, await_receipts, setup_test_token};
@@ -847,7 +847,10 @@ async fn test_tip20_pause_blocks_fee_collection() -> eyre::Result<()> {
     alloy::contract::SolCallBuilder::new_sol(
         &admin_provider,
         token.address(),
-        &grantRoleCall { role: *PAUSE_ROLE, account: admin },
+        &grantRoleCall {
+            role: *PAUSE_ROLE,
+            account: admin,
+        },
     )
     .gas(gas)
     .gas_price(gas_price)
@@ -858,7 +861,10 @@ async fn test_tip20_pause_blocks_fee_collection() -> eyre::Result<()> {
     alloy::contract::SolCallBuilder::new_sol(
         &admin_provider,
         token.address(),
-        &grantRoleCall { role: *PAUSE_ROLE, account: user },
+        &grantRoleCall {
+            role: *PAUSE_ROLE,
+            account: user,
+        },
     )
     .gas(gas)
     .gas_price(gas_price)

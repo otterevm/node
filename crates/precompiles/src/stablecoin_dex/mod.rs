@@ -1369,7 +1369,10 @@ mod tests {
         storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
         tip20::{InvalidCurrency, PolicyForbids, TIP20Error},
-        tip403_registry::{TIP403Registry, abi::{IRegistry as _, PolicyType}},
+        tip403_registry::{
+            TIP403Registry,
+            abi::{IRegistry as _, PolicyType},
+        },
     };
 
     use super::*;
@@ -3672,7 +3675,10 @@ mod tests {
 
     #[test]
     fn test_blacklisted_user_cannot_use_internal_balance() -> eyre::Result<()> {
-        use crate::tip403_registry::{TIP403Registry, abi::{IRegistry as _, PolicyType}};
+        use crate::tip403_registry::{
+            TIP403Registry,
+            abi::{IRegistry as _, PolicyType},
+        };
 
         let mut storage = HashMapStorageProvider::new(1);
         StorageCtx::enter(&mut storage, || {

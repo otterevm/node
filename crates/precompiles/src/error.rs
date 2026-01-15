@@ -3,9 +3,10 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use crate::tip20::abi::Error as TIP20Error;
-use crate::tip20_factory::TIP20FactoryError;
-use crate::tip403_registry::TIP403RegistryError;
+use crate::{
+    tip20::abi::Error as TIP20Error, tip20_factory::TIP20FactoryError,
+    tip403_registry::TIP403RegistryError,
+};
 use alloy::{
     primitives::{Selector, U256},
     sol_types::{Panic, PanicKind, SolError, SolInterface},

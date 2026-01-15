@@ -912,9 +912,10 @@ mod tests {
     fn test_function_error_cross_collision() {
         // Function and error with same signature collide
         let mut module = empty_module();
-        module
-            .interfaces
-            .push(make_interface("TestInterface", vec![make_method("transfer", vec![])]));
+        module.interfaces.push(make_interface(
+            "TestInterface",
+            vec![make_method("transfer", vec![])],
+        ));
         module.error = Some(make_error_enum(vec![make_variant("transfer", vec![])]));
 
         let registry = TypeRegistry::from_module(&module).unwrap();

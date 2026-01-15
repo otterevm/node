@@ -4,14 +4,13 @@ use alloy::{
     primitives::{Address, B256, U256},
     providers::{Provider, ProviderBuilder},
     signers::local::MnemonicBuilder,
-    sol_types::SolEvent,
+    sol_types::{SolCall, SolEvent},
 };
 use alloy_eips::eip2718::Encodable2718;
 use alloy_network::{Ethereum, TxSignerSync};
 use alloy_primitives::Bytes;
 use alloy_rpc_types_eth::TransactionRequest;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use alloy::sol_types::SolCall;
 use tempo_contracts::precompiles::{ITIP20, ITIP20Factory};
 use tempo_node::node::TempoNode;
 use tempo_precompiles::{PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, tip20::ISSUER_ROLE};
@@ -80,7 +79,10 @@ where
 
     // Grant issuer role
     let token = ITIP20::ITIP20Instance::new(token_addr, provider.clone());
-    let grant_call = ITIP20::grantRoleCall { role: *ISSUER_ROLE, account: sender_address };
+    let grant_call = ITIP20::grantRoleCall {
+        role: *ISSUER_ROLE,
+        account: sender_address,
+    };
     let grant_tx_req = TransactionRequest::default()
         .to(token_addr)
         .input(grant_call.abi_encode().into());

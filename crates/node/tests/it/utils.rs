@@ -63,7 +63,10 @@ where
     alloy::contract::SolCallBuilder::new_sol(
         &provider,
         &token_addr,
-        &grantRoleCall { role: *ISSUER_ROLE, account: caller },
+        &grantRoleCall {
+            role: *ISSUER_ROLE,
+            account: caller,
+        },
     )
     .send()
     .await?

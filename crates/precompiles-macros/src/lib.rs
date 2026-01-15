@@ -67,7 +67,9 @@ impl Parse for ContractConfig {
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),
-                        format!("unknown attribute `{other}`, expected `addr`, `abi`, or `dispatch`"),
+                        format!(
+                            "unknown attribute `{other}`, expected `addr`, `abi`, or `dispatch`"
+                        ),
                     ));
                 }
             }
@@ -190,7 +192,9 @@ impl Parse for SolidityConfig {
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),
-                        format!("unknown attribute `{other}`, expected `no_reexport` or `dispatch`"),
+                        format!(
+                            "unknown attribute `{other}`, expected `no_reexport` or `dispatch`"
+                        ),
                     ));
                 }
             }
@@ -352,8 +356,6 @@ pub fn abi(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(err) => err.to_compile_error().into(),
     }
 }
-
-
 
 fn gen_contract_output(
     input: DeriveInput,

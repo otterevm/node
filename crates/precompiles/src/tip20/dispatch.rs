@@ -2,9 +2,8 @@
 mod tests {
     use super::*;
     use crate::{
-        Precompile, dispatch_call,
+        dispatch::{Precompile, dispatch_call, input_cost, metadata, mutate, mutate_void, view},
         error::TempoPrecompileError,
-        input_cost, metadata, mutate, mutate_void,
         storage::StorageCtx,
         test_util::{TIP20Setup, setup_storage},
         tip20::{
@@ -13,7 +12,6 @@ mod tests {
             prelude::*,
         },
         tip403_registry::{PolicyType, TIP403Registry, traits::*},
-        view,
     };
     use alloy::{
         primitives::{Address, Bytes, U256, address},

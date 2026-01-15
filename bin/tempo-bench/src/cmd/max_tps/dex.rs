@@ -176,7 +176,10 @@ where
     let grant_role_receipt = alloy::contract::SolCallBuilder::new_sol(
         &provider,
         &token_addr,
-        &grantRoleCall { role: *ISSUER_ROLE, account: admin },
+        &grantRoleCall {
+            role: *ISSUER_ROLE,
+            account: admin,
+        },
     )
     .send()
     .await?

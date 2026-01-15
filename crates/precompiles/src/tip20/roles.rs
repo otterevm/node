@@ -14,7 +14,6 @@ pub use super::{
 pub const DEFAULT_ADMIN_ROLE: B256 = B256::ZERO;
 pub const UNGRANTABLE_ROLE: B256 = B256::new([0xff; 32]);
 
-
 impl abi::IRolesAuth for TIP20Token {
     fn has_role(&self, account: Address, role: B256) -> Result<bool> {
         self.has_role_internal(account, role)

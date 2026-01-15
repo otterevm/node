@@ -1,11 +1,10 @@
 use crate::{
-    Precompile, dispatch_call, input_cost, metadata, mutate, mutate_void,
+    dispatch::{Precompile, dispatch_call, input_cost, metadata, mutate, mutate_void, view},
     storage::Handler,
     tip_fee_manager::{
         ITIPFeeAMM, TipFeeManager,
         amm::{M, MIN_LIQUIDITY, N, SCALE},
     },
-    view,
 };
 use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
@@ -138,7 +137,7 @@ impl Precompile for TipFeeManager {
 mod tests {
     use super::*;
     use crate::{
-        Precompile, expect_precompile_revert,
+        dispatch::{Precompile, expect_precompile_revert},
         storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
         test_util::{TIP20Setup, assert_full_coverage, check_selector_coverage},
         tip_fee_manager::{

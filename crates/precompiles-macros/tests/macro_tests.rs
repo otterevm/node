@@ -349,7 +349,9 @@ mod interface_only {
 fn test_dummy_error_for_interface_only_module() {
     // Module with only Interface should have dummy Error
     assert!(interface_only::Error::SELECTORS.is_empty());
-    assert!(!interface_only::Error::valid_selector([0xde, 0xad, 0xbe, 0xef]));
+    assert!(!interface_only::Error::valid_selector([
+        0xde, 0xad, 0xbe, 0xef
+    ]));
 
     // abi_decode should return error for any input
     let result = <interface_only::Error as SolInterface>::abi_decode(&[0xde, 0xad, 0xbe, 0xef]);
@@ -407,7 +409,11 @@ mod error_and_event_only {
     }
 
     pub enum Event {
-        Updated { #[indexed] account: Address, value: U256 },
+        Updated {
+            #[indexed]
+            account: Address,
+            value: U256,
+        },
     }
 }
 
@@ -503,9 +509,15 @@ fn test_constants_only_module() {
 
     // ConstantsCalls enum should exist and be the unified Calls
     type Calls = constants_only::Calls;
-    assert!(Calls::valid_selector(constants_only::DEFAULT_ADMIN_ROLECall::SELECTOR));
-    assert!(Calls::valid_selector(constants_only::UNGRANTABLE_ROLECall::SELECTOR));
-    assert!(Calls::valid_selector(constants_only::PAUSE_ROLECall::SELECTOR));
+    assert!(Calls::valid_selector(
+        constants_only::DEFAULT_ADMIN_ROLECall::SELECTOR
+    ));
+    assert!(Calls::valid_selector(
+        constants_only::UNGRANTABLE_ROLECall::SELECTOR
+    ));
+    assert!(Calls::valid_selector(
+        constants_only::PAUSE_ROLECall::SELECTOR
+    ));
 
     // Verify IConstants trait exists with the expected methods
     fn _assert_iconstants<T: constants_only::IConstants>() {}
@@ -531,10 +543,18 @@ fn test_constants_with_interface() {
 
     // Both constants and interface calls should have valid selectors
     type Calls = constants_with_interface::Calls;
-    assert!(Calls::valid_selector(constants_with_interface::ADMIN_ROLECall::SELECTOR));
-    assert!(Calls::valid_selector(constants_with_interface::PAUSER_ROLECall::SELECTOR));
-    assert!(Calls::valid_selector(constants_with_interface::hasRoleCall::SELECTOR));
-    assert!(Calls::valid_selector(constants_with_interface::grantRoleCall::SELECTOR));
+    assert!(Calls::valid_selector(
+        constants_with_interface::ADMIN_ROLECall::SELECTOR
+    ));
+    assert!(Calls::valid_selector(
+        constants_with_interface::PAUSER_ROLECall::SELECTOR
+    ));
+    assert!(Calls::valid_selector(
+        constants_with_interface::hasRoleCall::SELECTOR
+    ));
+    assert!(Calls::valid_selector(
+        constants_with_interface::grantRoleCall::SELECTOR
+    ));
 
     // Verify IConstants and IRoles traits exist with the expected methods
     fn _assert_iconstants<T: constants_with_interface::IConstants>() {}

@@ -3,7 +3,7 @@
 #[cfg(any(test, feature = "test-utils"))]
 use crate::error::TempoPrecompileError;
 use crate::{
-    PATH_USD_ADDRESS, Precompile, Result,
+    PATH_USD_ADDRESS, Precompile, Result, TIP20_FACTORY_ADDRESS,
     storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
     tip20::{self, TIP20Error, TIP20Token, abi},
     tip20_factory::{self, TIP20Factory},
@@ -14,7 +14,6 @@ use alloy::{
     sol_types::SolError,
 };
 use revm::precompile::PrecompileError;
-use crate::TIP20_FACTORY_ADDRESS;
 use tempo_contracts::precompiles::UnknownFunctionSelector;
 
 /// Checks that all selectors in an interface have dispatch handlers.

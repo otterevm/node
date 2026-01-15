@@ -1,5 +1,5 @@
 use super::AccountKeychain;
-use crate::{Precompile, dispatch_call, input_cost, mutate_void, view};
+use crate::dispatch::{Precompile, dispatch_call, input_cost, mutate_void, view};
 use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
 use tempo_contracts::precompiles::IAccountKeychain::IAccountKeychainCalls;
