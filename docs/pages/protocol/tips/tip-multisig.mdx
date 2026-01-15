@@ -1,0 +1,523 @@
+---
+title: TIP-XXXX Multisig Precompile
+description: Native multisig wallets as precompiles with deterministic addressing, M-of-N confirmation thresholds, and on-chain transaction execution.
+---
+
+# Multisig Precompile
+
+This document specifies a native multisig system implemented as precompiles on Tempo, enabling M-of-N multi-signature wallets with deterministic addressing.
+
+- **TIP ID**: TIP-XXXX
+- **Authors/Owners**: Tempo Team
+- **Status**: Draft
+- **Related Specs/TIPs**: [TIP-20](/protocol/tip20/spec), [TIP-20 Factory](/protocol/tip20/overview)
+
+---
+
+# Overview
+
+## Abstract
+
+This TIP introduces two precompiles: a **Multisig Factory** that creates multisig wallets at deterministic addresses, and a **Multisig** precompile that manages M-of-N transaction confirmations and execution. Multisig addresses are derived from a hash of the owner list and threshold, enabling address prediction before deployment.
+
+## Motivation
+
+Multi-signature wallets are essential for secure asset management, requiring multiple parties to approve transactions before execution. Current solutions require deploying smart contracts, which:
+
+1. **Lack deterministic addressing**: Wallet addresses cannot be predicted from configuration alone
+2. **Incur deployment costs**: Each multisig requires a contract deployment
+3. **Fragment liquidity**: TIP-20 tokens held in contract wallets behave differently than precompile-based accounts
+
+By implementing multisig as a precompile:
+
+- **Deterministic addresses**: Given owners and threshold, the address is predictable and consistent
+- **Native integration**: Multisig wallets work seamlessly with TIP-20 tokens and other precompiles
+- **Lower costs**: No contract deployment required; only factory interaction
+- **Standardized interface**: All multisigs share the same well-audited logic
+
+---
+
+# Specification
+
+## Address Scheme
+
+### Multisig Factory Address
+
+The Multisig Factory is deployed at a fixed precompile address:
+
+```
+0xF15C000000000000000000000000000000000000
+```
+
+The `F15C` prefix is derived from "mUltiSig" → hex representation mnemonic.
+
+### Multisig Address Derivation
+
+Multisig addresses use a dedicated prefix and deterministic derivation:
+
+```
+MULTISIG_PREFIX (12 bytes) || keccak256(owners, threshold)[0:8] (8 bytes)
+```
+
+Where:
+- `MULTISIG_PREFIX` = `0xF15C000000000000000000000000000000` (12 bytes)
+- `owners` = sorted array of owner addresses (ascending order)
+- `threshold` = required number of confirmations (uint8)
+
+```solidity
+function computeMultisigAddress(address[] memory owners, uint8 threshold) pure returns (address) {
+    // Sort owners ascending to ensure deterministic address
+    address[] memory sorted = sortAscending(owners);
+    bytes32 hash = keccak256(abi.encode(sorted, threshold));
+    
+    bytes20 addr;
+    addr[0:12] = MULTISIG_PREFIX;
+    addr[12:20] = hash[0:8];
+    
+    return address(addr);
+}
+```
+
+### Reserved Addresses
+
+The first 1024 addresses in the multisig address space are reserved for protocol use:
+
+```
+0xF15C000000000000000000000000000000000000 - Factory
+0xF15C000000000000000000000000000000000001 - Reserved
+...
+0xF15C0000000000000000000000000000000003FF - Reserved
+```
+
+---
+
+## Multisig Factory Interface
+
+```solidity
+interface IMultisigFactory {
+    /// @notice Emitted when a new multisig wallet is created
+    /// @param multisig The address of the created multisig
+    /// @param owners Array of owner addresses
+    /// @param threshold Number of required confirmations
+    event MultisigCreated(
+        address indexed multisig,
+        address[] owners,
+        uint8 threshold
+    );
+
+    /// @notice The computed address falls in the reserved range
+    error AddressReserved();
+
+    /// @notice A multisig already exists at this address
+    error MultisigAlreadyExists(address multisig);
+
+    /// @notice Invalid threshold (zero, or greater than owner count)
+    error InvalidThreshold(uint8 threshold, uint8 ownerCount);
+
+    /// @notice Owner list is empty
+    error NoOwners();
+
+    /// @notice Duplicate owner in the list
+    error DuplicateOwner(address owner);
+
+    /// @notice Zero address in owner list
+    error ZeroAddressOwner();
+
+    /// @notice Creates a new multisig wallet
+    /// @param owners Array of owner addresses (will be sorted internally)
+    /// @param threshold Number of required confirmations (1 <= threshold <= owners.length)
+    /// @return multisig The address of the created multisig
+    function createMultisig(
+        address[] calldata owners,
+        uint8 threshold
+    ) external returns (address multisig);
+
+    /// @notice Computes the deterministic address for a multisig configuration
+    /// @param owners Array of owner addresses
+    /// @param threshold Number of required confirmations
+    /// @return The address where the multisig would be deployed
+    function getMultisigAddress(
+        address[] calldata owners,
+        uint8 threshold
+    ) external pure returns (address);
+
+    /// @notice Checks if an address is a deployed multisig
+    /// @param addr The address to check
+    /// @return True if the address is a valid, deployed multisig
+    function isMultisig(address addr) external view returns (bool);
+}
+```
+
+### Factory Behavior
+
+#### `createMultisig`
+
+1. Validate inputs:
+   - Revert with `NoOwners` if `owners.length == 0`
+   - Revert with `ZeroAddressOwner` if any owner is `address(0)`
+   - Revert with `DuplicateOwner` if any owner appears twice
+   - Revert with `InvalidThreshold` if `threshold == 0` or `threshold > owners.length`
+
+2. Sort owners in ascending order
+
+3. Compute the deterministic address
+
+4. Check address validity:
+   - Revert with `AddressReserved` if address is in reserved range
+   - Revert with `MultisigAlreadyExists` if multisig already deployed
+
+5. Initialize the multisig at the computed address with:
+   - Sorted owner list
+   - Threshold value
+   - Empty transaction queue
+
+6. Emit `MultisigCreated` event
+
+7. Return the multisig address
+
+---
+
+## Multisig Interface
+
+```solidity
+interface IMultisig {
+    /// @notice A transaction has been submitted for confirmation
+    /// @param txId The transaction ID
+    /// @param proposer The address that submitted the transaction
+    /// @param to Target address for the transaction
+    /// @param value TIP-20 token address and amount (encoded)
+    /// @param data Calldata for the transaction
+    event TransactionSubmitted(
+        uint256 indexed txId,
+        address indexed proposer,
+        address to,
+        bytes value,
+        bytes data
+    );
+
+    /// @notice An owner has confirmed a transaction
+    /// @param txId The transaction ID
+    /// @param owner The confirming owner
+    /// @param confirmationCount Current number of confirmations
+    event TransactionConfirmed(
+        uint256 indexed txId,
+        address indexed owner,
+        uint8 confirmationCount
+    );
+
+    /// @notice An owner has revoked their confirmation
+    /// @param txId The transaction ID
+    /// @param owner The owner who revoked
+    /// @param confirmationCount Current number of confirmations
+    event ConfirmationRevoked(
+        uint256 indexed txId,
+        address indexed owner,
+        uint8 confirmationCount
+    );
+
+    /// @notice A transaction has been executed
+    /// @param txId The transaction ID
+    /// @param executor The address that triggered execution
+    /// @param success Whether the transaction succeeded
+    /// @param returnData Return data from the call
+    event TransactionExecuted(
+        uint256 indexed txId,
+        address indexed executor,
+        bool success,
+        bytes returnData
+    );
+
+    /// @notice Caller is not an owner
+    error NotOwner(address caller);
+
+    /// @notice Transaction does not exist
+    error TransactionNotFound(uint256 txId);
+
+    /// @notice Transaction already executed
+    error TransactionAlreadyExecuted(uint256 txId);
+
+    /// @notice Owner has already confirmed this transaction
+    error AlreadyConfirmed(uint256 txId, address owner);
+
+    /// @notice Owner has not confirmed this transaction
+    error NotConfirmed(uint256 txId, address owner);
+
+    /// @notice Transaction does not have enough confirmations
+    error InsufficientConfirmations(uint256 txId, uint8 have, uint8 need);
+
+    /// @notice Transaction execution failed
+    error ExecutionFailed(uint256 txId, bytes returnData);
+
+    /// @notice Returns the list of owners
+    function owners() external view returns (address[] memory);
+
+    /// @notice Returns the confirmation threshold
+    function threshold() external view returns (uint8);
+
+    /// @notice Returns the current transaction count (next txId)
+    function transactionCount() external view returns (uint256);
+
+    /// @notice Returns transaction details
+    /// @param txId The transaction ID
+    /// @return to Target address
+    /// @return value Encoded token transfer (token address + amount), or empty for pure calls
+    /// @return data Calldata
+    /// @return executed Whether the transaction has been executed
+    /// @return confirmations Number of confirmations
+    function getTransaction(uint256 txId) external view returns (
+        address to,
+        bytes memory value,
+        bytes memory data,
+        bool executed,
+        uint8 confirmations
+    );
+
+    /// @notice Returns whether an owner has confirmed a transaction
+    /// @param txId The transaction ID
+    /// @param owner The owner address
+    function isConfirmedBy(uint256 txId, address owner) external view returns (bool);
+
+    /// @notice Returns addresses that have confirmed a transaction
+    /// @param txId The transaction ID
+    function getConfirmations(uint256 txId) external view returns (address[] memory);
+
+    /// @notice Submits a new transaction for confirmation
+    /// @dev Also counts as a confirmation from msg.sender
+    /// @param to Target address
+    /// @param value Encoded token transfer: abi.encode(tokenAddress, amount), or empty bytes
+    /// @param data Calldata for the transaction
+    /// @return txId The ID of the submitted transaction
+    function submitTransaction(
+        address to,
+        bytes calldata value,
+        bytes calldata data
+    ) external returns (uint256 txId);
+
+    /// @notice Confirms a pending transaction
+    /// @param txId The transaction ID to confirm
+    function confirmTransaction(uint256 txId) external;
+
+    /// @notice Revokes a confirmation for a pending transaction
+    /// @param txId The transaction ID
+    function revokeConfirmation(uint256 txId) external;
+
+    /// @notice Executes a transaction that has sufficient confirmations
+    /// @param txId The transaction ID to execute
+    function executeTransaction(uint256 txId) external;
+
+    /// @notice Submits, confirms, and executes a transaction in one call
+    /// @dev Reverts if threshold > 1 (cannot execute without other confirmations)
+    /// @param to Target address
+    /// @param value Encoded token transfer
+    /// @param data Calldata
+    /// @return success Whether execution succeeded
+    /// @return returnData Return data from the call
+    function execute(
+        address to,
+        bytes calldata value,
+        bytes calldata data
+    ) external returns (bool success, bytes memory returnData);
+}
+```
+
+### Transaction Structure
+
+Transactions are stored with the following data:
+
+```solidity
+struct Transaction {
+    address to;           // Target address
+    bytes value;          // Encoded: abi.encode(address token, uint256 amount) or empty
+    bytes data;           // Calldata to execute
+    bool executed;        // Has been executed
+    uint8 confirmations;  // Current confirmation count
+}
+```
+
+The `value` field encodes a TIP-20 transfer:
+- Empty bytes (`0x`): No token transfer, just a call
+- `abi.encode(token, amount)`: Transfer `amount` of `token` to `to` before executing `data`
+
+### Multisig Behavior
+
+#### `submitTransaction`
+
+1. Revert with `NotOwner` if `msg.sender` is not an owner
+2. Create transaction with `txId = transactionCount++`
+3. Store transaction data
+4. Auto-confirm for `msg.sender`
+5. Emit `TransactionSubmitted` and `TransactionConfirmed`
+6. Return `txId`
+
+#### `confirmTransaction`
+
+1. Revert with `NotOwner` if `msg.sender` is not an owner
+2. Revert with `TransactionNotFound` if transaction doesn't exist
+3. Revert with `TransactionAlreadyExecuted` if already executed
+4. Revert with `AlreadyConfirmed` if already confirmed by sender
+5. Record confirmation and increment count
+6. Emit `TransactionConfirmed`
+
+#### `revokeConfirmation`
+
+1. Revert with `NotOwner` if `msg.sender` is not an owner
+2. Revert with `TransactionNotFound` if transaction doesn't exist
+3. Revert with `TransactionAlreadyExecuted` if already executed
+4. Revert with `NotConfirmed` if sender hasn't confirmed
+5. Remove confirmation and decrement count
+6. Emit `ConfirmationRevoked`
+
+#### `executeTransaction`
+
+1. Revert with `TransactionNotFound` if transaction doesn't exist
+2. Revert with `TransactionAlreadyExecuted` if already executed
+3. Revert with `InsufficientConfirmations` if `confirmations < threshold`
+4. Mark as executed
+5. If `value` is non-empty:
+   - Decode `(token, amount)` from `value`
+   - Transfer `amount` of `token` from multisig to `to`
+6. If `data` is non-empty:
+   - Execute `to.call(data)` with multisig as `msg.sender`
+7. Emit `TransactionExecuted`
+8. Revert with `ExecutionFailed` if the call failed and user expects success
+
+#### `execute`
+
+Convenience function for 1-of-N multisigs or when all confirmations are ready:
+
+1. Submit transaction
+2. If `confirmations >= threshold`: execute immediately
+3. Otherwise, revert (cannot execute without sufficient confirmations)
+
+---
+
+## Storage Layout
+
+### Multisig Factory Storage
+
+```
+Slot 0: initialized (bool)
+```
+
+No additional storage needed; all validation is stateless.
+
+### Multisig Storage
+
+Each multisig uses the following storage layout at its deterministic address:
+
+```
+Slot 0: initialized (bool)
+Slot 1: threshold (uint8)
+Slot 2: ownerCount (uint8)
+Slot 3: transactionCount (uint256)
+
+Owners array (starting at keccak256("owners")):
+  Slot hash + i: owner[i] (address)
+
+Transactions mapping (at keccak256("transactions", txId)):
+  +0: to (address)
+  +1: value length + first 24 bytes
+  +2+: value continuation (if needed)
+  +N: data length + bytes
+  +N+1: executed (bool) | confirmations (uint8)
+
+Confirmations mapping (at keccak256("confirmations", txId, owner)):
+  bool confirmed
+```
+
+---
+
+## TIP-20 Integration
+
+Multisig wallets can hold and transfer TIP-20 tokens:
+
+1. **Receiving tokens**: Any TIP-20 can be transferred to a multisig address
+2. **Sending tokens**: Owners submit a transaction with `value = abi.encode(token, amount)`
+3. **Calling token functions**: Use `data` field to call `approve`, `transfer`, etc.
+
+Example: Transfer 100 USDC from multisig to recipient:
+
+```solidity
+// Option 1: Using value field
+multisig.submitTransaction(
+    recipient,
+    abi.encode(USDC_ADDRESS, 100e6),
+    "" // No additional calldata
+);
+
+// Option 2: Using data field (direct transfer call)
+multisig.submitTransaction(
+    USDC_ADDRESS,
+    "", // No value
+    abi.encodeCall(ITIP20.transfer, (recipient, 100e6))
+);
+```
+
+---
+
+# Invariants
+
+## Factory Invariants
+
+1. `getMultisigAddress(owners, threshold)` must always return the same address for the same inputs (after sorting)
+2. `createMultisig` must revert if the multisig already exists
+3. `isMultisig` must return `true` if and only if the address was created by the factory
+4. Owner lists must be sorted ascending before address derivation
+5. Duplicate owners must be rejected
+
+## Multisig Invariants
+
+1. Only owners can submit, confirm, or revoke transactions
+2. A transaction can only be executed once
+3. A transaction requires exactly `threshold` confirmations to execute
+4. An owner can only confirm a transaction once
+5. Executed transactions cannot be modified or re-executed
+6. `confirmations` count must equal the number of owners who have confirmed
+7. `transactionCount` must be monotonically increasing
+8. The `owners()` and `threshold()` values must never change after creation
+
+## Security Invariants
+
+1. No transaction can execute with fewer than `threshold` confirmations
+2. Non-owners cannot influence transaction state
+3. Revoked confirmations must decrease the confirmation count
+4. Token transfers in `value` field must respect TIP-403 policies
+
+---
+
+# Test Cases
+
+## Factory Tests
+
+- Create multisig with valid 2-of-3 configuration
+- Create multisig with 1-of-1 configuration
+- Reject duplicate owners
+- Reject zero address owner
+- Reject threshold = 0
+- Reject threshold > owner count
+- Reject creation if multisig exists
+- Verify deterministic address matches prediction
+- Verify owner order doesn't affect address (sorted internally)
+
+## Multisig Tests
+
+- Submit transaction as owner
+- Reject submission from non-owner
+- Confirm transaction as different owner
+- Reject double confirmation
+- Execute when threshold reached
+- Reject execution with insufficient confirmations
+- Revoke confirmation
+- Reject revoke if not confirmed
+- Execute TIP-20 transfer via value field
+- Execute arbitrary call via data field
+- Execute combined value + data transaction
+- Verify events are emitted correctly
+
+## Integration Tests
+
+- Create multisig and transfer TIP-20 tokens
+- 2-of-3 workflow: submit → confirm → confirm → execute
+- 1-of-1 immediate execution via `execute()`
+- Multisig receiving tokens from another account
+- Multisig interacting with DEX
