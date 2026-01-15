@@ -8,46 +8,18 @@ use crate::{
 use alloy::primitives::{Address, U256};
 use tempo_precompiles_macros::{Storable, abi, contract};
 
+#[derive(Debug, Clone, Storable)]
+pub struct PolicyData {
+    // NOTE: enums are defined as u8, and leverage the `#[abi]` macro's `TryInto<u8>` impl
+    pub policy_type: u8,
+    pub admin: Address,
+}
+
 #[contract(abi, dispatch, addr = TIP403_REGISTRY_ADDRESS)]
 pub struct TIP403Registry {
     policy_id_counter: u64,
     policy_data: Mapping<u64, PolicyData>,
     policy_set: Mapping<u64, Mapping<Address, bool>>,
-}
-
-#[derive(Debug, Clone, Storable)]
-pub struct PolicyData {
-    // NOTE: enums are defined as u8, and leverage the sol! macro's `TryInto<u8>` impl
-    pub policy_type: u8,
-    pub admin: Address,
-}
-
-// NOTE(rusowsky): can be removed once revm uses precompiles rather than directly
-// interacting with storage slots.
-impl PolicyData {
-    pub fn decode_from_slot(slot_value: U256) -> Self {
-        use crate::storage::{LayoutCtx, Storable, packing::PackedSlot};
-
-        // NOTE: fine to expect, as `StorageOps` on `PackedSlot` are infallible
-        Self::load(&PackedSlot(slot_value), U256::ZERO, LayoutCtx::FULL)
-            .expect("unable to decode PoliciData from slot")
-    }
-
-    pub fn encode_to_slot(&self) -> U256 {
-        use crate::storage::packing::insert_into_word;
-        use __packing_policy_data::{ADMIN_LOC as A_LOC, POLICY_TYPE_LOC as PT_LOC};
-
-        let encoded = insert_into_word(
-            U256::ZERO,
-            &self.policy_type,
-            PT_LOC.offset_bytes,
-            PT_LOC.size,
-        )
-        .expect("unable to insert 'policy_type'");
-
-        insert_into_word(encoded, &self.admin, A_LOC.offset_bytes, A_LOC.size)
-            .expect("unable to insert 'admin'")
-    }
 }
 
 #[abi(dispatch)]
@@ -87,6 +59,34 @@ pub mod abi {
         PolicyCreated { #[indexed] policy_id: u64, #[indexed] updater: Address, policy_type: PolicyType },
         WhitelistUpdated { #[indexed] policy_id: u64, #[indexed] updater: Address, #[indexed] account: Address, allowed: bool },
         BlacklistUpdated { #[indexed] policy_id: u64, #[indexed] updater: Address, #[indexed] account: Address, restricted: bool },
+    }
+}
+
+// NOTE(rusowsky): can be removed once revm uses precompiles rather than directly
+// interacting with storage slots.
+impl PolicyData {
+    pub fn decode_from_slot(slot_value: U256) -> Self {
+        use crate::storage::{LayoutCtx, Storable, packing::PackedSlot};
+
+        // NOTE: fine to expect, as `StorageOps` on `PackedSlot` are infallible
+        Self::load(&PackedSlot(slot_value), U256::ZERO, LayoutCtx::FULL)
+            .expect("unable to decode PoliciData from slot")
+    }
+
+    pub fn encode_to_slot(&self) -> U256 {
+        use crate::storage::packing::insert_into_word;
+        use __packing_policy_data::{ADMIN_LOC as A_LOC, POLICY_TYPE_LOC as PT_LOC};
+
+        let encoded = insert_into_word(
+            U256::ZERO,
+            &self.policy_type,
+            PT_LOC.offset_bytes,
+            PT_LOC.size,
+        )
+        .expect("unable to insert 'policy_type'");
+
+        insert_into_word(encoded, &self.admin, A_LOC.offset_bytes, A_LOC.size)
+            .expect("unable to insert 'admin'")
     }
 }
 

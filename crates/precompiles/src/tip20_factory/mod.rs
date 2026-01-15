@@ -23,22 +23,6 @@ const TIP20_PREFIX_BYTES: [u8; 12] = [
 #[contract(addr = TIP20_FACTORY_ADDRESS, abi, dispatch)]
 pub struct TIP20Factory {}
 
-/// Computes the deterministic TIP20 address from sender and salt.
-/// Returns the address and the lower bytes used for derivation.
-fn compute_tip20_address(sender: Address, salt: B256) -> (Address, u64) {
-    let hash = keccak256((sender, salt).abi_encode());
-
-    let mut padded = [0u8; 8];
-    padded.copy_from_slice(&hash[..8]);
-    let lower_bytes = u64::from_be_bytes(padded);
-
-    let mut address_bytes = [0u8; 20];
-    address_bytes[..12].copy_from_slice(&TIP20_PREFIX_BYTES);
-    address_bytes[12..].copy_from_slice(&hash[..8]);
-
-    (Address::from(address_bytes), lower_bytes)
-}
-
 #[abi(dispatch)]
 #[rustfmt::skip]
 pub mod abi {
@@ -66,6 +50,22 @@ pub mod abi {
 // pub type TIP20FactoryError = abi::Error;
 // pub type TIP20FactoryEvent = abi::Event;
 pub use IAbi as ITIP20Factory;
+
+/// Computes the deterministic TIP20 address from sender and salt.
+/// Returns the address and the lower bytes used for derivation.
+fn compute_tip20_address(sender: Address, salt: B256) -> (Address, u64) {
+    let hash = keccak256((sender, salt).abi_encode());
+
+    let mut padded = [0u8; 8];
+    padded.copy_from_slice(&hash[..8]);
+    let lower_bytes = u64::from_be_bytes(padded);
+
+    let mut address_bytes = [0u8; 20];
+    address_bytes[..12].copy_from_slice(&TIP20_PREFIX_BYTES);
+    address_bytes[12..].copy_from_slice(&hash[..8]);
+
+    (Address::from(address_bytes), lower_bytes)
+}
 
 // Precompile functions
 impl TIP20Factory {
