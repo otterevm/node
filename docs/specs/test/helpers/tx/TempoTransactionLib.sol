@@ -294,11 +294,18 @@ library TempoTransactionLib {
 
     /// @notice Encodes the calls array as an RLP list.
     /// @dev Each call is encoded as [to, value, data].
+    ///      For CREATE calls (to == address(0)), `to` is encoded as empty string (0x80)
+    ///      to match Rust's TxKind::Create encoding.
     function _encodeCalls(TempoCall[] memory calls) private pure returns (bytes memory) {
         bytes[] memory encodedCalls = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {
             bytes[] memory callFields = new bytes[](3);
-            callFields[0] = TxRlp.encodeString(TxRlp.encodeAddress(calls[i].to));
+            // CREATE is encoded as empty string, CALL is encoded as 20-byte address
+            if (calls[i].to == address(0)) {
+                callFields[0] = TxRlp.encodeString(TxRlp.encodeNone()); // CREATE: empty string
+            } else {
+                callFields[0] = TxRlp.encodeString(TxRlp.encodeAddress(calls[i].to));
+            }
             callFields[1] = TxRlp.encodeString(TxRlp.encodeUint(calls[i].value));
             callFields[2] = TxRlp.encodeString(calls[i].data);
             encodedCalls[i] = TxRlp.encodeRawList(callFields);
