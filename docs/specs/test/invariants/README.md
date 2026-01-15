@@ -38,6 +38,10 @@
 
 - **TEMPO-DEX13**: Anyone can cancel a stale order from a blacklisted maker via `cancelStaleOrder`. The escrowed funds are refunded to the blacklisted maker's internal balance.
 
+### Escrow Precision Invariants
+
+- **TEMPO-DEX20**: When `(base * price) % PRICE_SCALE == 0` (perfectly divisible), escrow calculation must be exact with no +1 rounding. Ceil should equal floor when there's no remainder.
+
 ## FeeAMM
 
 The FeeAMM is a constant-rate AMM used for converting user fee tokens to validator fee tokens. It operates with two fixed rates:
@@ -92,10 +96,8 @@ The FeeAMM is a constant-rate AMM used for converting user fee tokens to validat
 - **TEMPO-AMM21**: Spread between fee swap (M) and rebalance (N) prevents arbitrage - M < N with 15 bps spread.
 - **TEMPO-AMM22**: Rebalance swap rounding always favors the pool - the +1 in the formula ensures pool never loses to rounding, even when `(amountOut * N) % SCALE == 0` (exact division case).
 
-### First Mint Boundary Invariants
+### Burn Rounding Invariants
 
-- **TEMPO-AMM35**: First mint requires `half_amount > MIN_LIQUIDITY`, not `>=`. The boundary case where `amount == 2 * MIN_LIQUIDITY` (i.e., `half_amount == MIN_LIQUIDITY`) must revert with `InsufficientLiquidity`.
-- **TEMPO-AMM36**: First mint with `amount == 2 * MIN_LIQUIDITY + 2` should succeed with `liquidity == 1`.
 - **TEMPO-AMM23**: Burn rounding dust accumulates in pool - integer division rounds down, so users receive <= theoretical amount.
 - **TEMPO-AMM24**: All participants can exit with solvency guaranteed. After distributing all fees and burning all LP positions:
 
