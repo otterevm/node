@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { IAccountKeychain } from "./interfaces/IAccountKeychain.sol";
+import { ITIP20 } from "./interfaces/ITIP20.sol";
 
 /// @title AccountKeychain - Access Key Manager Precompile
 /// @notice Manages authorized Access Keys for accounts, enabling Root Keys to provision
@@ -11,8 +12,9 @@ import { IAccountKeychain } from "./interfaces/IAccountKeychain.sol";
 /// Storage Layout:
 /// ```solidity
 /// contract AccountKeychain {
-///     mapping(address => mapping(address => AuthorizedKey)) private keys;     // slot 0
-///     mapping(bytes32 => mapping(address => uint256)) private spendingLimits; // slot 1
+///     mapping(address => mapping(address => AuthorizedKey)) private keys;           // slot 0
+///     mapping(bytes32 => mapping(address => uint256)) private spendingLimits;       // slot 1
+///     mapping(bytes32 => mapping(bytes32 => uint256)) private currencyLimits;       // slot 2
 /// }
 /// ```
 ///
@@ -22,8 +24,9 @@ import { IAccountKeychain } from "./interfaces/IAccountKeychain.sol";
 /// The keys mapping stores packed AuthorizedKey structs:
 /// - byte 0: signature_type (uint8)
 /// - bytes 1-8: expiry (uint64, little-endian)
-/// - byte 9: enforce_limits (bool)
-/// - byte 10: is_revoked (bool)
+/// - byte 9: enforce_token_limits (bool)
+/// - byte 10: enforce_currency_limits (bool)
+/// - byte 11: is_revoked (bool)
 contract AccountKeychain is IAccountKeychain {
 
     // ============ Storage ============
@@ -33,6 +36,8 @@ contract AccountKeychain is IAccountKeychain {
         uint8 signatureType;
         uint64 expiry;
         bool enforceLimits;
+        bool hasTokenLimits; // TODO: better to be a uint so can set back to 0 on removal
+        bool hasCurrencyLimits; // TODO: better to be a uint so can set back to 0 on removal
         bool isRevoked;
     }
 
@@ -40,7 +45,10 @@ contract AccountKeychain is IAccountKeychain {
     mapping(address => mapping(address => AuthorizedKey)) private keys;
 
     /// @dev Mapping from keccak256(account || keyId) -> token -> spending limit
-    mapping(bytes32 => mapping(address => uint256)) private spendingLimits;
+    mapping(bytes32 => mapping(address => uint256)) private _spendingLimits;
+
+    /// @dev Mapping from keccak256(account || keyId) -> keccak256(currency) -> spending limit
+    mapping(bytes32 => mapping(bytes32 => uint256)) private _currencyLimits;
 
     /// @dev Transient storage for the transaction key
     /// Set by the protocol during transaction validation to indicate which key signed the tx
@@ -51,6 +59,16 @@ contract AccountKeychain is IAccountKeychain {
     /// @dev Compute the hash key for spending limits mapping from account and keyId
     function _spendingLimitKey(address account, address keyId) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(account, keyId));
+    }
+
+    /// @dev Compute the hash key for currency from token address
+    function _currencyKey(address token) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(ITIP20(token).currency()));
+    }
+
+    /// @dev Compute the hash key for currency from currency string
+    function _currencyKey(string memory currency) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(currency));
     }
 
     /// @dev Check that caller is using the root key (transaction key == 0)
@@ -68,7 +86,8 @@ contract AccountKeychain is IAccountKeychain {
         SignatureType signatureType,
         uint64 expiry,
         bool enforceLimits,
-        TokenLimit[] calldata limits
+        TokenLimit[] calldata tokenLimits,
+        CurrencyLimit[] calldata currencyLimits
     ) external {
         // Check that the transaction key for this transaction is zero (main key)
         _requireRootKey();
@@ -97,14 +116,25 @@ contract AccountKeychain is IAccountKeychain {
 
         // Store the new key
         keys[msg.sender][keyId] = AuthorizedKey({
-            signatureType: sigType, expiry: expiry, enforceLimits: enforceLimits, isRevoked: false
+            signatureType: sigType,
+            expiry: expiry,
+            enforceLimits: enforceLimits,
+            hasTokenLimits: tokenLimits.length > 0,
+            hasCurrencyLimits: currencyLimits.length > 0,
+            isRevoked: false
         });
 
-        // Set initial spending limits (only if enforce_limits is true)
+        bytes32 limitKey = _spendingLimitKey(msg.sender, keyId);
+
+        // Set token limits (only if enforceLimits is true)
         if (enforceLimits) {
-            bytes32 limitKey = _spendingLimitKey(msg.sender, keyId);
-            for (uint256 i = 0; i < limits.length; i++) {
-                spendingLimits[limitKey][limits[i].token] = limits[i].amount;
+            for (uint256 i = 0; i < tokenLimits.length; i++) {
+                _spendingLimits[limitKey][tokenLimits[i].token] = tokenLimits[i].amount;
+            }
+
+            for (uint256 i = 0; i < currencyLimits.length; i++) {
+                bytes32 currKey = _currencyKey(currencyLimits[i].currency);
+                _currencyLimits[limitKey][currKey] = currencyLimits[i].amount;
             }
         }
 
@@ -126,8 +156,14 @@ contract AccountKeychain is IAccountKeychain {
         // Mark the key as revoked - this prevents replay attacks by ensuring
         // the same key_id can never be re-authorized for this account.
         // We keep isRevoked=true but clear other fields.
-        keys[msg.sender][keyId] =
-            AuthorizedKey({ signatureType: 0, expiry: 0, enforceLimits: false, isRevoked: true });
+        keys[msg.sender][keyId] = AuthorizedKey({
+            signatureType: 0,
+            expiry: 0,
+            enforceLimits: false,
+            hasTokenLimits: false,
+            hasCurrencyLimits: false,
+            isRevoked: true
+        });
 
         // Note: We don't clear spending limits here - they become inaccessible
 
@@ -156,17 +192,56 @@ contract AccountKeychain is IAccountKeychain {
             revert KeyExpired();
         }
 
-        // If this key had unlimited spending (enforceLimits=false), enable limits now
+        // If this key had no limits enforced, enable limits now
         if (!key.enforceLimits) {
             key.enforceLimits = true;
+            key.hasTokenLimits = true;
         }
 
         // Update the spending limit
         bytes32 limitKey = _spendingLimitKey(msg.sender, keyId);
-        spendingLimits[limitKey][token] = newLimit;
+        _spendingLimits[limitKey][token] = newLimit;
 
         // Emit event
         emit SpendingLimitUpdated(msg.sender, keyId, token, newLimit);
+    }
+
+    /// @inheritdoc IAccountKeychain
+    function updateCurrencyLimit(address keyId, string calldata currency, uint256 newLimit)
+        external
+    {
+        _requireRootKey();
+
+        AuthorizedKey storage key = keys[msg.sender][keyId];
+
+        // Check if key has been revoked
+        if (key.isRevoked) {
+            revert KeyAlreadyRevoked();
+        }
+
+        // Key exists if expiry > 0
+        if (key.expiry == 0) {
+            revert KeyNotFound();
+        }
+
+        // Check if key has expired
+        if (block.timestamp >= key.expiry) {
+            revert KeyExpired();
+        }
+
+        // If this key had no limits enforced, enable limits now
+        if (!key.enforceLimits) {
+            key.enforceLimits = true;
+            key.hasCurrencyLimits = true;
+        }
+
+        // Update the currency limit
+        bytes32 limitKey = _spendingLimitKey(msg.sender, keyId);
+        bytes32 currKey = _currencyKey(currency);
+        _currencyLimits[limitKey][currKey] = newLimit;
+
+        // Emit event
+        emit CurrencyLimitUpdated(msg.sender, keyId, currency, newLimit);
     }
 
     // ============ View Functions ============
@@ -182,6 +257,8 @@ contract AccountKeychain is IAccountKeychain {
                 keyId: address(0),
                 expiry: 0,
                 enforceLimits: false,
+                hasTokenLimits: false,
+                hasCurrencyLimits: false,
                 isRevoked: key.isRevoked
             });
         }
@@ -203,6 +280,8 @@ contract AccountKeychain is IAccountKeychain {
             keyId: keyId,
             expiry: key.expiry,
             enforceLimits: key.enforceLimits,
+            hasTokenLimits: key.hasTokenLimits,
+            hasCurrencyLimits: key.hasCurrencyLimits,
             isRevoked: key.isRevoked
         });
     }
@@ -214,7 +293,18 @@ contract AccountKeychain is IAccountKeychain {
         returns (uint256)
     {
         bytes32 limitKey = _spendingLimitKey(account, keyId);
-        return spendingLimits[limitKey][token];
+        return _spendingLimits[limitKey][token];
+    }
+
+    /// @inheritdoc IAccountKeychain
+    function getRemainingCurrencyLimit(address account, address keyId, string calldata currency)
+        external
+        view
+        returns (uint256)
+    {
+        bytes32 limitKey = _spendingLimitKey(account, keyId);
+        bytes32 currKey = _currencyKey(currency);
+        return _currencyLimits[limitKey][currKey];
     }
 
     /// @inheritdoc IAccountKeychain
@@ -252,7 +342,8 @@ contract AccountKeychain is IAccountKeychain {
             return;
         }
 
-        AuthorizedKey storage key = keys[account][keyId];
+        // cache
+        AuthorizedKey memory key = keys[account][keyId];
 
         // Check if key has been revoked
         if (key.isRevoked) {
@@ -269,17 +360,37 @@ contract AccountKeychain is IAccountKeychain {
             return;
         }
 
-        // Check and update spending limit
-        bytes32 limitKey = _spendingLimitKey(account, keyId);
-        uint256 remaining = spendingLimits[limitKey][token];
+        if (key.hasTokenLimits) {
+            // Check and update spending limit
+            bytes32 limitKey = _spendingLimitKey(account, keyId);
+            uint256 remaining = _spendingLimits[limitKey][token];
 
-        if (amount > remaining) {
-            revert SpendingLimitExceeded();
+            if (amount > remaining) {
+                amount -= remaining;
+                _spendingLimits[limitKey][token] = 0;
+            } else {
+                unchecked {
+                    _spendingLimits[limitKey][token] = remaining - amount;
+                }
+            }
         }
 
-        // Update remaining limit (safe due to above check)
-        unchecked {
-            spendingLimits[limitKey][token] = remaining - amount;
+        if (key.hasCurrencyLimits) {
+            // Check and update currency limit
+            // For simplicity, we assume a 1:1 mapping of token to currency here.
+            // In a real implementation, this would involve currency conversion.
+            bytes32 limitKey = _spendingLimitKey(account, keyId);
+            bytes32 currKey = _currencyKey(token);
+
+            uint256 remaining = _currencyLimits[limitKey][currKey];
+
+            if (amount > remaining) {
+                revert SpendingLimitExceeded();
+            }
+
+            unchecked {
+                _currencyLimits[limitKey][currKey] = remaining - amount;
+            }
         }
     }
 

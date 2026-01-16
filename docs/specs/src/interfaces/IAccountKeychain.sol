@@ -37,12 +37,20 @@ interface IAccountKeychain {
         uint256 amount; // Spending limit amount
     }
 
+    /// @notice Currency spending limit structure
+    struct CurrencyLimit {
+        string currency; // Currency code (e.g., "USD", "EUR", "GBP")
+        uint256 amount; // Spending limit amount
+    }
+
     /// @notice Key information structure
     struct KeyInfo {
         SignatureType signatureType; // Signature type of the key
         address keyId; // The key identifier (address)
         uint64 expiry; // Unix timestamp when key expires (0 = never)
-        bool enforceLimits; // Whether spending limits are enforced for this key
+        bool enforceLimits; // Whether to enforce spending limits for this key
+        bool hasTokenLimits; // Whether per-token spending limits exist
+        bool hasCurrencyLimits; // Whether per-currency spending limits exist
         bool isRevoked; // Whether this key has been revoked
     }
 
@@ -61,6 +69,11 @@ interface IAccountKeychain {
     /// @notice Emitted when a spending limit is updated
     event SpendingLimitUpdated(
         address indexed account, address indexed publicKey, address indexed token, uint256 newLimit
+    );
+
+    /// @notice Emitted when a currency limit is updated
+    event CurrencyLimitUpdated(
+        address indexed account, address indexed publicKey, string currency, uint256 newLimit
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -89,14 +102,16 @@ interface IAccountKeychain {
      * @param signatureType Signature type of the key (0: Secp256k1, 1: P256, 2: WebAuthn)
      * @param expiry Unix timestamp when key expires (0 = never expires)
      * @param enforceLimits Whether to enforce spending limits for this key
-     * @param limits Initial spending limits for tokens (only used if enforceLimits is true)
+     * @param tokenLimits Initial token spending limits (only used if enforceLimits is true)
+     * @param currencyLimits Initial currency spending limits (only used if enforceLimits is true)
      */
     function authorizeKey(
         address keyId,
         SignatureType signatureType,
         uint64 expiry,
         bool enforceLimits,
-        TokenLimit[] calldata limits
+        TokenLimit[] calldata tokenLimits,
+        CurrencyLimit[] calldata currencyLimits
     ) external;
 
     /**
@@ -116,6 +131,16 @@ interface IAccountKeychain {
      * @param newLimit The new spending limit
      */
     function updateSpendingLimit(address keyId, address token, uint256 newLimit) external;
+
+    /**
+     * @notice Update spending limit for a specific currency on an authorized key
+     * @dev MUST only be called in transactions signed by the Root Key
+     *      The protocol enforces this restriction by checking transactionKey[msg.sender]
+     * @param keyId The key ID to update
+     * @param currency The currency code (e.g., "USD", "EUR")
+     * @param newLimit The new spending limit
+     */
+    function updateCurrencyLimit(address keyId, string calldata currency, uint256 newLimit) external;
 
     /*//////////////////////////////////////////////////////////////
                         VIEW FUNCTIONS
@@ -137,6 +162,18 @@ interface IAccountKeychain {
      * @return Remaining spending amount
      */
     function getRemainingLimit(address account, address keyId, address token)
+        external
+        view
+        returns (uint256);
+
+    /**
+     * @notice Get remaining spending limit for a key-currency pair
+     * @param account The account address
+     * @param keyId The key ID
+     * @param currency The currency code (e.g., "USD", "EUR")
+     * @return Remaining spending amount
+     */
+    function getRemainingCurrencyLimit(address account, address keyId, string calldata currency)
         external
         view
         returns (uint256);

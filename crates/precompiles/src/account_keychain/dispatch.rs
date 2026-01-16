@@ -25,9 +25,17 @@ impl Precompile for AccountKeychain {
                         self.update_spending_limit(sender, c)
                     })
                 }
+                IAccountKeychainCalls::updateCurrencyLimit(call) => {
+                    mutate_void(call, msg_sender, |sender, c| {
+                        self.update_currency_limit(sender, c)
+                    })
+                }
                 IAccountKeychainCalls::getKey(call) => view(call, |c| self.get_key(c)),
                 IAccountKeychainCalls::getRemainingLimit(call) => {
                     view(call, |c| self.get_remaining_limit(c))
+                }
+                IAccountKeychainCalls::getRemainingCurrencyLimit(call) => {
+                    view(call, |c| self.get_remaining_currency_limit(c))
                 }
                 IAccountKeychainCalls::getTransactionKey(call) => {
                     view(call, |c| self.get_transaction_key(c, msg_sender))

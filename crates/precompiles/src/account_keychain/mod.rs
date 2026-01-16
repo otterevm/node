@@ -4,8 +4,9 @@ use tempo_contracts::precompiles::{AccountKeychainError, AccountKeychainEvent};
 pub use tempo_contracts::precompiles::{
     IAccountKeychain,
     IAccountKeychain::{
-        KeyInfo, SignatureType, TokenLimit, authorizeKeyCall, getKeyCall, getRemainingLimitCall,
-        getTransactionKeyCall, revokeKeyCall, updateSpendingLimitCall,
+        CurrencyLimit, KeyInfo, SignatureType, TokenLimit, authorizeKeyCall, getKeyCall,
+        getRemainingCurrencyLimitCall, getRemainingLimitCall, getTransactionKeyCall, revokeKeyCall,
+        updateCurrencyLimitCall, updateSpendingLimitCall,
     },
 };
 
@@ -13,6 +14,7 @@ use crate::{
     ACCOUNT_KEYCHAIN_ADDRESS,
     error::Result,
     storage::{Handler, Mapping},
+    tip20::TIP20Token,
 };
 use alloy::primitives::{Address, B256, U256};
 use tempo_precompiles_macros::{Storable, contract};
@@ -22,16 +24,25 @@ use tempo_precompiles_macros::{Storable, contract};
 /// Storage layout (packed into single slot, right-aligned):
 /// - byte 0: signature_type (u8)
 /// - bytes 1-8: expiry (u64, little-endian)
-/// - byte 9: enforce_limits (bool)
-/// - byte 10: is_revoked (bool)
+/// - byte 9: enforce_limits (bool) - master switch
+/// - byte 10: enforce_token_limits (bool) - whether token limits exist
+/// - byte 11: enforce_currency_limits (bool) - whether currency limits exist
+/// - byte 12: is_revoked (bool)
 #[derive(Debug, Clone, Default, PartialEq, Eq, Storable)]
 pub struct AuthorizedKey {
     /// Signature type: 0 = secp256k1, 1 = P256, 2 = WebAuthn
     pub signature_type: u8,
     /// Block timestamp when key expires
     pub expiry: u64,
-    /// Whether to enforce spending limits for this key
+    /// Master switch: whether to enforce spending limits for this key.
+    /// If false, this key has unlimited spending (passthrough).
     pub enforce_limits: bool,
+    /// Whether per-token spending limits exist for this key.
+    /// Only checked if enforce_limits is true.
+    pub enforce_token_limits: bool,
+    /// Whether per-currency spending limits exist for this key.
+    /// Only checked if enforce_limits is true.
+    pub enforce_currency_limits: bool,
     /// Whether this key has been revoked. Once revoked, a key cannot be re-authorized
     /// with the same key_id. This prevents replay attacks.
     pub is_revoked: bool,
@@ -60,6 +71,11 @@ pub struct AccountKeychain {
     // spendingLimits[(account, keyId)][token] -> amount
     // Using a hash of account and keyId as the key to avoid triple nesting
     spending_limits: Mapping<B256, Mapping<Address, U256>>,
+    // currencyLimits[(account, keyId)][currency_hash] -> amount
+    // Using a hash of account and keyId as the outer key to avoid triple nesting
+    // Using a hash of the currency string as the inner key (keccak256(currency))
+    // Stores per-currency spending limits that apply across all tokens with that currency
+    currency_limits: Mapping<B256, Mapping<B256, U256>>,
 
     // WARNING(rusowsky): transient storage slots must always be placed at the very end until the `contract`
     // macro is refactored and has 2 independent layouts (persistent and transient).
@@ -78,6 +94,12 @@ impl AccountKeychain {
         data[..20].copy_from_slice(account.as_slice());
         data[20..].copy_from_slice(key_id.as_slice());
         keccak256(data)
+    }
+
+    /// Create a hash key for currency from currency string
+    fn currency_key(currency: &str) -> B256 {
+        use alloy::primitives::keccak256;
+        keccak256(currency.as_bytes())
     }
 
     /// Initializes the account keychain contract.
@@ -125,16 +147,26 @@ impl AccountKeychain {
             signature_type,
             expiry: call.expiry,
             enforce_limits: call.enforceLimits,
+            enforce_token_limits: !call.tokenLimits.is_empty(),
+            enforce_currency_limits: !call.currencyLimits.is_empty(),
             is_revoked: false,
         };
 
         self.keys[msg_sender][call.keyId].write(new_key)?;
 
-        // Set initial spending limits (only if enforce_limits is true)
+        // Set initial spending limits
+        let limit_key = Self::spending_limit_key(msg_sender, call.keyId);
+
+        // Set token limits (only if enforceLimits is true and tokenLimits is not empty)
         if call.enforceLimits {
-            let limit_key = Self::spending_limit_key(msg_sender, call.keyId);
-            for limit in call.limits {
+            for limit in call.tokenLimits {
                 self.spending_limits[limit_key][limit.token].write(limit.amount)?;
+            }
+
+            // Set currency limits
+            for limit in call.currencyLimits {
+                let currency_key = Self::currency_key(&limit.currency);
+                self.currency_limits[limit_key][currency_key].write(limit.amount)?;
             }
         }
 
@@ -172,8 +204,12 @@ impl AccountKeychain {
         // the same key_id can never be re-authorized for this account.
         // We keep is_revoked=true but clear other fields.
         let revoked_key = AuthorizedKey {
+            signature_type: 0,
+            expiry: 0,
+            enforce_limits: false,
+            enforce_token_limits: false,
+            enforce_currency_limits: false,
             is_revoked: true,
-            ..Default::default()
         };
         self.keys[msg_sender][call.keyId].write(revoked_key)?;
 
@@ -211,9 +247,14 @@ impl AccountKeychain {
             return Err(AccountKeychainError::key_expired().into());
         }
 
-        // If this key had unlimited spending (enforce_limits=false), enable limits now
+        // If this key had no limits enforced, enable limits now
         if !key.enforce_limits {
             key.enforce_limits = true;
+            key.enforce_token_limits = true;
+            self.keys[msg_sender][call.keyId].write(key)?;
+        } else if !key.enforce_token_limits {
+            // If limits were enforced but no token limits existed, add them
+            key.enforce_token_limits = true;
             self.keys[msg_sender][call.keyId].write(key)?;
         }
 
@@ -232,6 +273,56 @@ impl AccountKeychain {
         ))
     }
 
+    /// Update currency spending limit for a key
+    ///
+    /// This can be used to add currency limits to an unlimited key (converting it to limited)
+    /// or to update existing currency limits.
+    pub fn update_currency_limit(
+        &mut self,
+        msg_sender: Address,
+        call: updateCurrencyLimitCall,
+    ) -> Result<()> {
+        let transaction_key = self.transaction_key.t_read()?;
+
+        if transaction_key != Address::ZERO {
+            return Err(AccountKeychainError::unauthorized_caller().into());
+        }
+
+        // Verify key exists, hasn't been revoked, and hasn't expired
+        let mut key = self.load_active_key(msg_sender, call.keyId)?;
+
+        let current_timestamp = self.storage.timestamp().saturating_to::<u64>();
+        if current_timestamp >= key.expiry {
+            return Err(AccountKeychainError::key_expired().into());
+        }
+
+        // If this key had no limits enforced, enable limits now
+        if !key.enforce_limits {
+            key.enforce_limits = true;
+            key.enforce_currency_limits = true;
+            self.keys[msg_sender][call.keyId].write(key)?;
+        } else if !key.enforce_currency_limits {
+            // If limits were enforced but no currency limits existed, add them
+            key.enforce_currency_limits = true;
+            self.keys[msg_sender][call.keyId].write(key)?;
+        }
+
+        // Update the currency limit
+        let limit_key = Self::spending_limit_key(msg_sender, call.keyId);
+        let currency_key = Self::currency_key(&call.currency);
+        self.currency_limits[limit_key][currency_key].write(call.newLimit)?;
+
+        // Emit event
+        self.emit_event(AccountKeychainEvent::CurrencyLimitUpdated(
+            IAccountKeychain::CurrencyLimitUpdated {
+                account: msg_sender,
+                publicKey: call.keyId,
+                currency: call.currency,
+                newLimit: call.newLimit,
+            },
+        ))
+    }
+
     /// Get key information
     pub fn get_key(&self, call: getKeyCall) -> Result<KeyInfo> {
         let key = self.keys[call.account][call.keyId].read()?;
@@ -243,6 +334,8 @@ impl AccountKeychain {
                 keyId: Address::ZERO,
                 expiry: 0,
                 enforceLimits: false,
+                hasTokenLimits: false,
+                hasCurrencyLimits: false,
                 isRevoked: key.is_revoked,
             });
         }
@@ -260,6 +353,8 @@ impl AccountKeychain {
             keyId: call.keyId,
             expiry: key.expiry,
             enforceLimits: key.enforce_limits,
+            hasTokenLimits: key.enforce_token_limits,
+            hasCurrencyLimits: key.enforce_currency_limits,
             isRevoked: key.is_revoked,
         })
     }
@@ -268,6 +363,16 @@ impl AccountKeychain {
     pub fn get_remaining_limit(&self, call: getRemainingLimitCall) -> Result<U256> {
         let limit_key = Self::spending_limit_key(call.account, call.keyId);
         self.spending_limits[limit_key][call.token].read()
+    }
+
+    /// Get remaining currency spending limit
+    pub fn get_remaining_currency_limit(
+        &self,
+        call: getRemainingCurrencyLimitCall,
+    ) -> Result<U256> {
+        let limit_key = Self::spending_limit_key(call.account, call.keyId);
+        let currency_key = Self::currency_key(&call.currency.to_string());
+        self.currency_limits[limit_key][currency_key].read()
     }
 
     /// Get the transaction key used in the current transaction
@@ -358,21 +463,40 @@ impl AccountKeychain {
         // Check key is valid (exists and not revoked)
         let key = self.load_active_key(account, key_id)?;
 
-        // If enforce_limits is false, this key has unlimited spending
+        // If enforce_limits is false, this key has unlimited spending (passthrough)
         if !key.enforce_limits {
             return Ok(());
         }
 
-        // Check and update spending limit
         let limit_key = Self::spending_limit_key(account, key_id);
-        let remaining = self.spending_limits[limit_key][token].read()?;
 
-        if amount > remaining {
-            return Err(AccountKeychainError::spending_limit_exceeded().into());
+        // Check token limit (only if enforceTokenLimits is true)
+        if key.enforce_token_limits {
+            let token_remaining = self.spending_limits[limit_key][token].read()?;
+            if amount > token_remaining {
+                return Err(AccountKeychainError::spending_limit_exceeded().into());
+            }
+            // Update token limit
+            self.spending_limits[limit_key][token].write(token_remaining - amount)?;
         }
 
-        // Update remaining limit
-        self.spending_limits[limit_key][token].write(remaining - amount)
+        // Check currency limit (only if enforceCurrencyLimits is true)
+        if key.enforce_currency_limits {
+            let token_contract = TIP20Token::from_address(token)?;
+            let currency = token_contract.currency()?;
+            let currency_key = Self::currency_key(&currency);
+            let currency_remaining = self.currency_limits[limit_key][currency_key].read()?;
+
+            // Check if amount exceeds remaining limit
+            if amount > currency_remaining {
+                return Err(AccountKeychainError::spending_limit_exceeded().into());
+            }
+
+            // Update currency limit
+            self.currency_limits[limit_key][currency_key].write(currency_remaining - amount)?;
+        }
+
+        Ok(())
     }
 
     /// Authorize a token transfer with access key spending limits
@@ -550,7 +674,8 @@ mod tests {
                 signatureType: SignatureType::Secp256k1,
                 expiry: u64::MAX,
                 enforceLimits: true,
-                limits: vec![],
+                tokenLimits: vec![],
+                currencyLimits: vec![],
             };
             keychain.authorize_key(msg_sender, setup_call)?;
 
@@ -563,7 +688,8 @@ mod tests {
                 signatureType: SignatureType::P256,
                 expiry: u64::MAX,
                 enforceLimits: true,
-                limits: vec![],
+                tokenLimits: vec![],
+                currencyLimits: vec![],
             };
             let auth_result = keychain.authorize_key(msg_sender, auth_call);
             assert!(
@@ -618,7 +744,8 @@ mod tests {
                 signatureType: SignatureType::Secp256k1,
                 expiry: u64::MAX,
                 enforceLimits: false,
-                limits: vec![],
+                tokenLimits: vec![],
+                currencyLimits: vec![],
             };
             keychain.authorize_key(account, auth_call.clone())?;
 
@@ -683,7 +810,8 @@ mod tests {
                 signatureType: SignatureType::Secp256k1,
                 expiry: u64::MAX,
                 enforceLimits: false,
-                limits: vec![],
+                tokenLimits: vec![],
+                currencyLimits: vec![],
             };
             keychain.authorize_key(account, auth_call_1)?;
 
@@ -696,7 +824,8 @@ mod tests {
                 signatureType: SignatureType::P256,
                 expiry: 1000,
                 enforceLimits: true,
-                limits: vec![],
+                tokenLimits: vec![],
+                currencyLimits: vec![],
             };
             keychain.authorize_key(account, auth_call_2)?;
 
@@ -734,10 +863,11 @@ mod tests {
                 signatureType: SignatureType::Secp256k1,
                 expiry: u64::MAX,
                 enforceLimits: true,
-                limits: vec![TokenLimit {
+                tokenLimits: vec![TokenLimit {
                     token,
                     amount: U256::from(100),
                 }],
+                currencyLimits: vec![],
             };
             keychain.authorize_key(eoa, auth_call)?;
 
@@ -846,10 +976,11 @@ mod tests {
                 signatureType: SignatureType::Secp256k1,
                 expiry: u64::MAX,
                 enforceLimits: true,
-                limits: vec![TokenLimit {
+                tokenLimits: vec![TokenLimit {
                     token,
                     amount: U256::from(100),
                 }],
+                currencyLimits: vec![],
             };
             keychain.authorize_key(eoa_alice, auth_call)?;
 
@@ -926,6 +1057,648 @@ mod tests {
             assert!(
                 contract_result.is_ok(),
                 "Contract should still be able to transfer even though Alice's limit is depleted"
+            );
+
+            Ok(())
+        })
+    }
+
+    /// Test that keys with enforce_limits=false have unlimited spending (passthrough).
+    ///
+    /// This test verifies that when a key is authorized with enforce_limits=false,
+    /// it acts as a passthrough key with unlimited spending, regardless of whether
+    /// token or currency limits are provided.
+    #[test]
+    fn test_enforce_limits_false_unlimited_spending() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let unlimited_key = Address::random();
+        let token = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            // Setup: Authorize a key with enforce_limits=false but pass token limits
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            let auth_call = authorizeKeyCall {
+                keyId: unlimited_key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: false, // Master switch is OFF
+                tokenLimits: vec![TokenLimit {
+                    token,
+                    amount: U256::from(100), // Provide limits, but should be ignored
+                }],
+                currencyLimits: vec![],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Verify the key info shows enforceLimits=false
+            let key_info = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: unlimited_key,
+            })?;
+            assert!(!key_info.enforceLimits, "Key should have enforceLimits=false");
+
+            // Verify limits were not stored (should be 0)
+            let stored_limit = keychain.get_remaining_limit(getRemainingLimitCall {
+                account: eoa,
+                keyId: unlimited_key,
+                token,
+            })?;
+            assert_eq!(stored_limit, U256::ZERO, "Limits should not be stored");
+
+            // Switch to using the unlimited key
+            keychain.set_transaction_key(unlimited_key)?;
+
+            // Test: The key should be able to spend unlimited amounts
+            // Even though we "provided" a 100 token limit, it should be ignored
+
+            // Transfer 1000 tokens (way more than the "limit")
+            keychain.authorize_transfer(eoa, token, U256::from(1000))?;
+
+            // Verify limit is still 0 (nothing was deducted)
+            let limit_after = keychain.get_remaining_limit(getRemainingLimitCall {
+                account: eoa,
+                keyId: unlimited_key,
+                token,
+            })?;
+            assert_eq!(
+                limit_after,
+                U256::ZERO,
+                "No limit should be deducted for passthrough key"
+            );
+
+            // Transfer another 10000 tokens (unlimited spending)
+            keychain.authorize_transfer(eoa, token, U256::from(10000))?;
+
+            // Still should succeed with no limit tracking
+            let final_limit = keychain.get_remaining_limit(getRemainingLimitCall {
+                account: eoa,
+                keyId: unlimited_key,
+                token,
+            })?;
+            assert_eq!(
+                final_limit,
+                U256::ZERO,
+                "Passthrough key should never track limits"
+            );
+
+            Ok(())
+        })
+    }
+
+    /// Test that updating spending limits on an unlimited key enables enforce_limits.
+    ///
+    /// This test verifies that when you call updateSpendingLimit on a key that has
+    /// enforce_limits=false, it automatically enables the enforce_limits flag and
+    /// starts enforcing limits.
+    #[test]
+    fn test_update_limit_enables_enforce_limits() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+        let token = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            // Setup: Authorize a key with enforce_limits=false (unlimited)
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: false, // Unlimited key
+                tokenLimits: vec![],
+                currencyLimits: vec![],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Verify initially unlimited
+            let key_info = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: key,
+            })?;
+            assert!(!key_info.enforceLimits, "Key should start as unlimited");
+
+            // Update spending limit (should enable enforce_limits)
+            let update_call = updateSpendingLimitCall {
+                keyId: key,
+                token,
+                newLimit: U256::from(500),
+            };
+            keychain.update_spending_limit(eoa, update_call)?;
+
+            // Verify enforce_limits is now enabled
+            let key_info_after = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: key,
+            })?;
+            assert!(
+                key_info_after.enforceLimits,
+                "Updating limit should enable enforceLimits"
+            );
+            assert!(
+                key_info_after.hasTokenLimits,
+                "hasTokenLimits should be true"
+            );
+
+            // Verify the limit was set
+            let limit = keychain.get_remaining_limit(getRemainingLimitCall {
+                account: eoa,
+                keyId: key,
+                token,
+            })?;
+            assert_eq!(limit, U256::from(500), "Limit should be set to 500");
+
+            // Now limits should be enforced
+            keychain.set_transaction_key(key)?;
+
+            // Spend within limit should work
+            keychain.authorize_transfer(eoa, token, U256::from(200))?;
+
+            let remaining = keychain.get_remaining_limit(getRemainingLimitCall {
+                account: eoa,
+                keyId: key,
+                token,
+            })?;
+            assert_eq!(remaining, U256::from(300), "Limit should be deducted");
+
+            // Exceeding limit should fail
+            let exceed_result = keychain.authorize_transfer(eoa, token, U256::from(400));
+            assert!(
+                exceed_result.is_err(),
+                "Should fail when exceeding spending limit"
+            );
+
+            Ok(())
+        })
+    }
+
+    /// Test authorizing a key with currency limits and verifying they are stored.
+    #[test]
+    fn test_authorize_key_with_currency_limits() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            // Authorize key with currency limits
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: true,
+                tokenLimits: vec![],
+                currencyLimits: vec![
+                    CurrencyLimit {
+                        currency: "USD".to_string(),
+                        amount: U256::from(1000),
+                    },
+                    CurrencyLimit {
+                        currency: "EUR".to_string(),
+                        amount: U256::from(500),
+                    },
+                ],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Verify key info
+            let key_info = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: key,
+            })?;
+            assert!(key_info.enforceLimits, "enforceLimits should be true");
+            assert!(
+                key_info.hasCurrencyLimits,
+                "hasCurrencyLimits should be true"
+            );
+            assert!(
+                !key_info.hasTokenLimits,
+                "hasTokenLimits should be false"
+            );
+
+            // Verify USD limit
+            let usd_limit = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(usd_limit, U256::from(1000), "USD limit should be 1000");
+
+            // Verify EUR limit
+            let eur_limit = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "EUR".to_string(),
+                },
+            )?;
+            assert_eq!(eur_limit, U256::from(500), "EUR limit should be 500");
+
+            Ok(())
+        })
+    }
+
+    /// Integration test: Currency limits are enforced across multiple tokens with the same currency.
+    ///
+    /// This is the key feature: if you have a USD limit of 1000, it applies to ALL tokens
+    /// that return "USD" as their currency, not just a single token.
+    ///
+    /// This test uses REAL TIP20 tokens to test the full enforcement logic.
+    #[test]
+    fn test_currency_limits_enforced_across_multiple_tokens() -> eyre::Result<()> {
+        use crate::test_util::TIP20Setup;
+        use crate::storage::ContractStorage;
+
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+        let admin = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            // Create two TIP20 tokens, both with USD currency
+            let usdc = TIP20Setup::create("USD Coin", "USDC", admin)
+                .currency("USD")
+                .with_issuer(admin)
+                .with_mint(eoa, U256::from(10000))
+                .apply()?;
+            let usdc_address = usdc.address();
+
+            let usdt = TIP20Setup::create("Tether", "USDT", admin)
+                .currency("USD")
+                .with_issuer(admin)
+                .with_mint(eoa, U256::from(10000))
+                .apply()?;
+            let usdt_address = usdt.address();
+
+            // Verify both tokens have USD currency
+            assert_eq!(usdc.currency()?, "USD");
+            assert_eq!(usdt.currency()?, "USD");
+
+            // Initialize account keychain
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            // Authorize key with USD currency limit of 1000
+            // This should apply to BOTH USDC and USDT since both are USD
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: true,
+                tokenLimits: vec![],
+                currencyLimits: vec![CurrencyLimit {
+                    currency: "USD".to_string(),
+                    amount: U256::from(1000),
+                }],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Switch to using the access key
+            keychain.set_transaction_key(key)?;
+
+            // Test 1: Transfer 400 USDC - should succeed and deduct from USD limit
+            keychain.verify_and_update_spending(eoa, key, usdc_address, U256::from(400))?;
+
+            let usd_remaining = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(
+                usd_remaining,
+                U256::from(600),
+                "USD limit should be reduced to 600 after USDC transfer"
+            );
+
+            // Test 2: Transfer 300 USDT - should succeed and deduct from SAME USD limit
+            keychain.verify_and_update_spending(eoa, key, usdt_address, U256::from(300))?;
+
+            let usd_after_usdt = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(
+                usd_after_usdt,
+                U256::from(300),
+                "USD limit should be reduced to 300 after USDT transfer (shared limit)"
+            );
+
+            // Test 3: Try to transfer 400 USDC - should FAIL (only 300 USD remaining)
+            let exceed_result =
+                keychain.verify_and_update_spending(eoa, key, usdc_address, U256::from(400));
+            assert!(
+                exceed_result.is_err(),
+                "Should fail when exceeding shared USD currency limit"
+            );
+            assert!(
+                matches!(
+                    exceed_result.unwrap_err(),
+                    TempoPrecompileError::AccountKeychainError(
+                        AccountKeychainError::SpendingLimitExceeded(_)
+                    )
+                ),
+                "Should return SpendingLimitExceeded error"
+            );
+
+            // Test 4: Transfer remaining 300 USDT - should succeed
+            keychain.verify_and_update_spending(eoa, key, usdt_address, U256::from(300))?;
+
+            let usd_depleted = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(
+                usd_depleted,
+                U256::ZERO,
+                "USD limit should be fully depleted"
+            );
+
+            // Test 5: Any further transfers should fail
+            let final_result =
+                keychain.verify_and_update_spending(eoa, key, usdc_address, U256::from(1));
+            assert!(
+                final_result.is_err(),
+                "Should fail when USD limit is depleted"
+            );
+
+            Ok(())
+        })
+    }
+
+    /// Test updating currency limits on an existing key.
+    #[test]
+    fn test_update_currency_limit() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            // Authorize key with initial currency limits
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: true,
+                tokenLimits: vec![],
+                currencyLimits: vec![CurrencyLimit {
+                    currency: "USD".to_string(),
+                    amount: U256::from(500),
+                }],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Verify initial limit
+            let initial = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(initial, U256::from(500));
+
+            // Update USD limit to 2000
+            let update_call = updateCurrencyLimitCall {
+                keyId: key,
+                currency: "USD".to_string(),
+                newLimit: U256::from(2000),
+            };
+            keychain.update_currency_limit(eoa, update_call)?;
+
+            // Verify updated limit
+            let updated = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(updated, U256::from(2000));
+
+            Ok(())
+        })
+    }
+
+    /// Test adding currency limits to an unlimited key via updateCurrencyLimit.
+    #[test]
+    fn test_update_currency_limit_enables_enforce_limits() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            // Authorize unlimited key
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: false, // Unlimited
+                tokenLimits: vec![],
+                currencyLimits: vec![],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Verify initially unlimited
+            let key_info = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: key,
+            })?;
+            assert!(!key_info.enforceLimits);
+            assert!(!key_info.hasCurrencyLimits);
+
+            // Add currency limit (should enable enforce_limits)
+            let update_call = updateCurrencyLimitCall {
+                keyId: key,
+                currency: "EUR".to_string(),
+                newLimit: U256::from(750),
+            };
+            keychain.update_currency_limit(eoa, update_call)?;
+
+            // Verify enforce_limits is now enabled
+            let key_info_after = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: key,
+            })?;
+            assert!(key_info_after.enforceLimits, "enforceLimits should be true");
+            assert!(
+                key_info_after.hasCurrencyLimits,
+                "hasCurrencyLimits should be true"
+            );
+
+            // Verify the limit was set
+            let limit = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "EUR".to_string(),
+                },
+            )?;
+            assert_eq!(limit, U256::from(750));
+
+            Ok(())
+        })
+    }
+
+    /// Test that both token and currency limits can be set on the same key.
+    #[test]
+    fn test_combined_token_and_currency_limits() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+        let usdc_token = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+            keychain.set_tx_origin(eoa)?;
+
+            // Authorize key with BOTH token limits and currency limits
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: true,
+                tokenLimits: vec![TokenLimit {
+                    token: usdc_token,
+                    amount: U256::from(100),
+                }],
+                currencyLimits: vec![CurrencyLimit {
+                    currency: "USD".to_string(),
+                    amount: U256::from(1000),
+                }],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Verify key info shows both limit types
+            let key_info = keychain.get_key(getKeyCall {
+                account: eoa,
+                keyId: key,
+            })?;
+            assert!(key_info.enforceLimits);
+            assert!(key_info.hasTokenLimits);
+            assert!(key_info.hasCurrencyLimits);
+
+            // Verify token limit
+            let token_limit = keychain.get_remaining_limit(getRemainingLimitCall {
+                account: eoa,
+                keyId: key,
+                token: usdc_token,
+            })?;
+            assert_eq!(token_limit, U256::from(100));
+
+            // Verify currency limit
+            let currency_limit = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(currency_limit, U256::from(1000));
+
+            Ok(())
+        })
+    }
+
+    /// Test that missing currency limits (zero value) are treated as unlimited.
+    #[test]
+    fn test_missing_currency_limit_is_unlimited() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let eoa = Address::random();
+        let key = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+
+            // Authorize key with only USD limit, no EUR limit
+            let auth_call = authorizeKeyCall {
+                keyId: key,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: true,
+                tokenLimits: vec![],
+                currencyLimits: vec![CurrencyLimit {
+                    currency: "USD".to_string(),
+                    amount: U256::from(1000),
+                }],
+            };
+            keychain.authorize_key(eoa, auth_call)?;
+
+            // Check USD limit exists
+            let usd_limit = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "USD".to_string(),
+                },
+            )?;
+            assert_eq!(usd_limit, U256::from(1000));
+
+            // Check EUR limit (not set) returns 0, which means unlimited
+            let eur_limit = keychain.get_remaining_currency_limit(
+                getRemainingCurrencyLimitCall {
+                    account: eoa,
+                    keyId: key,
+                    currency: "EUR".to_string(),
+                },
+            )?;
+            assert_eq!(
+                eur_limit,
+                U256::ZERO,
+                "Missing currency limit should be 0 (unlimited)"
             );
 
             Ok(())

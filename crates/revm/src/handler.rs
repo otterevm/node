@@ -848,7 +848,8 @@ where
                     signatureType: signature_type,
                     expiry,
                     enforceLimits: enforce_limits,
-                    limits: precompile_limits,
+                    tokenLimits: precompile_limits,
+                    currencyLimits: vec![],
                 };
 
                 // Call precompile to authorize the key (same phase as nonce increment)

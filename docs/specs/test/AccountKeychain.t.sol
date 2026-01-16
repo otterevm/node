@@ -43,7 +43,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             true, // Enforce spending limits
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         IAccountKeychain.KeyInfo memory info = keychain.getKey(alice, aliceAccessKey);
@@ -77,7 +78,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 1 days),
             true, // Enforce spending limits
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         IAccountKeychain.KeyInfo memory info = keychain.getKey(alice, aliceAccessKey);
@@ -105,7 +107,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.WebAuthn,
             uint64(block.timestamp + 1 days),
             false, // No spending limits enforced
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         IAccountKeychain.KeyInfo memory info = keychain.getKey(alice, aliceAccessKey);
@@ -125,7 +128,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify key exists
@@ -157,7 +161,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify initial limit
@@ -182,7 +187,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false, // No limits initially
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify key has no limits
@@ -236,7 +242,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         keychain.revokeKey(aliceAccessKey);
 
@@ -261,7 +268,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         ) {
             revert CallShouldHaveReverted();
         } catch (bytes memory err) {
@@ -282,7 +290,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Try to authorize same key again
@@ -291,7 +300,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 2 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         ) {
             revert CallShouldHaveReverted();
         } catch (bytes memory err) {
@@ -312,7 +322,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         keychain.revokeKey(aliceAccessKey);
 
@@ -322,7 +333,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         ) {
             revert CallShouldHaveReverted();
         } catch (bytes memory err) {
@@ -369,7 +381,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         keychain.revokeKey(aliceAccessKey);
 
@@ -390,7 +403,12 @@ contract AccountKeychainTest is BaseTest {
 
         uint64 expiry = uint64(block.timestamp + 1 hours);
         keychain.authorizeKey(
-            aliceAccessKey, IAccountKeychain.SignatureType.P256, expiry, false, limits
+            aliceAccessKey,
+            IAccountKeychain.SignatureType.P256,
+            expiry,
+            false,
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Warp time past expiry
@@ -418,7 +436,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify USDT limit is 0 initially
@@ -448,7 +467,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false, // enforceLimits = false
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify limits were NOT stored (should be 0)
@@ -473,7 +493,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             0, // Zero expiry
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Key should appear non-existent because expiry=0 is the "not exists" sentinel
@@ -495,7 +516,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         keychain.revokeKey(aliceAccessKey);
 
@@ -505,7 +527,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify new key is authorized
@@ -541,7 +564,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         assertEq(
             uint8(keychain.getKey(alice, aliceAccessKey).signatureType),
@@ -555,7 +579,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         assertEq(
             uint8(keychain.getKey(bob, bobAccessKey).signatureType),
@@ -569,7 +594,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.WebAuthn,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         assertEq(
             uint8(keychain.getKey(charlie, charlieAccessKey).signatureType),
@@ -592,11 +618,23 @@ contract AccountKeychainTest is BaseTest {
         address sharedKeyId = address(0x9999);
 
         vm.prank(alice);
-        keychain.authorizeKey(sharedKeyId, IAccountKeychain.SignatureType.P256, 100, true, limits1);
+        keychain.authorizeKey(
+            sharedKeyId,
+            IAccountKeychain.SignatureType.P256,
+            100,
+            true,
+            limits1,
+            new IAccountKeychain.CurrencyLimit[](0)
+        );
 
         vm.prank(bob);
         keychain.authorizeKey(
-            sharedKeyId, IAccountKeychain.SignatureType.Secp256k1, 200, true, limits2
+            sharedKeyId,
+            IAccountKeychain.SignatureType.Secp256k1,
+            200,
+            true,
+            limits2,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify keys are isolated per account
@@ -623,21 +661,24 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         keychain.authorizeKey(
             bobAccessKey,
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
         keychain.authorizeKey(
             charlieAccessKey,
             IAccountKeychain.SignatureType.WebAuthn,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify all keys exist with correct types
@@ -676,7 +717,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         vm.stopPrank();
@@ -692,7 +734,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             false,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         if (!isTempo) {
@@ -716,7 +759,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         if (!isTempo) {
@@ -748,7 +792,12 @@ contract AccountKeychainTest is BaseTest {
         IAccountKeychain.TokenLimit[] memory limits = new IAccountKeychain.TokenLimit[](0);
 
         keychain.authorizeKey(
-            keyId, IAccountKeychain.SignatureType(sigType), expiry, enforceLimits, limits
+            keyId,
+            IAccountKeychain.SignatureType(sigType),
+            expiry,
+            enforceLimits,
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         IAccountKeychain.KeyInfo memory info = keychain.getKey(alice, keyId);
@@ -782,7 +831,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.P256,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Verify limits are stored
@@ -811,7 +861,8 @@ contract AccountKeychainTest is BaseTest {
             IAccountKeychain.SignatureType.Secp256k1,
             uint64(block.timestamp + 1 days),
             true,
-            limits
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
         );
 
         // Update the spending limit
@@ -831,7 +882,14 @@ contract AccountKeychainTest is BaseTest {
 
         IAccountKeychain.TokenLimit[] memory limits = new IAccountKeychain.TokenLimit[](0);
 
-        keychain.authorizeKey(keyId, IAccountKeychain.SignatureType.P256, expiry, false, limits);
+        keychain.authorizeKey(
+            keyId,
+            IAccountKeychain.SignatureType.P256,
+            expiry,
+            false,
+            limits,
+            new IAccountKeychain.CurrencyLimit[](0)
+        );
 
         // Verify key exists
         IAccountKeychain.KeyInfo memory infoBefore = keychain.getKey(alice, keyId);
@@ -886,10 +944,24 @@ contract AccountKeychainTest is BaseTest {
 
         // Authorize same keyId for two different accounts
         vm.prank(account1);
-        keychain.authorizeKey(keyId, IAccountKeychain.SignatureType.P256, 100, true, limits1);
+        keychain.authorizeKey(
+            keyId,
+            IAccountKeychain.SignatureType.P256,
+            100,
+            true,
+            limits1,
+            new IAccountKeychain.CurrencyLimit[](0)
+        );
 
         vm.prank(account2);
-        keychain.authorizeKey(keyId, IAccountKeychain.SignatureType.Secp256k1, 200, true, limits2);
+        keychain.authorizeKey(
+            keyId,
+            IAccountKeychain.SignatureType.Secp256k1,
+            200,
+            true,
+            limits2,
+            new IAccountKeychain.CurrencyLimit[](0)
+        );
 
         // Verify keys are isolated per account
         IAccountKeychain.KeyInfo memory info1 = keychain.getKey(account1, keyId);

@@ -22,6 +22,26 @@ pub struct TokenLimit {
     pub limit: U256,
 }
 
+/// Currency spending limit for access keys
+///
+/// Defines a per-currency spending limit for an access key provisioned via key_authorization.
+/// This limit is enforced by the AccountKeychain precompile when the key is used. The currency
+/// is determined by calling the TIP20 token's `currency()` method. This allows a single limit
+/// to apply across multiple tokens that share the same currency (e.g., both USDC and USDT for USD).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, alloy_rlp::RlpEncodable, alloy_rlp::RlpDecodable)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "reth-codec", derive(reth_codecs::Compact))]
+#[cfg_attr(test, reth_codecs::add_arbitrary_tests(compact, rlp))]
+pub struct CurrencyLimit {
+    /// Currency code (e.g., "USD", "EUR", "GBP")
+    pub currency: String,
+
+    /// Maximum spending amount in this currency (enforced over the key's lifetime)
+    pub limit: U256,
+}
+
 /// Key authorization for provisioning access keys
 ///
 /// Used in TempoTransaction to add a new key to the AccountKeychain precompile.
@@ -58,6 +78,13 @@ pub struct KeyAuthorization {
     /// - `Some([])` = no spending allowed (enforce_limits=true but no tokens allowed)
     /// - `Some([TokenLimit{...}])` = specific limits enforced
     pub limits: Option<Vec<TokenLimit>>,
+
+    /// Currency spending limits for this key.
+    /// - `None` (RLP 0x80) = no currency limits (tokens checked individually)
+    /// - `Some([])` = no currency limits set
+    /// - `Some([CurrencyLimit{...}])` = specific currency limits enforced
+    /// Currency limits are checked in addition to token limits (both must pass if set).
+    pub currency_limits: Option<Vec<CurrencyLimit>>,
 }
 
 impl KeyAuthorization {
@@ -93,6 +120,13 @@ impl KeyAuthorization {
                 .limits
                 .as_ref()
                 .map_or(0, |limits| limits.capacity() * size_of::<TokenLimit>())
+            + self.currency_limits.as_ref().map_or(0, |currency_limits| {
+                currency_limits.capacity() * size_of::<CurrencyLimit>()
+                    + currency_limits
+                        .iter()
+                        .map(|cl| cl.currency.capacity())
+                        .sum::<usize>()
+            })
     }
 }
 
@@ -163,6 +197,7 @@ impl<'a> arbitrary::Arbitrary<'a> for KeyAuthorization {
             // Ensure that Some(0) is not generated as it's becoming `None` after RLP roundtrip.
             expiry: u.arbitrary::<Option<u64>>()?.filter(|v| *v != 0),
             limits: u.arbitrary()?,
+            currency_limits: u.arbitrary()?,
         })
     }
 }
@@ -182,6 +217,7 @@ mod tests {
             key_id: Address::random(),
             expiry,
             limits,
+            currency_limits: None,
         }
     }
 

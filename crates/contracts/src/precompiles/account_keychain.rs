@@ -27,12 +27,20 @@ crate::sol! {
             uint256 amount;
         }
 
+        /// Currency spending limit structure
+        struct CurrencyLimit {
+            string currency;
+            uint256 amount;
+        }
+
         /// Key information structure
         struct KeyInfo {
             SignatureType signatureType;
             address keyId;
             uint64 expiry;
             bool enforceLimits;
+            bool hasTokenLimits;
+            bool hasCurrencyLimits;
             bool isRevoked;
         }
         /// Emitted when a new key is authorized
@@ -44,18 +52,23 @@ crate::sol! {
         /// Emitted when a spending limit is updated
         event SpendingLimitUpdated(address indexed account, address indexed publicKey, address indexed token, uint256 newLimit);
 
+        /// Emitted when a currency limit is updated
+        event CurrencyLimitUpdated(address indexed account, address indexed publicKey, string currency, uint256 newLimit);
+
         /// Authorize a new key for the caller's account
         /// @param keyId The key identifier (address derived from public key)
         /// @param signatureType 0: secp256k1, 1: P256, 2: WebAuthn
         /// @param expiry Block timestamp when the key expires (u64::MAX for never expires)
         /// @param enforceLimits Whether to enforce spending limits for this key
-        /// @param limits Initial spending limits for tokens (only used if enforceLimits is true)
+        /// @param tokenLimits Initial token spending limits (only used if enforceLimits is true)
+        /// @param currencyLimits Initial currency spending limits (only used if enforceLimits is true)
         function authorizeKey(
             address keyId,
             SignatureType signatureType,
             uint64 expiry,
             bool enforceLimits,
-            TokenLimit[] calldata limits
+            TokenLimit[] calldata tokenLimits,
+            CurrencyLimit[] calldata currencyLimits
         ) external;
 
         /// Revoke an authorized key
@@ -69,6 +82,16 @@ crate::sol! {
         function updateSpendingLimit(
             address keyId,
             address token,
+            uint256 newLimit
+        ) external;
+
+        /// Update currency spending limit for a key
+        /// @param keyId The key identifier
+        /// @param currency The currency code (e.g., "USD", "EUR")
+        /// @param newLimit The new spending limit
+        function updateCurrencyLimit(
+            address keyId,
+            string calldata currency,
             uint256 newLimit
         ) external;
 
@@ -87,6 +110,17 @@ crate::sol! {
             address account,
             address keyId,
             address token
+        ) external view returns (uint256);
+
+        /// Get remaining currency spending limit
+        /// @param account The account address
+        /// @param keyId The key identifier
+        /// @param currency The currency code (e.g., "USD", "EUR")
+        /// @return Remaining spending amount
+        function getRemainingCurrencyLimit(
+            address account,
+            address keyId,
+            string calldata currency
         ) external view returns (uint256);
 
         /// Get the key used in the current transaction
