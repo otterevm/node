@@ -11742,6 +11742,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tempo-bridge-exex"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "eyre",
+ "futures",
+ "k256",
+ "reth-exex",
+ "reth-node-api",
+ "reth-primitives-traits",
+ "reth-provider",
+ "serde",
+ "tempfile",
+ "tempo-contracts",
+ "tempo-primitives",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
 name = "tempo-chainspec"
 version = "1.0.0-rc.7"
 dependencies = [

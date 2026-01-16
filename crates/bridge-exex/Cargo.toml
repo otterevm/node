@@ -1,0 +1,45 @@
+[package]
+name = "tempo-bridge-exex"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "ExEx sidecar for Tempo stablecoin bridge"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Tempo
+tempo-primitives = { path = "../primitives" }
+tempo-contracts = { path = "../contracts" }
+
+# Alloy
+alloy = { workspace = true, features = ["full", "signer-local"] }
+alloy-primitives = { workspace = true }
+
+# Reth ExEx
+reth-exex = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
+reth-node-api = { workspace = true }
+reth-primitives-traits = { workspace = true }
+reth-provider = { workspace = true }
+
+# Async
+tokio = { workspace = true, features = ["full"] }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+toml = "0.8"
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+eyre = { workspace = true }
+thiserror = { workspace = true }
+
+# Crypto
+k256 = "0.13"
+
+[dev-dependencies]
+tempfile = { workspace = true }
