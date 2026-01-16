@@ -14,8 +14,9 @@ use metrics_exporter_prometheus::PrometheusBuilder;
 use poem::{EndpointExt as _, Route, Server, get, listener::TcpListener};
 use std::{collections::HashSet, time::Duration};
 use tempo_precompiles::{
-    TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS, tip_fee_manager::ITIPFeeAMM,
-    tip20_factory::ITIP20Factory,
+    TIP20_FACTORY_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
+    abi::ITIP20Factory,
+    tip_fee_manager::ITIPFeeAMM,
 };
 use tempo_telemetry_util::error_field;
 use tracing::{debug, error, info, instrument};

@@ -24,10 +24,8 @@ use reth_node_core::args::RpcServerArgs;
 use reth_rpc_builder::RpcModuleSelection;
 use std::{sync::Arc, time::Duration};
 use tempo_chainspec::spec::TempoChainSpec;
-use tempo_contracts::precompiles::{
-    ITIP20::{self, ITIP20Instance, grantRoleCall},
-    ITIP20Factory,
-};
+use tempo_contracts::precompiles::ITIP20::{self, ITIP20Instance, grantRoleCall};
+use tempo_precompiles::abi::ITIP20Factory;
 use tempo_node::node::TempoNode;
 use tempo_payload_types::{TempoPayloadAttributes, TempoPayloadBuilderAttributes};
 use tempo_precompiles::{PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, tip20::ISSUER_ROLE};

@@ -2,7 +2,10 @@
 
 use crate::{
     PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS,
-    abi::ITIP20::{Error as TIP20Error, traits::IToken as _},
+    abi::{
+        ITIP20::{Error as TIP20Error, traits::IToken as _},
+        ITIP20Factory::traits::*,
+    },
     error::Result,
     tip20::{TIP20Token, USD_CURRENCY, is_tip20_prefix},
 };
@@ -10,11 +13,10 @@ use alloy::{
     primitives::{Address, B256, keccak256},
     sol_types::SolValue,
 };
-use tempo_precompiles_macros::{abi, contract};
+use tempo_precompiles_macros::contract;
 use tracing::trace;
 
-// Re-export abi module as ITIP20Factory for external consumers
-pub use abi as ITIP20Factory;
+pub use crate::abi::tip20_factory::abi;
 
 /// Number of reserved addresses (0 to RESERVED_SIZE-1) that cannot be deployed via factory
 const RESERVED_SIZE: u64 = 1024;
@@ -26,29 +28,6 @@ const TIP20_PREFIX_BYTES: [u8; 12] = [
 
 #[contract(addr = TIP20_FACTORY_ADDRESS, abi, dispatch)]
 pub struct TIP20Factory {}
-
-#[abi(dispatch)]
-#[rustfmt::skip]
-pub mod abi {
-    use super::*;
-
-    pub trait IFactory {
-        fn is_tip20(&self, token: Address) -> Result<bool>;
-        fn get_token_address(&self, sender: Address, salt: B256) -> Result<Address>;
-        fn create_token(&mut self, name: String, symbol: String, currency: String, quote_token: Address, admin: Address, salt: B256) -> Result<Address>;
-    }
-
-    pub enum Error {
-        AddressReserved,
-        AddressNotReserved,
-        InvalidQuoteToken,
-        TokenAlreadyExists { token: Address },
-    }
-
-    pub enum Event {
-        TokenCreated { #[indexed] token: Address, name: String, symbol: String, currency: String, quote_token: Address, admin: Address, salt: B256 },
-    }
-}
 
 /// Computes the deterministic TIP20 address from sender and salt.
 /// Returns the address and the lower bytes used for derivation.
