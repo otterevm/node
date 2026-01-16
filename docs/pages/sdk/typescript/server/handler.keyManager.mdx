@@ -18,7 +18,7 @@ import { Handler, Kv } from 'tempo.ts/server'
 const handler = Handler.keyManager({
   kv: Kv.memory(),
   path: '/keys',
-  rp: 'example.com',
+  rp: 'tempo.xyz',
 })
 ```
 
@@ -32,7 +32,7 @@ export const config = createConfig({
   connectors: [
     webAuthn({
       keyManager: KeyManager.http('http://localhost:3000/keys'),
-      rpId: 'example.com',
+      rpId: 'tempo.xyz',
     }),
   ],
   chains: [tempoModerato],
@@ -144,15 +144,15 @@ import { Handler } from 'tempo.ts/server'
 // Simple string (uses as both id and name)
 const handler = Handler.keyManager({
   // ... other options
-  rp: 'example.com', // [!code focus]
+  rp: 'tempo.xyz', // [!code focus]
 })
 
 // Object with custom name
 const handler2 = Handler.keyManager({
   // ... other options
   rp: { // [!code focus]
-    id: 'example.com', // [!code focus]
-    name: 'Example App', // [!code focus]
+    id: 'tempo.xyz', // [!code focus]
+    name: 'Tempo', // [!code focus]
   }, // [!code focus]
 })
 ```

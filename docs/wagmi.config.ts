@@ -29,6 +29,7 @@ export function getConfig(options: getConfig.Options = {}) {
       webAuthn({
         grantAccessKey: true,
         keyManager: KeyManager.localStorage(),
+        rpId: 'tempo.xyz',
       }),
     ],
     multiInjectedProviderDiscovery,
