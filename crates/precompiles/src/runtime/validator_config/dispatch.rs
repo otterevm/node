@@ -1,8 +1,5 @@
 use super::ValidatorConfig;
-use crate::{
-    dispatch::{Precompile, dispatch_call, input_cost, mutate_void, view},
-    error::TempoPrecompileError,
-};
+use crate::{Precompile, dispatch_call, input_cost, mutate_void, view, error::TempoPrecompileError};
 use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
 use tempo_contracts::precompiles::IValidatorConfig::IValidatorConfigCalls;

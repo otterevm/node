@@ -2,10 +2,11 @@ pub mod amm;
 pub mod dispatch;
 
 use crate::{
+    abi::ITIP20::traits::IToken as _,
     error::{Result, TempoPrecompileError},
     storage::{Handler, Mapping},
     tip_fee_manager::amm::{Pool, compute_amount_out},
-    tip20::{TIP20Token, abi::IToken as _, validate_usd_currency},
+    tip20::{TIP20Token, validate_usd_currency},
     tip20_factory::{TIP20Factory, abi::IFactory as _},
 };
 use alloy::primitives::B256;

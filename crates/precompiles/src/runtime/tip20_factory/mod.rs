@@ -2,8 +2,9 @@
 
 use crate::{
     PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS,
+    abi::ITIP20::{Error as TIP20Error, traits::IToken as _},
     error::Result,
-    tip20::{TIP20Error, TIP20Token, USD_CURRENCY, abi::IToken as _, is_tip20_prefix},
+    tip20::{TIP20Token, USD_CURRENCY, is_tip20_prefix},
 };
 use alloy::{
     primitives::{Address, B256, keccak256},

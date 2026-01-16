@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    tip20::abi::Error as TIP20Error, tip20_factory::TIP20FactoryError,
+    abi::ITIP20::Error as TIP20Error, tip20_factory::TIP20FactoryError,
     tip403_registry::TIP403RegistryError,
 };
 use alloy::{

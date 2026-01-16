@@ -14,10 +14,11 @@ pub use tempo_contracts::precompiles::{IStablecoinDEX, StablecoinDEXError, Stabl
 
 use crate::{
     STABLECOIN_DEX_ADDRESS,
+    abi::ITIP20::traits::IToken as _,
     error::{Result, TempoPrecompileError},
     stablecoin_dex::orderbook::{MAX_PRICE, MIN_PRICE, compute_book_key},
     storage::{Handler, Mapping},
-    tip20::{TIP20Token, abi::IToken as _, is_tip20_prefix, validate_usd_currency},
+    tip20::{TIP20Token, is_tip20_prefix, validate_usd_currency},
     tip20_factory::{TIP20Factory, abi::IFactory as _},
     tip403_registry::{TIP403Registry, abi::IRegistry as _},
 };

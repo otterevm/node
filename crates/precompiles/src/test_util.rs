@@ -3,13 +3,13 @@
 #[cfg(any(test, feature = "test-utils"))]
 use crate::error::TempoPrecompileError;
 use crate::{
-    PATH_USD_ADDRESS, Result, TIP20_FACTORY_ADDRESS,
-    dispatch::Precompile,
+    PATH_USD_ADDRESS, Precompile, TIP20_FACTORY_ADDRESS,
+    abi::ITIP20::{Error as TIP20Error, prelude::*},
+    error::Result,
     storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
-    tip20::{self, TIP20Error, TIP20Token, abi},
+    tip20::TIP20Token,
     tip20_factory::{self, TIP20Factory},
 };
-use abi::{IRewards as _, IToken as _};
 use alloy::{
     primitives::{Address, B256, U256},
     sol_types::SolError,
@@ -219,7 +219,7 @@ impl TIP20Setup {
 
     /// Grant ISSUER_ROLE to an account.
     pub fn with_issuer(self, account: Address) -> Self {
-        self.with_role(account, *tip20::ISSUER_ROLE)
+        self.with_role(account, *ISSUER_ROLE)
     }
 
     /// Grant an arbitrary role to an account.

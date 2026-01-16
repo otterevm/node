@@ -1,24 +1,13 @@
-//! TIP20 Token module.
+//! TIP20 bindings.
 
 use tempo_precompiles_macros::abi;
-
-pub use abi as ITIP20;
-
-pub type TIP20Error = abi::Error;
-pub type TIP20Event = abi::Event;
-pub type RolesAuthError = abi::Error;
-pub type RolesAuthEvent = abi::Event;
-
-#[cfg(feature = "precompile")]
-mod runtime;
-#[cfg(feature = "precompile")]
-pub use runtime::*;
 
 #[abi(dispatch)]
 #[rustfmt::skip]
 pub mod abi {
     use alloy::primitives::{Address, B256, U256, keccak256};
     use std::sync::LazyLock;
+
     #[cfg(feature = "precompile")]
     use crate::error::Result;
 

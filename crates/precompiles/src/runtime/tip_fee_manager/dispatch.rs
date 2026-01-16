@@ -1,11 +1,5 @@
-use crate::{
-    dispatch::{Precompile, dispatch_call, input_cost, metadata, mutate, mutate_void, view},
-    storage::Handler,
-    tip_fee_manager::{
-        ITIPFeeAMM, TipFeeManager,
-        amm::{M, MIN_LIQUIDITY, N, SCALE},
-    },
-};
+use super::{TipFeeManager, ITIPFeeAMM, amm::{M, MIN_LIQUIDITY, N, SCALE}};
+use crate::{Precompile, dispatch_call, input_cost, metadata, mutate, mutate_void, view, storage::Handler};
 use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
 use tempo_contracts::precompiles::{IFeeManager::IFeeManagerCalls, ITIPFeeAMM::ITIPFeeAMMCalls};

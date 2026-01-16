@@ -1,7 +1,5 @@
-use crate::{
-    dispatch::{Precompile, dispatch_call, input_cost, view},
-    nonce::NonceManager,
-};
+use super::NonceManager;
+use crate::{Precompile, dispatch_call, input_cost, view};
 use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
 use tempo_contracts::precompiles::INonce::INonceCalls;

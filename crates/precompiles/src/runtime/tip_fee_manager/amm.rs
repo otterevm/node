@@ -1,8 +1,9 @@
 use crate::{
+    abi::ITIP20::traits::IToken as _,
     error::{Result, TempoPrecompileError},
     storage::Handler,
     tip_fee_manager::{ITIPFeeAMM, TIPFeeAMMError, TIPFeeAMMEvent, TipFeeManager},
-    tip20::{TIP20Token, abi::IToken as _, validate_usd_currency},
+    tip20::{TIP20Token, validate_usd_currency},
 };
 use alloy::{
     primitives::{Address, B256, U256, keccak256, uint},

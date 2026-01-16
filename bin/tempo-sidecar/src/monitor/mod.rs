@@ -19,7 +19,7 @@ use std::{
 use tempo_precompiles::{
     TIP_FEE_MANAGER_ADDRESS,
     tip_fee_manager::ITIPFeeAMM::{self, ITIPFeeAMMInstance, Mint, Pool},
-    tip20::ITIP20,
+    abi::ITIP20,
 };
 use tracing::{debug, error, info, instrument};
 

@@ -1,25 +1,21 @@
 //! TIP20 Rewards distribution and claiming implementation.
 
 use crate::{
+    abi::ITIP20::{self, prelude::*},
     error::{Result, TempoPrecompileError},
     storage::Handler,
-    tip20::{ACC_PRECISION, TIP20Error, TIP20Event, TIP20Token, abi},
+    tip20::{ACC_PRECISION, TIP20Token},
 };
 use alloy::primitives::{Address, U256};
 
-use abi::IRewards as _;
-
-// Re-export types for backwards compatibility
-pub use abi::UserRewardInfo;
-
-impl abi::IRewards for TIP20Token {
+impl IRewards for TIP20Token {
     /// Allows an authorized user to distribute reward tokens to opted-in recipients.
     fn distribute_reward(&mut self, msg_sender: Address, amount: U256) -> Result<()> {
         self.check_not_paused()?;
         let token_address = self.address;
 
         if amount == U256::ZERO {
-            return Err(TIP20Error::invalid_amount().into());
+            return Err(ITIP20::Error::invalid_amount().into());
         }
 
         self.ensure_transfer_authorized(msg_sender, token_address)?;
@@ -29,7 +25,7 @@ impl abi::IRewards for TIP20Token {
 
         let opted_in_supply = U256::from(self.opted_in_supply()?);
         if opted_in_supply.is_zero() {
-            return Err(TIP20Error::no_opted_in_supply().into());
+            return Err(ITIP20::Error::no_opted_in_supply().into());
         }
 
         let delta_rpt = amount
@@ -43,7 +39,7 @@ impl abi::IRewards for TIP20Token {
         self.set_global_reward_per_token(new_rpt)?;
 
         // Emit distributed reward event for immediate payout
-        self.emit_event(abi::Event::reward_distributed(msg_sender, amount))?;
+        self.emit_event(ITIP20::Event::reward_distributed(msg_sender, amount))?;
 
         Ok(())
     }
@@ -89,7 +85,7 @@ impl abi::IRewards for TIP20Token {
         self.user_reward_info[msg_sender].write(info)?;
 
         // Emit reward recipient set event
-        self.emit_event(abi::Event::reward_recipient_set(msg_sender, recipient))?;
+        self.emit_event(ITIP20::Event::reward_recipient_set(msg_sender, recipient))?;
 
         Ok(())
     }
@@ -139,7 +135,7 @@ impl abi::IRewards for TIP20Token {
                 )?;
             }
 
-            self.emit_event(TIP20Event::transfer(
+            self.emit_event(ITIP20::Event::transfer(
                 contract_address,
                 msg_sender,
                 max_amount,
@@ -320,13 +316,12 @@ impl TIP20Token {
 mod tests {
     use super::*;
     use crate::{
+        abi::ITIP20::{self, traits::IToken as _, PolicyForbids},
         error::TempoPrecompileError,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
-        tip20::{PolicyForbids, abi},
         tip403_registry::{PolicyType, TIP403Registry, abi::IRegistry as _},
     };
-    use abi::IToken as _;
     use alloy::primitives::{Address, U256};
 
     #[test]
@@ -586,7 +581,7 @@ mod tests {
             assert!(
                 matches!(
                     err,
-                    TempoPrecompileError::TIP20(TIP20Error::PolicyForbids(PolicyForbids))
+                    TempoPrecompileError::TIP20(ITIP20::Error::PolicyForbids(PolicyForbids))
                 ),
                 "Expected PolicyForbids error, got: {err:?}"
             );

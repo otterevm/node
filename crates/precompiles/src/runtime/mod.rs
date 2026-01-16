@@ -1,0 +1,490 @@
+//! Tempo precompile runtime (dispatchers and contract implementations).
+
+pub mod account_keychain;
+pub mod nonce;
+pub mod stablecoin_dex;
+pub mod tip20;
+pub mod tip20_factory;
+pub mod tip403_registry;
+pub mod tip_fee_manager;
+pub mod validator_config;
+
+use crate::{
+    TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS,
+    account_keychain::AccountKeychain,
+    error::{IntoPrecompileResult, Result, TempoPrecompileError},
+    nonce::NonceManager,
+    stablecoin_dex::StablecoinDEX,
+    storage::StorageCtx,
+    tip20::{TIP20Token, is_tip20_prefix},
+    tip20_factory::TIP20Factory,
+    tip403_registry::TIP403Registry,
+    tip_fee_manager::TipFeeManager,
+    validator_config::ValidatorConfig,
+};
+use alloy::{
+    primitives::{Address, Bytes},
+    sol,
+    sol_types::{SolCall, SolError},
+};
+use alloy_evm::precompiles::{DynPrecompile, PrecompilesMap};
+use revm::{
+    context::CfgEnv,
+    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+};
+use tempo_chainspec::hardfork::TempoHardfork;
+use tempo_contracts::precompiles::{
+    ACCOUNT_KEYCHAIN_ADDRESS, NONCE_PRECOMPILE_ADDRESS, STABLECOIN_DEX_ADDRESS,
+    TIP_FEE_MANAGER_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
+};
+
+/// Input per word cost. It covers abi decoding and cloning of input into call data.
+///
+/// Being careful and pricing it twice as COPY_COST to mitigate different abi decodings.
+pub const INPUT_PER_WORD_COST: u64 = 6;
+
+#[inline]
+pub fn input_cost(calldata_len: usize) -> u64 {
+    revm::interpreter::gas::cost_per_word(calldata_len, INPUT_PER_WORD_COST).unwrap_or(u64::MAX)
+}
+
+pub trait Precompile {
+    fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult;
+}
+
+pub fn extend_tempo_precompiles(precompiles: &mut PrecompilesMap, cfg: &CfgEnv<TempoHardfork>) {
+    let chain_id = cfg.chain_id;
+    let spec = cfg.spec;
+    precompiles.set_precompile_lookup(move |address: &Address| {
+        if is_tip20_prefix(*address) {
+            Some(TIP20Precompile::create(*address, chain_id, spec))
+        } else if *address == TIP20_FACTORY_ADDRESS {
+            Some(TIP20FactoryPrecompile::create(chain_id, spec))
+        } else if *address == TIP403_REGISTRY_ADDRESS {
+            Some(TIP403RegistryPrecompile::create(chain_id, spec))
+        } else if *address == TIP_FEE_MANAGER_ADDRESS {
+            Some(TipFeeManagerPrecompile::create(chain_id, spec))
+        } else if *address == STABLECOIN_DEX_ADDRESS {
+            Some(StablecoinDEXPrecompile::create(chain_id, spec))
+        } else if *address == NONCE_PRECOMPILE_ADDRESS {
+            Some(NoncePrecompile::create(chain_id, spec))
+        } else if *address == VALIDATOR_CONFIG_ADDRESS {
+            Some(ValidatorConfigPrecompile::create(chain_id, spec))
+        } else if *address == ACCOUNT_KEYCHAIN_ADDRESS {
+            Some(AccountKeychainPrecompile::create(chain_id, spec))
+        } else {
+            None
+        }
+    });
+}
+
+sol! {
+    error DelegateCallNotAllowed();
+    error StaticCallNotAllowed();
+}
+
+macro_rules! tempo_precompile {
+    ($id:expr, $chain_id:ident, $spec:ident, |$input:ident| $impl:expr) => {
+        DynPrecompile::new_stateful(PrecompileId::Custom($id.into()), move |$input| {
+            if !$input.is_direct_call() {
+                return Ok(PrecompileOutput::new_reverted(
+                    0,
+                    DelegateCallNotAllowed {}.abi_encode().into(),
+                ));
+            }
+            let mut storage = crate::storage::evm::EvmPrecompileStorageProvider::new(
+                $input.internals,
+                $input.gas,
+                $chain_id,
+                $spec,
+                $input.is_static,
+            );
+            crate::storage::StorageCtx::enter(&mut storage, || {
+                $impl.call($input.data, $input.caller)
+            })
+        })
+    };
+}
+
+pub struct TipFeeManagerPrecompile;
+impl TipFeeManagerPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TipFeeManager", chain_id, spec, |input| {
+            TipFeeManager::new()
+        })
+    }
+}
+
+pub struct TIP403RegistryPrecompile;
+impl TIP403RegistryPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TIP403Registry", chain_id, spec, |input| {
+            TIP403Registry::new()
+        })
+    }
+}
+
+pub struct TIP20FactoryPrecompile;
+impl TIP20FactoryPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TIP20Factory", chain_id, spec, |input| {
+            TIP20Factory::new()
+        })
+    }
+}
+
+pub struct TIP20Precompile;
+impl TIP20Precompile {
+    pub fn create(address: Address, chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("TIP20Token", chain_id, spec, |input| {
+            TIP20Token::from_address(address).expect("TIP20 prefix already verified")
+        })
+    }
+}
+
+pub struct StablecoinDEXPrecompile;
+impl StablecoinDEXPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("StablecoinDEX", chain_id, spec, |input| {
+            StablecoinDEX::new()
+        })
+    }
+}
+
+pub struct NoncePrecompile;
+impl NoncePrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("NonceManager", chain_id, spec, |input| {
+            NonceManager::new()
+        })
+    }
+}
+
+pub struct AccountKeychainPrecompile;
+impl AccountKeychainPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("AccountKeychain", chain_id, spec, |input| {
+            AccountKeychain::new()
+        })
+    }
+}
+
+pub struct ValidatorConfigPrecompile;
+impl ValidatorConfigPrecompile {
+    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
+        tempo_precompile!("ValidatorConfig", chain_id, spec, |input| {
+            ValidatorConfig::new()
+        })
+    }
+}
+
+#[inline]
+pub fn metadata<T: SolCall>(f: impl FnOnce() -> Result<T::Return>) -> PrecompileResult {
+    f().into_precompile_result(0, |ret| T::abi_encode_returns(&ret).into())
+}
+
+#[inline]
+pub fn view<T: SolCall>(call: T, f: impl FnOnce(T) -> Result<T::Return>) -> PrecompileResult {
+    f(call).into_precompile_result(0, |ret| T::abi_encode_returns(&ret).into())
+}
+
+#[inline]
+pub fn mutate<T: SolCall>(
+    call: T,
+    sender: Address,
+    f: impl FnOnce(Address, T) -> Result<T::Return>,
+) -> PrecompileResult {
+    if StorageCtx.is_static() {
+        return Ok(PrecompileOutput::new_reverted(
+            0,
+            StaticCallNotAllowed {}.abi_encode().into(),
+        ));
+    }
+    f(sender, call).into_precompile_result(0, |ret| T::abi_encode_returns(&ret).into())
+}
+
+#[inline]
+pub fn mutate_void<T: SolCall>(
+    call: T,
+    sender: Address,
+    f: impl FnOnce(Address, T) -> Result<()>,
+) -> PrecompileResult {
+    if StorageCtx.is_static() {
+        return Ok(PrecompileOutput::new_reverted(
+            0,
+            StaticCallNotAllowed {}.abi_encode().into(),
+        ));
+    }
+    f(sender, call).into_precompile_result(0, |()| Bytes::new())
+}
+
+#[inline]
+fn fill_precompile_output(mut output: PrecompileOutput, storage: &StorageCtx) -> PrecompileOutput {
+    output.gas_used = storage.gas_used();
+
+    // add refund only if it is not reverted
+    if !output.reverted {
+        output.gas_refunded = storage.gas_refunded();
+    }
+    output
+}
+
+/// Helper function to return an unknown function selector error.
+/// Returns an ABI-encoded UnknownFunctionSelector error with the selector.
+#[inline]
+pub fn unknown_selector(selector: [u8; 4], gas: u64) -> PrecompileResult {
+    TempoPrecompileError::UnknownFunctionSelector(selector).into_precompile_result(gas)
+}
+
+/// Helper function to decode calldata and dispatch it.
+#[inline]
+pub fn dispatch_call<T>(
+    calldata: &[u8],
+    decode: impl FnOnce(&[u8]) -> core::result::Result<T, alloy::sol_types::Error>,
+    f: impl FnOnce(T) -> PrecompileResult,
+) -> PrecompileResult {
+    if calldata.len() < 4 {
+        return Err(PrecompileError::Other(
+            "Invalid input: missing function selector".into(),
+        ));
+    }
+
+    let storage = StorageCtx::default();
+    let result = decode(calldata);
+
+    match result {
+        Ok(call) => f(call).map(|res| fill_precompile_output(res, &storage)),
+        Err(alloy::sol_types::Error::UnknownSelector { selector, .. }) => {
+            unknown_selector(*selector, storage.gas_used())
+                .map(|res| fill_precompile_output(res, &storage))
+        }
+        Err(_) => Ok(fill_precompile_output(
+            PrecompileOutput::new_reverted(0, Bytes::new()),
+            &storage,
+        )),
+    }
+}
+
+#[cfg(test)]
+pub fn expect_precompile_revert<E>(result: &PrecompileResult, expected_error: E)
+where
+    E: alloy::sol_types::SolInterface + PartialEq + std::fmt::Debug,
+{
+    match result {
+        Ok(result) => {
+            assert!(result.reverted);
+            let decoded = E::abi_decode(&result.bytes).unwrap();
+            assert_eq!(decoded, expected_error);
+        }
+        Err(other) => {
+            panic!("expected reverted output, got: {other:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{PATH_USD_ADDRESS, tip20::{TIP20Token, abi as ITIP20}};
+    use alloy::primitives::{Address, Bytes, U256, bytes};
+    use alloy_evm::{
+        EthEvmFactory, EvmEnv, EvmFactory, EvmInternals,
+        precompiles::{Precompile as AlloyEvmPrecompile, PrecompileInput},
+    };
+    use revm::{
+        context::ContextTr,
+        database::{CacheDB, EmptyDB},
+        state::{AccountInfo, Bytecode},
+    };
+
+    #[test]
+    fn test_precompile_delegatecall() {
+        let (chain_id, spec) = (1, TempoHardfork::default());
+        let precompile = tempo_precompile!("TIP20Token", chain_id, spec, |input| {
+            TIP20Token::from_address(PATH_USD_ADDRESS).expect("PATH_USD_ADDRESS is valid")
+        });
+
+        let db = CacheDB::new(EmptyDB::new());
+        let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());
+        let block = evm.block.clone();
+        let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
+
+        let target_address = Address::random();
+        let bytecode_address = Address::random();
+        let input = PrecompileInput {
+            data: &Bytes::new(),
+            caller: Address::ZERO,
+            internals: evm_internals,
+            gas: 0,
+            value: U256::ZERO,
+            is_static: false,
+            target_address,
+            bytecode_address,
+        };
+
+        let result = AlloyEvmPrecompile::call(&precompile, input);
+
+        match result {
+            Ok(output) => {
+                assert!(output.reverted);
+                let decoded = DelegateCallNotAllowed::abi_decode(&output.bytes).unwrap();
+                assert!(matches!(decoded, DelegateCallNotAllowed {}));
+            }
+            Err(_) => panic!("expected reverted output"),
+        }
+    }
+
+    #[test]
+    fn test_precompile_static_call() {
+        let (chain_id, spec) = (1, TempoHardfork::default());
+        let precompile = tempo_precompile!("TIP20Token", chain_id, spec, |input| {
+            TIP20Token::from_address(PATH_USD_ADDRESS).expect("PATH_USD_ADDRESS is valid")
+        });
+
+        let token_address = PATH_USD_ADDRESS;
+
+        let call_static = |calldata: Bytes| {
+            let mut db = CacheDB::new(EmptyDB::new());
+            db.insert_account_info(
+                token_address,
+                AccountInfo {
+                    code: Some(Bytecode::new_raw(bytes!("0xEF"))),
+                    ..Default::default()
+                },
+            );
+            let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());
+            let block = evm.block.clone();
+            let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
+
+            let input = PrecompileInput {
+                data: &calldata,
+                caller: Address::ZERO,
+                internals: evm_internals,
+                gas: 100_000,
+                is_static: true,
+                value: U256::ZERO,
+                target_address: token_address,
+                bytecode_address: token_address,
+            };
+
+            AlloyEvmPrecompile::call(&precompile, input)
+        };
+
+        // Static calls into mutating functions should fail
+        let result = call_static(Bytes::from(
+            ITIP20::transferCall {
+                to: Address::random(),
+                amount: U256::from(100),
+            }
+            .abi_encode(),
+        ));
+        let output = result.expect("expected Ok");
+        assert!(output.reverted);
+        assert!(StaticCallNotAllowed::abi_decode(&output.bytes).is_ok());
+
+        // Static calls into mutate void functions should fail
+        let result = call_static(Bytes::from(
+            ITIP20::approveCall {
+                spender: Address::random(),
+                amount: U256::from(100),
+            }
+            .abi_encode(),
+        ));
+        let output = result.expect("expected Ok");
+        assert!(output.reverted);
+        assert!(StaticCallNotAllowed::abi_decode(&output.bytes).is_ok());
+
+        // Static calls into view functions should succeed
+        let result = call_static(Bytes::from(
+            ITIP20::balanceOfCall {
+                account: Address::random(),
+            }
+            .abi_encode(),
+        ));
+        let output = result.expect("expected Ok");
+        assert!(
+            !output.reverted,
+            "view function should not revert in static context"
+        );
+    }
+}
+
+/// Tests for the custom precompiles macros (#[abi], #[derive(SolStruct)]).
+///
+/// These tests validate that the macros generate correct selectors and EIP-712 signatures,
+/// especially for complex types like structs.
+#[cfg(test)]
+mod macro_tests {
+    use alloy::{
+        primitives::{Address, U256},
+        sol_types::{SolCall, SolStruct},
+    };
+    use tempo_precompiles_macros::abi;
+
+    use crate::error::Result;
+
+    #[abi]
+    pub mod test_types {
+        use super::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct Inner {
+            pub value: U256,
+            pub owner: Address,
+        }
+
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct Outer {
+            pub inner: Inner,
+            pub count: u64,
+        }
+
+        pub trait Interface {
+            fn process_inner(&self, data: Inner) -> Result<bool>;
+        }
+    }
+
+    #[test]
+    fn test_sol_struct_eip712_root_type() {
+        // EIP-712 root type uses struct names for nested types
+        let inner_root = <test_types::Inner as SolStruct>::eip712_root_type();
+        assert_eq!(inner_root.as_ref(), "Inner(uint256 value,address owner)");
+
+        let outer_root = <test_types::Outer as SolStruct>::eip712_root_type();
+        assert_eq!(outer_root.as_ref(), "Outer(Inner inner,uint64 count)");
+    }
+
+    #[test]
+    fn test_sol_struct_eip712_components_nested() {
+        // Inner has no dependencies
+        let inner_components = <test_types::Inner as SolStruct>::eip712_components();
+        assert!(inner_components.is_empty());
+
+        // Outer depends on Inner, so components should include Inner's root type
+        let outer_components = <test_types::Outer as SolStruct>::eip712_components();
+        assert!(!outer_components.is_empty());
+        assert!(
+            outer_components
+                .iter()
+                .any(|c| c.contains("Inner(uint256 value,address owner)")),
+            "Outer should have Inner as a component, got: {outer_components:?}",
+        );
+    }
+
+    #[test]
+    fn test_interface_struct_param_selector() {
+        // The signature should use the tuple form: "processInner((uint256,address))"
+        assert_eq!(
+            <test_types::processInnerCall as SolCall>::SIGNATURE,
+            "processInner((uint256,address))"
+        );
+
+        // Container enum should have the same selector as the call struct
+        let call_selector = <test_types::processInnerCall as SolCall>::SELECTOR;
+        assert_eq!(
+            test_types::Calls::SELECTORS[0],
+            call_selector,
+            "Container enum selector should match call struct selector"
+        );
+    }
+}

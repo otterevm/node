@@ -5,10 +5,8 @@ use alloy::{primitives::Address, sol_types::SolInterface};
 use revm::precompile::{PrecompileError, PrecompileResult};
 use tempo_contracts::precompiles::IStablecoinDEX::IStablecoinDEXCalls;
 
-use crate::{
-    dispatch::{Precompile, dispatch_call, input_cost, mutate, mutate_void, view},
-    stablecoin_dex::{StablecoinDEX, orderbook::compute_book_key},
-};
+use super::{StablecoinDEX, orderbook::compute_book_key};
+use crate::{Precompile, dispatch_call, input_cost, mutate, mutate_void, view};
 
 impl Precompile for StablecoinDEX {
     fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult {
