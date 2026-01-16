@@ -209,6 +209,16 @@ pub enum TempoPoolTransactionError {
         "Too many authorizations in AA transaction: {count} exceeds maximum allowed {max_allowed}"
     )]
     TooManyAuthorizations { count: usize, max_allowed: usize },
+
+    /// Thrown when an expiring nonce transaction's valid_before is too far in the future.
+    #[error(
+        "Expiring nonce 'valid_before' {valid_before} exceeds max allowed {max_allowed} (must be within 30s)"
+    )]
+    ExpiringNonceValidBeforeTooFar { valid_before: u64, max_allowed: u64 },
+
+    /// Thrown when an expiring nonce transaction's hash has already been seen (replay).
+    #[error("Expiring nonce transaction replay: tx hash already seen and not expired")]
+    ExpiringNonceReplay,
 }
 
 impl PoolTransactionError for TempoPoolTransactionError {
@@ -220,6 +230,8 @@ impl PoolTransactionError for TempoPoolTransactionError {
             | Self::BlackListedFeePayer { .. }
             | Self::InvalidValidBefore { .. }
             | Self::InvalidValidAfter { .. }
+            | Self::ExpiringNonceValidBeforeTooFar { .. }
+            | Self::ExpiringNonceReplay
             | Self::Keychain(_)
             | Self::InsufficientLiquidity(_) => false,
             Self::NonZeroValue
