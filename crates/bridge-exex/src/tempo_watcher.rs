@@ -1,10 +1,10 @@
 //! Watches Tempo chain for burn events.
 
+use alloy::consensus::TxReceipt;
 use alloy::primitives::{Address, B256};
 use alloy::sol_types::SolEvent;
 use eyre::Result;
 use reth_exex::ExExNotification;
-use alloy::consensus::TxReceipt;
 use reth_primitives_traits::{AlloyBlockHeader as _, NodePrimitives};
 use tokio::sync::mpsc;
 use tracing::info;
@@ -38,34 +38,31 @@ impl TempoWatcher {
         &self,
         notification: &ExExNotification<N>,
     ) -> Result<()> {
-        match notification {
-            ExExNotification::ChainCommitted { new } => {
-                let execution_outcome = new.execution_outcome();
-                let receipts = execution_outcome.receipts();
+        if let ExExNotification::ChainCommitted { new } = notification {
+            let execution_outcome = new.execution_outcome();
+            let receipts = execution_outcome.receipts();
 
-                for (block_idx, block) in new.blocks_iter().enumerate() {
-                    let block_number = block.header().number();
+            for (block_idx, block) in new.blocks_iter().enumerate() {
+                let block_number = block.header().number();
 
-                    // Get receipts for this block
-                    if let Some(block_receipts) = receipts.get(block_idx) {
-                        for receipt in block_receipts {
-                            for log in receipt.logs() {
-                                if let Some(burn) = self.parse_burn_log(log, block_number) {
-                                    info!(
-                                        burn_id = %burn.burn_id,
-                                        origin_chain = %burn.origin_chain_id,
-                                        amount = %burn.amount,
-                                        "Detected burn event"
-                                    );
+                // Get receipts for this block
+                if let Some(block_receipts) = receipts.get(block_idx) {
+                    for receipt in block_receipts {
+                        for log in receipt.logs() {
+                            if let Some(burn) = self.parse_burn_log(log, block_number) {
+                                info!(
+                                    burn_id = %burn.burn_id,
+                                    origin_chain = %burn.origin_chain_id,
+                                    amount = %burn.amount,
+                                    "Detected burn event"
+                                );
 
-                                    self.burn_tx.send(burn).await?;
-                                }
+                                self.burn_tx.send(burn).await?;
                             }
                         }
                     }
                 }
             }
-            _ => {}
         }
 
         Ok(())

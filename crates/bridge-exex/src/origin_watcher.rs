@@ -51,7 +51,11 @@ impl OriginWatcher {
         config: ChainConfig,
         deposit_tx: mpsc::Sender<DetectedDeposit>,
     ) -> Self {
-        Self { chain_name, config, deposit_tx }
+        Self {
+            chain_name,
+            config,
+            deposit_tx,
+        }
     }
 
     /// Start watching for deposits
@@ -76,8 +80,10 @@ impl OriginWatcher {
         let deposit_event_sig = Deposited::SIGNATURE_HASH;
 
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(self.config.poll_interval_secs))
-                .await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(
+                self.config.poll_interval_secs,
+            ))
+            .await;
 
             let current_block: u64 = provider.get_block_number().await?;
 

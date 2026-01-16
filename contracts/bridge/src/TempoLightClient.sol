@@ -3,10 +3,11 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "./libraries/BLS12381.sol";
 
 /// @title TempoLightClient
 /// @notice Maintains finalized Tempo headers and validator BLS public key
-/// @dev For MVP, uses ECDSA threshold signatures. Production would use BLS12-381.
+/// @dev Supports both BLS12-381 (production) and ECDSA (testing) signature verification
 contract TempoLightClient is Ownable2Step {
     /// @notice Domain separator for header signatures
     bytes32 public constant HEADER_DOMAIN = keccak256("TEMPO_HEADER_V1");
@@ -20,8 +21,9 @@ contract TempoLightClient is Ownable2Step {
     /// @notice Current validator set epoch
     uint64 public currentEpoch;
 
-    /// @notice Aggregated public key (for BLS) or threshold signers (for ECDSA MVP)
-    bytes public currentPublicKey;
+    /// @notice Aggregated BLS public key (G2 point, 256 bytes uncompressed)
+    /// @dev For BLS mode, this stores the aggregated validator public key
+    bytes public blsPublicKey;
 
     /// @notice Latest finalized Tempo block height
     uint64 public latestFinalizedHeight;
@@ -32,17 +34,25 @@ contract TempoLightClient is Ownable2Step {
     /// @notice Mapping of height to receipts root
     mapping(uint64 => bytes32) public receiptsRoots;
 
-    /// @notice Threshold for signatures (2/3 of validators)
+    /// @notice Whether to use ECDSA mode (for testing) instead of BLS
+    bool public useEcdsaMode;
+
+    /// @notice Threshold for ECDSA signatures (2/3 of validators)
     uint256 public threshold;
 
-    /// @notice Active validators for ECDSA MVP
+    /// @notice Active validators for ECDSA mode
     mapping(address => bool) public isValidator;
     address[] public validators;
 
+    /// @notice Legacy currentPublicKey getter for backwards compatibility
+    bytes public currentPublicKey;
+
     event HeaderSubmitted(uint64 indexed height, bytes32 headerHash, bytes32 receiptsRoot);
     event KeyRotated(uint64 indexed newEpoch, bytes newPublicKey);
+    event BLSPublicKeyUpdated(uint64 indexed epoch, bytes blsKey);
     event ValidatorAdded(address indexed validator);
     event ValidatorRemoved(address indexed validator);
+    event SignatureModeChanged(bool useEcdsa);
 
     error InvalidSignatureCount();
     error InvalidSignature();
@@ -51,13 +61,39 @@ contract TempoLightClient is Ownable2Step {
     error ThresholdNotMet();
     error ValidatorExists();
     error ValidatorNotFound();
+    error BLSVerificationFailed();
+    error InvalidBLSPublicKeyLength();
+    error InvalidBLSSignatureLength();
+    error BLSPrecompilesNotAvailable();
 
     constructor(uint64 _tempoChainId, uint64 _initialEpoch) Ownable(msg.sender) {
         tempoChainId = _tempoChainId;
         currentEpoch = _initialEpoch;
+        // Default to ECDSA mode for backwards compatibility
+        useEcdsaMode = true;
     }
 
-    /// @notice Add a validator (owner only, for MVP)
+    /// @notice Set the signature verification mode
+    /// @param _useEcdsaMode True for ECDSA mode (testing), false for BLS mode (production)
+    function setSignatureMode(bool _useEcdsaMode) external onlyOwner {
+        if (!_useEcdsaMode && !BLS12381.precompilesAvailable()) {
+            revert BLSPrecompilesNotAvailable();
+        }
+        useEcdsaMode = _useEcdsaMode;
+        emit SignatureModeChanged(_useEcdsaMode);
+    }
+
+    /// @notice Set the aggregated BLS public key
+    /// @param _blsPublicKey The aggregated BLS public key (G2 point, 256 bytes uncompressed)
+    function setBLSPublicKey(bytes calldata _blsPublicKey) external onlyOwner {
+        if (_blsPublicKey.length != BLS12381.G2_POINT_SIZE) {
+            revert InvalidBLSPublicKeyLength();
+        }
+        blsPublicKey = _blsPublicKey;
+        emit BLSPublicKeyUpdated(currentEpoch, _blsPublicKey);
+    }
+
+    /// @notice Add a validator (owner only, for ECDSA mode)
     function addValidator(address validator) external onlyOwner {
         if (isValidator[validator]) revert ValidatorExists();
         isValidator[validator] = true;
@@ -66,7 +102,7 @@ contract TempoLightClient is Ownable2Step {
         emit ValidatorAdded(validator);
     }
 
-    /// @notice Remove a validator (owner only, for MVP)
+    /// @notice Remove a validator (owner only, for ECDSA mode)
     function removeValidator(address validator) external onlyOwner {
         if (!isValidator[validator]) revert ValidatorNotFound();
         isValidator[validator] = false;
@@ -83,6 +119,53 @@ contract TempoLightClient is Ownable2Step {
     }
 
     /// @notice Submit a finalized Tempo header with validator signatures
+    /// @param height Block height
+    /// @param parentHash Parent block hash
+    /// @param stateRoot State root
+    /// @param receiptsRoot Receipts root
+    /// @param epoch Validator set epoch
+    /// @param signature For BLS mode: single aggregated signature (128 bytes G1 point)
+    ///                  For ECDSA mode: encoded array of individual signatures
+    function submitHeader(
+        uint64 height,
+        bytes32 parentHash,
+        bytes32 stateRoot,
+        bytes32 receiptsRoot,
+        uint64 epoch,
+        bytes calldata signature
+    ) external {
+        if (height <= latestFinalizedHeight && latestFinalizedHeight > 0) {
+            revert HeightNotMonotonic();
+        }
+
+        if (latestFinalizedHeight > 0) {
+            if (parentHash != headerHashes[latestFinalizedHeight]) {
+                revert InvalidParentHash();
+            }
+        }
+
+        bytes32 headerDigest = keccak256(
+            abi.encodePacked(HEADER_DOMAIN, tempoChainId, height, parentHash, stateRoot, receiptsRoot, epoch)
+        );
+
+        if (useEcdsaMode) {
+            // Decode signature as array of ECDSA signatures
+            bytes[] memory signatures = abi.decode(signature, (bytes[]));
+            _verifyThresholdSignatures(headerDigest, signatures);
+        } else {
+            _verifyBLSSignature(headerDigest, signature);
+        }
+
+        bytes32 headerHash = keccak256(abi.encodePacked(height, parentHash, stateRoot, receiptsRoot, epoch));
+        headerHashes[height] = headerHash;
+        receiptsRoots[height] = receiptsRoot;
+        latestFinalizedHeight = height;
+
+        emit HeaderSubmitted(height, headerHash, receiptsRoot);
+    }
+
+    /// @notice Submit a finalized header with ECDSA signatures array (backwards compatible)
+    /// @dev This function maintains the original interface for ECDSA mode
     function submitHeader(
         uint64 height,
         bytes32 parentHash,
@@ -105,7 +188,18 @@ contract TempoLightClient is Ownable2Step {
             abi.encodePacked(HEADER_DOMAIN, tempoChainId, height, parentHash, stateRoot, receiptsRoot, epoch)
         );
 
-        _verifyThresholdSignatures(headerDigest, signatures);
+        if (useEcdsaMode) {
+            // Copy calldata signatures to memory
+            bytes[] memory sigs = new bytes[](signatures.length);
+            for (uint256 i = 0; i < signatures.length; i++) {
+                sigs[i] = signatures[i];
+            }
+            _verifyThresholdSignatures(headerDigest, sigs);
+        } else {
+            // In BLS mode with signatures array, expect single element with aggregated signature
+            require(signatures.length == 1, "BLS mode expects single aggregated signature");
+            _verifyBLSSignature(headerDigest, signatures[0]);
+        }
 
         bytes32 headerHash = keccak256(abi.encodePacked(height, parentHash, stateRoot, receiptsRoot, epoch));
         headerHashes[height] = headerHash;
@@ -121,12 +215,53 @@ contract TempoLightClient is Ownable2Step {
 
         bytes32 rotationDigest = keccak256(abi.encodePacked(ROTATION_DOMAIN, tempoChainId, newEpoch, newPublicKey));
 
-        _verifyThresholdSignatures(rotationDigest, signatures);
+        if (useEcdsaMode) {
+            // Copy calldata signatures to memory
+            bytes[] memory sigs = new bytes[](signatures.length);
+            for (uint256 i = 0; i < signatures.length; i++) {
+                sigs[i] = signatures[i];
+            }
+            _verifyThresholdSignatures(rotationDigest, sigs);
+        } else {
+            require(signatures.length == 1, "BLS mode expects single aggregated signature");
+            _verifyBLSSignature(rotationDigest, signatures[0]);
+        }
 
         currentEpoch = newEpoch;
         currentPublicKey = newPublicKey;
 
+        // If the new public key is a valid BLS public key, also update blsPublicKey
+        if (newPublicKey.length == BLS12381.G2_POINT_SIZE) {
+            blsPublicKey = newPublicKey;
+            emit BLSPublicKeyUpdated(newEpoch, newPublicKey);
+        }
+
         emit KeyRotated(newEpoch, newPublicKey);
+    }
+
+    /// @notice Submit a BLS key rotation with BLS signature
+    function submitBLSKeyRotation(
+        uint64 newEpoch,
+        bytes calldata newBLSPublicKey,
+        bytes calldata blsSignature
+    ) external {
+        require(newEpoch > currentEpoch, "Epoch must increase");
+        if (newBLSPublicKey.length != BLS12381.G2_POINT_SIZE) {
+            revert InvalidBLSPublicKeyLength();
+        }
+
+        bytes32 rotationDigest = keccak256(
+            abi.encodePacked(ROTATION_DOMAIN, tempoChainId, newEpoch, newBLSPublicKey)
+        );
+
+        _verifyBLSSignature(rotationDigest, blsSignature);
+
+        currentEpoch = newEpoch;
+        blsPublicKey = newBLSPublicKey;
+        currentPublicKey = newBLSPublicKey;
+
+        emit BLSPublicKeyUpdated(newEpoch, newBLSPublicKey);
+        emit KeyRotated(newEpoch, newBLSPublicKey);
     }
 
     /// @notice Get the receipts root for a height
@@ -144,7 +279,32 @@ contract TempoLightClient is Ownable2Step {
         return validators.length;
     }
 
-    function _verifyThresholdSignatures(bytes32 digest, bytes[] calldata signatures) internal view {
+    /// @notice Check if BLS precompiles are available
+    function isBLSAvailable() external view returns (bool) {
+        return BLS12381.precompilesAvailable();
+    }
+
+    /// @notice Verify a BLS signature against the stored public key
+    function _verifyBLSSignature(bytes32 digest, bytes calldata signature) internal view {
+        if (signature.length != BLS12381.G1_POINT_SIZE) {
+            revert InvalidBLSSignatureLength();
+        }
+        if (blsPublicKey.length != BLS12381.G2_POINT_SIZE) {
+            revert InvalidBLSPublicKeyLength();
+        }
+
+        bool valid = BLS12381.verify(
+            signature,
+            blsPublicKey,
+            digest
+        );
+
+        if (!valid) {
+            revert BLSVerificationFailed();
+        }
+    }
+
+    function _verifyThresholdSignatures(bytes32 digest, bytes[] memory signatures) internal view {
         if (signatures.length < threshold) revert ThresholdNotMet();
 
         uint256 validCount = 0;
@@ -165,6 +325,11 @@ contract TempoLightClient is Ownable2Step {
     }
 
     function _updateThreshold() internal {
-        threshold = (validators.length * 2 + 2) / 3;
+        // Ensure threshold is never 0 - require at least 1 signature
+        if (validators.length == 0) {
+            threshold = 1; // Prevents 0-threshold exploit
+        } else {
+            threshold = (validators.length * 2 + 2) / 3;
+        }
     }
 }

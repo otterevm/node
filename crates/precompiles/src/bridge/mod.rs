@@ -1,4 +1,6 @@
 pub mod dispatch;
+#[cfg(test)]
+mod tests;
 
 use tempo_contracts::precompiles::BRIDGE_ADDRESS;
 pub use tempo_contracts::precompiles::{BridgeError, IBridge};
@@ -329,10 +331,17 @@ impl Bridge {
             return Err(BridgeError::deposit_already_finalized().into());
         }
 
-        // Check threshold (2/3 of validators)
+        // Check threshold (2/3 of ACTIVE validators)
         let validator_config = ValidatorConfig::new();
-        let validator_count = validator_config.validator_count()?;
-        let threshold = (validator_count * 2 + 2) / 3;
+        let validators = validator_config.get_validators()?;
+        let active_count = validators.iter().filter(|v| v.active).count() as u64;
+        
+        // Ensure we have at least 1 active validator (prevent 0-threshold)
+        if active_count == 0 {
+            return Err(BridgeError::threshold_not_reached().into());
+        }
+        
+        let threshold = (active_count * 2).div_ceil(3).max(1);
 
         if deposit.voting_power_signed < threshold {
             return Err(BridgeError::threshold_not_reached().into());
@@ -452,9 +461,8 @@ impl Bridge {
         let mut tip20 = TIP20Token::from_address(mapping.tempo_tip20)?;
 
         // Check balance
-        let balance = tip20.balance_of(tempo_contracts::precompiles::ITIP20::balanceOfCall {
-            account: sender,
-        })?;
+        let balance = tip20
+            .balance_of(tempo_contracts::precompiles::ITIP20::balanceOfCall { account: sender })?;
         if balance < U256::from(call.amount) {
             return Err(BridgeError::insufficient_balance().into());
         }

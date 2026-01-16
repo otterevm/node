@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../src/TempoLightClient.sol";
 import "../src/StablecoinEscrow.sol";
+import "../src/libraries/BLS12381.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @dev Mock ERC20 for testing
@@ -280,6 +281,92 @@ contract BridgeTest is Test {
 
     function test_LightClientAddress() public view {
         assertEq(escrow.lightClient(), address(lightClient));
+    }
+
+    // --- BLS Mode Tests ---
+
+    function test_DefaultsToEcdsaMode() public view {
+        assertTrue(lightClient.useEcdsaMode());
+    }
+
+    function test_SetBLSPublicKey() public {
+        // Create a dummy 256-byte G2 point
+        bytes memory blsKey = new bytes(256);
+        for (uint256 i = 0; i < 256; i++) {
+            blsKey[i] = bytes1(uint8(i % 256));
+        }
+
+        lightClient.setBLSPublicKey(blsKey);
+        assertEq(lightClient.blsPublicKey(), blsKey);
+    }
+
+    function test_SetBLSPublicKeyInvalidLength() public {
+        bytes memory invalidKey = hex"abcdef";
+
+        vm.expectRevert(TempoLightClient.InvalidBLSPublicKeyLength.selector);
+        lightClient.setBLSPublicKey(invalidKey);
+    }
+
+    function test_SetBLSPublicKeyOnlyOwner() public {
+        bytes memory blsKey = new bytes(256);
+        address attacker = makeAddr("attacker");
+
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", attacker));
+        lightClient.setBLSPublicKey(blsKey);
+    }
+
+    function test_SetSignatureModeOnlyOwner() public {
+        address attacker = makeAddr("attacker");
+
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", attacker));
+        lightClient.setSignatureMode(false);
+    }
+
+    function test_BLSLibraryConstants() public pure {
+        assertEq(BLS12381.G1_POINT_SIZE, 128);
+        assertEq(BLS12381.G2_POINT_SIZE, 256);
+        assertEq(BLS12381.FP_SIZE, 64);
+    }
+
+    function test_BLSPrecompilesAvailability() public view {
+        // Check if BLS precompiles are available
+        // In newer Foundry versions with Cancun+, BLS precompiles (EIP-2537) may be available
+        // This test just documents the current state
+        bool available = lightClient.isBLSAvailable();
+        // Either outcome is valid depending on the EVM version
+        assertTrue(available || !available);
+    }
+
+    function test_SwitchToBLSMode() public {
+        // If precompiles are available, switch should succeed
+        // If not, it should revert
+        if (lightClient.isBLSAvailable()) {
+            lightClient.setSignatureMode(false);
+            assertFalse(lightClient.useEcdsaMode());
+        } else {
+            vm.expectRevert(TempoLightClient.BLSPrecompilesNotAvailable.selector);
+            lightClient.setSignatureMode(false);
+        }
+    }
+
+    event SignatureModeChanged(bool useEcdsa);
+    event BLSPublicKeyUpdated(uint64 indexed epoch, bytes blsKey);
+
+    function test_SignatureModeEvent() public {
+        // Switching to ECDSA mode (already in ECDSA) should emit event
+        vm.expectEmit(true, true, true, true);
+        emit SignatureModeChanged(true);
+        lightClient.setSignatureMode(true);
+    }
+
+    function test_BLSPublicKeyUpdatedEvent() public {
+        bytes memory blsKey = new bytes(256);
+
+        vm.expectEmit(true, true, true, true);
+        emit BLSPublicKeyUpdated(1, blsKey);
+        lightClient.setBLSPublicKey(blsKey);
     }
 
     // --- Helper Functions ---

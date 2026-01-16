@@ -103,7 +103,10 @@ fn test_burn_id_chain_binding() {
         Address::repeat_byte(0x33),
     );
 
-    assert_ne!(eth_id, arb_id, "Different chains must produce different IDs");
+    assert_ne!(
+        eth_id, arb_id,
+        "Different chains must produce different IDs"
+    );
 }
 
 #[test]
@@ -152,5 +155,8 @@ fn test_burn_id_amount_binding() {
         Address::repeat_byte(0x33),
     );
 
-    assert_ne!(small_id, large_id, "Different amounts must produce different IDs");
+    assert_ne!(
+        small_id, large_id,
+        "Different amounts must produce different IDs"
+    );
 }

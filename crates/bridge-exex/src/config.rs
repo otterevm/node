@@ -82,13 +82,17 @@ impl BridgeConfig {
 
         let mut tokens = HashMap::new();
         tokens.insert(
-            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".parse().unwrap(), // USDC on Ethereum
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+                .parse()
+                .unwrap(), // USDC on Ethereum
             TokenConfig {
                 name: "USD Coin".to_string(),
                 symbol: "USDC".to_string(),
                 decimals: 6,
-                tempo_tip20: "0x20C0000000000000000000000000000001000000".parse().unwrap(),
-                min_deposit: Some(1_000_000),      // 1 USDC
+                tempo_tip20: "0x20C0000000000000000000000000000001000000"
+                    .parse()
+                    .unwrap(),
+                min_deposit: Some(1_000_000),         // 1 USDC
                 max_deposit: Some(1_000_000_000_000), // 1M USDC
             },
         );

@@ -10,43 +10,39 @@ impl Precompile for Bridge {
             .deduct_gas(input_cost(calldata.len()))
             .map_err(|_| PrecompileError::OutOfGas)?;
 
-        dispatch_call(
-            calldata,
-            IBridgeCalls::abi_decode,
-            |call| match call {
-                // View functions
-                IBridgeCalls::owner(c) => view(c, |_| self.owner()),
-                IBridgeCalls::getTip20ForOriginToken(c) => {
-                    view(c, |c| self.get_tip20_for_origin_token(c))
-                }
-                IBridgeCalls::getTokenMapping(c) => view(c, |c| self.get_token_mapping(c)),
-                IBridgeCalls::getDeposit(c) => view(c, |c| self.get_deposit(c)),
-                IBridgeCalls::hasValidatorSignedDeposit(c) => {
-                    view(c, |c| self.has_validator_signed_deposit(c))
-                }
-                IBridgeCalls::getBurn(c) => view(c, |c| self.get_burn(c)),
+        dispatch_call(calldata, IBridgeCalls::abi_decode, |call| match call {
+            // View functions
+            IBridgeCalls::owner(c) => view(c, |_| self.owner()),
+            IBridgeCalls::getTip20ForOriginToken(c) => {
+                view(c, |c| self.get_tip20_for_origin_token(c))
+            }
+            IBridgeCalls::getTokenMapping(c) => view(c, |c| self.get_token_mapping(c)),
+            IBridgeCalls::getDeposit(c) => view(c, |c| self.get_deposit(c)),
+            IBridgeCalls::hasValidatorSignedDeposit(c) => {
+                view(c, |c| self.has_validator_signed_deposit(c))
+            }
+            IBridgeCalls::getBurn(c) => view(c, |c| self.get_burn(c)),
 
-                // Mutating functions
-                IBridgeCalls::changeOwner(c) => {
-                    mutate_void(c, msg_sender, |s, c| self.change_owner(s, c))
-                }
-                IBridgeCalls::registerTokenMapping(c) => {
-                    mutate_void(c, msg_sender, |s, c| self.register_token_mapping(s, c))
-                }
-                IBridgeCalls::registerDeposit(c) => {
-                    mutate(c, msg_sender, |s, c| self.register_deposit(s, c))
-                }
-                IBridgeCalls::submitDepositSignature(c) => {
-                    mutate_void(c, msg_sender, |s, c| self.submit_deposit_signature(s, c))
-                }
-                IBridgeCalls::finalizeDeposit(c) => {
-                    mutate_void(c, msg_sender, |s, c| self.finalize_deposit(s, c))
-                }
-                IBridgeCalls::burnForUnlock(c) => {
-                    mutate(c, msg_sender, |s, c| self.burn_for_unlock(s, c))
-                }
-            },
-        )
+            // Mutating functions
+            IBridgeCalls::changeOwner(c) => {
+                mutate_void(c, msg_sender, |s, c| self.change_owner(s, c))
+            }
+            IBridgeCalls::registerTokenMapping(c) => {
+                mutate_void(c, msg_sender, |s, c| self.register_token_mapping(s, c))
+            }
+            IBridgeCalls::registerDeposit(c) => {
+                mutate(c, msg_sender, |s, c| self.register_deposit(s, c))
+            }
+            IBridgeCalls::submitDepositSignature(c) => {
+                mutate_void(c, msg_sender, |s, c| self.submit_deposit_signature(s, c))
+            }
+            IBridgeCalls::finalizeDeposit(c) => {
+                mutate_void(c, msg_sender, |s, c| self.finalize_deposit(s, c))
+            }
+            IBridgeCalls::burnForUnlock(c) => {
+                mutate(c, msg_sender, |s, c| self.burn_for_unlock(s, c))
+            }
+        })
     }
 }
 
@@ -264,7 +260,9 @@ mod tests {
             )?;
 
             // Get deposit via dispatch
-            let get_call = IBridge::getDepositCall { requestId: request_id };
+            let get_call = IBridge::getDepositCall {
+                requestId: request_id,
+            };
             let calldata = get_call.abi_encode();
 
             let result = bridge.call(&calldata, sender)?;

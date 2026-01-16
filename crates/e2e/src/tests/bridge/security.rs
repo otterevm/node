@@ -48,7 +48,10 @@ fn test_cross_chain_replay_prevention() {
         100,
     );
 
-    assert_ne!(eth_deposit, arb_deposit, "Chain ID must differentiate deposits");
+    assert_ne!(
+        eth_deposit, arb_deposit,
+        "Chain ID must differentiate deposits"
+    );
 }
 
 #[test]
@@ -76,7 +79,10 @@ fn test_frontrunning_resistance() {
         100,
     );
 
-    assert_ne!(victim_id, attacker_id, "Recipient must be bound in request ID");
+    assert_ne!(
+        victim_id, attacker_id,
+        "Recipient must be bound in request ID"
+    );
 }
 
 #[test]
@@ -188,10 +194,7 @@ fn test_nonce_sequential_uniqueness() {
             nonce,
             Address::repeat_byte(0x33),
         );
-        assert!(
-            !ids.contains(&id),
-            "Nonce {nonce} produced duplicate ID"
-        );
+        assert!(!ids.contains(&id), "Nonce {nonce} produced duplicate ID");
         ids.push(id);
     }
 }

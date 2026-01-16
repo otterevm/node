@@ -88,6 +88,9 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
         uint64 nonce = depositNonces[msg.sender]++;
 
         uint64 normalizedAmount = _normalizeAmount(token, amount);
+        
+        // Ensure normalized amount is not zero (prevents dust deposits that can't be minted)
+        if (normalizedAmount == 0) revert ZeroAmount();
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
@@ -121,6 +124,9 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
             _decodeBurnEvent(receiptRlp, logIndex);
 
         if (originChainId != uint64(block.chainid)) revert InvalidBurnEvent();
+        
+        // Security: only allow unlocking tokens that are/were supported
+        if (!supportedTokens[originToken]) revert TokenNotSupported();
 
         if (spentBurnIds[burnId]) revert BurnAlreadySpent();
         spentBurnIds[burnId] = true;

@@ -1,6 +1,6 @@
 //! Signature generation for bridge attestations.
 
-use alloy::primitives::{keccak256, Address, B256, Bytes};
+use alloy::primitives::{keccak256, Address, Bytes, B256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use eyre::Result;
 
@@ -19,7 +19,10 @@ impl BridgeSigner {
         let signer = PrivateKeySigner::from_bytes(&(*key_bytes).into())?;
         let validator_address = signer.address();
 
-        Ok(Self { signer, validator_address })
+        Ok(Self {
+            signer,
+            validator_address,
+        })
     }
 
     /// Get validator address

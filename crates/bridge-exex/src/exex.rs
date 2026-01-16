@@ -27,7 +27,11 @@ pub struct BridgeExEx<Node: FullNodeComponents> {
 impl<Node: FullNodeComponents> BridgeExEx<Node> {
     /// Create a new bridge ExEx
     pub fn new(ctx: ExExContext<Node>, config: BridgeConfig) -> Self {
-        Self { ctx, config, signer: None }
+        Self {
+            ctx,
+            config,
+            signer: None,
+        }
     }
 
     /// Set the signer

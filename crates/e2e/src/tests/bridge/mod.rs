@@ -8,6 +8,6 @@
 
 mod utils;
 
-mod deposit_flow;
 mod burn_flow;
+mod deposit_flow;
 mod security;
