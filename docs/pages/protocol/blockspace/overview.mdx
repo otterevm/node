@@ -35,7 +35,10 @@ At mainnet launch, the following parameters are configured:
 
 - **Base fee**: `2 × 10^10` wei (targets 0.1 cent per 50,000 gas TIP-20 transfer)
 - **Payment lane gas limit**: 500,000,000 gas per block (supports ~20,000 TPS for payments)
-- **Main transaction gas limit** (`general_gas_limit`): 25,000,000 gas per block
+- **Main transaction gas limit** (`general_gas_limit`): 30,000,000 gas per block
+- **Transaction gas cap**: 30,000,000 gas per transaction
+
+See [TIP-1011](/protocol/tips/tip-1011) for the full specification and rationale.
 
 ### Block body
 The block body in Tempo retains the canonical Ethereum block body structure, with the addition of system transactions. Transactions are ordered in the following sections:
