@@ -15,8 +15,11 @@ use crate::{
 use alloy::primitives::{Address, B256, U256, keccak256};
 use tracing::trace;
 
-/// Domain separator for deposit signatures
-pub const DEPOSIT_DOMAIN: &[u8] = b"TEMPO_BRIDGE_DEPOSIT_V1";
+/// Type hash for deposit domain separation
+/// Computed as: keccak256("TEMPO_BRIDGE_DEPOSIT_V1")
+pub fn deposit_type_hash() -> B256 {
+    keccak256(b"TEMPO_BRIDGE_DEPOSIT_V1")
+}
 
 /// Domain separator for burn requests
 pub const BURN_DOMAIN: &[u8] = b"TEMPO_BRIDGE_BURN_V1";
@@ -181,7 +184,13 @@ impl Bridge {
     }
 
     /// Compute deposit request ID
+    ///
+    /// Domain separation includes:
+    /// - Type hash: keccak256("TEMPO_BRIDGE_DEPOSIT_V1")
+    /// - Tempo chain ID: prevents replay across different Tempo networks
+    /// - Bridge address: binds signature to specific bridge contract
     fn compute_request_id(
+        tempo_chain_id: u64,
         origin_chain_id: u64,
         origin_token: Address,
         origin_tx_hash: B256,
@@ -190,10 +199,11 @@ impl Bridge {
         amount: u64,
         origin_block_number: u64,
     ) -> B256 {
-        // abi.encodePacked(DEPOSIT_DOMAIN, origin_chain_id, origin_token, origin_tx_hash,
-        //                  origin_log_index, tempo_recipient, amount, origin_block_number)
-        let mut buf = Vec::with_capacity(DEPOSIT_DOMAIN.len() + 8 + 20 + 32 + 4 + 20 + 8 + 8);
-        buf.extend_from_slice(DEPOSIT_DOMAIN);
+        let type_hash = deposit_type_hash();
+        let mut buf = Vec::with_capacity(32 + 8 + 20 + 8 + 20 + 32 + 4 + 20 + 8 + 8);
+        buf.extend_from_slice(type_hash.as_slice());
+        buf.extend_from_slice(&tempo_chain_id.to_be_bytes());
+        buf.extend_from_slice(BRIDGE_ADDRESS.as_slice());
         buf.extend_from_slice(&origin_chain_id.to_be_bytes());
         buf.extend_from_slice(origin_token.as_slice());
         buf.extend_from_slice(origin_tx_hash.as_slice());
@@ -227,8 +237,10 @@ impl Bridge {
             return Err(BridgeError::token_mapping_not_found().into());
         }
 
-        // Compute request ID
+        // Compute request ID with domain separation (tempo chain ID + bridge address)
+        let tempo_chain_id = self.storage.chain_id();
         let request_id = Self::compute_request_id(
+            tempo_chain_id,
             call.originChainId,
             call.originToken,
             call.originTxHash,

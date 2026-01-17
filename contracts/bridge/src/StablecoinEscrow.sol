@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/RLP.sol";
+import "@openzeppelin/contracts/utils/Memory.sol";
 
 /// @title StablecoinEscrow
 /// @notice Escrows stablecoins for bridging to Tempo
 contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using RLP for bytes;
+    using Memory for bytes;
 
     /// @notice The Tempo light client for header verification
     address public immutable lightClient;
@@ -54,6 +58,7 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
     error HeaderNotFinalized();
     error InvalidReceiptProof();
     error InvalidBurnEvent();
+    error InvalidProofFormat();
 
     constructor(address _lightClient, uint64 _tempoChainId) Ownable(msg.sender) {
         lightClient = _lightClient;
@@ -104,19 +109,54 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
     /// @notice Unlock tokens based on Tempo burn proof
     /// @param tempoHeight The Tempo block height containing the burn
     /// @param receiptRlp RLP-encoded receipt
-    /// @param receiptProof MPT proof for receipt inclusion
+    /// @param receiptProof MPT proof for receipt inclusion (each element is 33 bytes: 32 sibling hash + 1 position flag)
     /// @param logIndex Index of the burn event in the receipt
     function unlock(uint64 tempoHeight, bytes calldata receiptRlp, bytes[] calldata receiptProof, uint256 logIndex)
         external
         nonReentrant
     {
+        _unlockInternal(tempoHeight, receiptRlp, receiptProof, logIndex);
+    }
+
+    /// @notice Unlock tokens with ABI-encoded proof (called by bridge relayer)
+    /// @dev Proof format: ABI-encoded (uint64 tempoHeight, bytes receiptRlp, bytes[] receiptProof, uint256 logIndex)
+    /// @param burnId The burn ID (used only for duplicate check before decoding)
+    /// @param recipient Expected recipient (verified against decoded burn event)
+    /// @param amount Expected amount (verified against decoded burn event)
+    /// @param proof ABI-encoded proof data
+    function unlockWithProof(bytes32 burnId, address recipient, uint256 amount, bytes calldata proof)
+        external
+        nonReentrant
+    {
+        // Early duplicate check to avoid wasting gas on decode
+        if (spentBurnIds[burnId]) revert BurnAlreadySpent();
+
+        // Decode the ABI-encoded proof
+        (uint64 tempoHeight, bytes memory receiptRlp, bytes[] memory receiptProof, uint256 logIndex) =
+            abi.decode(proof, (uint64, bytes, bytes[], uint256));
+
+        // Perform the unlock
+        _unlockInternalMemory(tempoHeight, receiptRlp, receiptProof, logIndex, burnId, recipient, amount);
+    }
+
+    /// @notice Check if a burn has been unlocked (alias for isBurnSpent)
+    function isUnlocked(bytes32 burnId) external view returns (bool) {
+        return spentBurnIds[burnId];
+    }
+
+    function _unlockInternal(
+        uint64 tempoHeight,
+        bytes calldata receiptRlp,
+        bytes[] calldata receiptProof,
+        uint256 logIndex
+    ) internal {
         ITempoLightClient lc = ITempoLightClient(lightClient);
         if (!lc.isHeaderFinalized(tempoHeight)) revert HeaderNotFinalized();
 
         bytes32 receiptsRoot = lc.getReceiptsRoot(tempoHeight);
 
         bytes32 receiptHash = keccak256(receiptRlp);
-        if (!_verifyReceiptProof(receiptHash, receiptsRoot, receiptProof)) {
+        if (!_verifyReceiptProofCalldata(receiptHash, receiptsRoot, receiptProof)) {
             revert InvalidReceiptProof();
         }
 
@@ -128,6 +168,48 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
         // Security: only allow unlocking tokens that are/were supported
         if (!supportedTokens[originToken]) revert TokenNotSupported();
 
+        if (spentBurnIds[burnId]) revert BurnAlreadySpent();
+        spentBurnIds[burnId] = true;
+
+        uint256 denormalizedAmount = _denormalizeAmount(originToken, amount);
+
+        IERC20(originToken).safeTransfer(originRecipient, denormalizedAmount);
+
+        emit Unlocked(burnId, originToken, originRecipient, amount);
+    }
+
+    function _unlockInternalMemory(
+        uint64 tempoHeight,
+        bytes memory receiptRlp,
+        bytes[] memory receiptProof,
+        uint256 logIndex,
+        bytes32 expectedBurnId,
+        address expectedRecipient,
+        uint256 expectedAmount
+    ) internal {
+        ITempoLightClient lc = ITempoLightClient(lightClient);
+        if (!lc.isHeaderFinalized(tempoHeight)) revert HeaderNotFinalized();
+
+        bytes32 receiptsRoot = lc.getReceiptsRoot(tempoHeight);
+
+        bytes32 receiptHash = keccak256(receiptRlp);
+        if (!_verifyReceiptProofMemory(receiptHash, receiptsRoot, receiptProof)) {
+            revert InvalidReceiptProof();
+        }
+
+        (bytes32 burnId, uint64 originChainId, address originToken, address originRecipient, uint64 amount) =
+            _decodeBurnEventMemory(receiptRlp, logIndex);
+
+        // Verify the decoded values match the expected values from the relayer
+        if (burnId != expectedBurnId) revert InvalidBurnEvent();
+        if (originRecipient != expectedRecipient) revert InvalidBurnEvent();
+        if (amount != uint64(expectedAmount)) revert InvalidBurnEvent();
+        if (originChainId != uint64(block.chainid)) revert InvalidBurnEvent();
+        
+        // Security: only allow unlocking tokens that are/were supported
+        if (!supportedTokens[originToken]) revert TokenNotSupported();
+
+        // Already checked at the start of unlockWithProof, but double-check after decode
         if (spentBurnIds[burnId]) revert BurnAlreadySpent();
         spentBurnIds[burnId] = true;
 
@@ -171,14 +253,62 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
         }
     }
 
-    function _verifyReceiptProof(bytes32 receiptHash, bytes32 receiptsRoot, bytes[] calldata proof)
+    /// @dev Verify receipt proof with 33-byte elements (calldata version)
+    /// Each proof element is 32 bytes sibling hash + 1 byte position flag
+    /// Position flag: 0x01 = current is left (sibling on right), 0x00 = current is right (sibling on left)
+    function _verifyReceiptProofCalldata(bytes32 receiptHash, bytes32 receiptsRoot, bytes[] calldata proof)
         internal
         pure
         returns (bool)
     {
         bytes32 computedRoot = receiptHash;
         for (uint256 i = 0; i < proof.length; i++) {
-            computedRoot = keccak256(abi.encodePacked(computedRoot, proof[i]));
+            bytes calldata proofElement = proof[i];
+            if (proofElement.length != 33) return false;
+            
+            bytes32 sibling = bytes32(proofElement[:32]);
+            bool isLeft = proofElement[32] == 0x01;
+            
+            if (isLeft) {
+                // Current is on left, sibling is on right
+                computedRoot = keccak256(abi.encodePacked(computedRoot, sibling));
+            } else {
+                // Current is on right, sibling is on left
+                computedRoot = keccak256(abi.encodePacked(sibling, computedRoot));
+            }
+        }
+        return computedRoot == receiptsRoot;
+    }
+
+    /// @dev Verify receipt proof with 33-byte elements (memory version)
+    function _verifyReceiptProofMemory(bytes32 receiptHash, bytes32 receiptsRoot, bytes[] memory proof)
+        internal
+        pure
+        returns (bool)
+    {
+        bytes32 computedRoot = receiptHash;
+        for (uint256 i = 0; i < proof.length; i++) {
+            bytes memory proofElement = proof[i];
+            if (proofElement.length != 33) return false;
+            
+            bytes32 sibling;
+            uint8 positionFlag;
+            assembly {
+                // Memory layout: [32 bytes length][32 bytes sibling][1 byte flag]
+                // Load sibling from offset 32 (after length prefix)
+                sibling := mload(add(proofElement, 32))
+                // Load byte at index 32 (the position flag)
+                // mload at offset 33 loads 32 bytes starting at byte 33, flag is in high byte
+                positionFlag := byte(0, mload(add(proofElement, 65)))
+            }
+            
+            if (positionFlag == 0x01) {
+                // Current is on left, sibling is on right
+                computedRoot = keccak256(abi.encodePacked(computedRoot, sibling));
+            } else {
+                // Current is on right, sibling is on left
+                computedRoot = keccak256(abi.encodePacked(sibling, computedRoot));
+            }
         }
         return computedRoot == receiptsRoot;
     }
@@ -188,16 +318,112 @@ contract StablecoinEscrow is Ownable2Step, ReentrancyGuard {
         pure
         returns (bytes32 burnId, uint64 originChainId, address originToken, address originRecipient, uint64 amount)
     {
-        // Simplified event decoding for MVP
-        // Production needs full RLP decoding
-        // This is a placeholder that assumes the data is passed correctly
-        // In production, parse receiptRlp to extract logs[logIndex]
+        bytes memory receiptBytes = receiptRlp;
+        
+        // Handle typed transactions (EIP-2718): strip the transaction type prefix byte
+        // Type 0x01 = EIP-2930, Type 0x02 = EIP-1559, Type 0x03 = EIP-4844
+        if (receiptBytes.length > 0 && uint8(receiptBytes[0]) < 0x80) {
+            assembly {
+                receiptBytes := add(receiptBytes, 1)
+                mstore(receiptBytes, sub(mload(add(receiptBytes, 0x1f)), 1))
+            }
+        }
+        
+        // Receipt structure: [status, cumulativeGasUsed, logsBloom, logs[]]
+        Memory.Slice[] memory receiptFields = receiptBytes.decodeList();
+        require(receiptFields.length >= 4, "Invalid receipt");
+        
+        // logs is at index 3
+        Memory.Slice[] memory logs = RLP.readList(receiptFields[3]);
+        require(logIndex < logs.length, "Log index out of bounds");
+        
+        // Log structure: [address, topics[], data]
+        Memory.Slice[] memory logFields = RLP.readList(logs[logIndex]);
+        require(logFields.length == 3, "Invalid log");
+        
+        // Verify emitter is the Tempo bridge precompile
+        address logAddress = RLP.readAddress(logFields[0]);
+        require(logAddress == TEMPO_BRIDGE, "Invalid emitter");
+        
+        // Decode topics: [eventSig, burnId, originChainId]
+        Memory.Slice[] memory topics = RLP.readList(logFields[1]);
+        require(topics.length == 3, "Invalid topics count");
+        
+        bytes32 eventSig = RLP.readBytes32(topics[0]);
+        require(eventSig == BURN_EVENT_SIGNATURE, "Invalid event signature");
+        
+        burnId = RLP.readBytes32(topics[1]);
+        originChainId = uint64(RLP.readUint256(topics[2]));
+        
+        // Decode data: ABI-encoded (address originToken, address originRecipient, uint64 amount, uint64 nonce, uint64 tempoBlockNumber)
+        // Each field is 32 bytes: 5 fields = 160 bytes total
+        bytes memory logData = RLP.readBytes(logFields[2]);
+        require(logData.length >= 160, "Invalid log data length");
+        
+        // ABI decoding: addresses are right-aligned in 32-byte slots
+        // offset +32 for bytes length prefix, then:
+        // - originToken at bytes [0:32] -> load at offset 32, mask lower 20 bytes
+        // - originRecipient at bytes [32:64] -> load at offset 64
+        // - amount at bytes [64:96] -> load at offset 96
+        assembly {
+            originToken := mload(add(logData, 32))
+            originRecipient := mload(add(logData, 64))
+            amount := mload(add(logData, 96))
+        }
+    }
 
-        // Suppress unused variable warnings
-        receiptRlp;
-        logIndex;
-
-        revert("Not implemented - use test mock");
+    /// @dev Decode burn event from RLP receipt (memory version for unlockWithProof)
+    function _decodeBurnEventMemory(bytes memory receiptRlp, uint256 logIndex)
+        internal
+        pure
+        returns (bytes32 burnId, uint64 originChainId, address originToken, address originRecipient, uint64 amount)
+    {
+        bytes memory receiptBytes = receiptRlp;
+        
+        // Handle typed transactions (EIP-2718): strip the transaction type prefix byte
+        // Type 0x01 = EIP-2930, Type 0x02 = EIP-1559, Type 0x03 = EIP-4844
+        if (receiptBytes.length > 0 && uint8(receiptBytes[0]) < 0x80) {
+            assembly {
+                receiptBytes := add(receiptBytes, 1)
+                mstore(receiptBytes, sub(mload(add(receiptBytes, 0x1f)), 1))
+            }
+        }
+        
+        // Receipt structure: [status, cumulativeGasUsed, logsBloom, logs[]]
+        Memory.Slice[] memory receiptFields = receiptBytes.decodeList();
+        require(receiptFields.length >= 4, "Invalid receipt");
+        
+        // logs is at index 3
+        Memory.Slice[] memory logs = RLP.readList(receiptFields[3]);
+        require(logIndex < logs.length, "Log index out of bounds");
+        
+        // Log structure: [address, topics[], data]
+        Memory.Slice[] memory logFields = RLP.readList(logs[logIndex]);
+        require(logFields.length == 3, "Invalid log");
+        
+        // Verify emitter is the Tempo bridge precompile
+        address logAddress = RLP.readAddress(logFields[0]);
+        require(logAddress == TEMPO_BRIDGE, "Invalid emitter");
+        
+        // Decode topics: [eventSig, burnId, originChainId]
+        Memory.Slice[] memory topics = RLP.readList(logFields[1]);
+        require(topics.length == 3, "Invalid topics count");
+        
+        bytes32 eventSig = RLP.readBytes32(topics[0]);
+        require(eventSig == BURN_EVENT_SIGNATURE, "Invalid event signature");
+        
+        burnId = RLP.readBytes32(topics[1]);
+        originChainId = uint64(RLP.readUint256(topics[2]));
+        
+        // Decode data: ABI-encoded (address originToken, address originRecipient, uint64 amount, uint64 nonce, uint64 tempoBlockNumber)
+        bytes memory logData = RLP.readBytes(logFields[2]);
+        require(logData.length >= 160, "Invalid log data length");
+        
+        assembly {
+            originToken := mload(add(logData, 32))
+            originRecipient := mload(add(logData, 64))
+            amount := mload(add(logData, 96))
+        }
     }
 }
 

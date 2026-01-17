@@ -8,10 +8,11 @@ use alloy::{
     sol_types::SolEvent,
 };
 use eyre::Result;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::config::ChainConfig;
+use crate::{config::ChainConfig, retry::with_retry};
 
 sol! {
     /// Deposit event from StablecoinEscrow
@@ -69,14 +70,21 @@ impl OriginWatcher {
             "Starting origin chain watcher"
         );
 
-        let provider = ProviderBuilder::new()
-            .connect(self.config.rpc_url.as_str())
-            .await?;
+        let provider = Arc::new(
+            ProviderBuilder::new()
+                .connect(self.config.rpc_url.as_str())
+                .await?,
+        );
 
         let mut last_block: u64 = if self.config.start_block > 0 {
             self.config.start_block
         } else {
-            provider.get_block_number().await?
+            let p = Arc::clone(&provider);
+            with_retry("get_block_number", || {
+                let p = Arc::clone(&p);
+                async move { Ok(p.get_block_number().await?) }
+            })
+            .await?
         };
 
         let deposit_event_sig = Deposited::SIGNATURE_HASH;
@@ -87,7 +95,14 @@ impl OriginWatcher {
             ))
             .await;
 
-            let current_block: u64 = provider.get_block_number().await?;
+            let current_block: u64 = {
+                let p = Arc::clone(&provider);
+                with_retry("get_block_number", || {
+                    let p = Arc::clone(&p);
+                    async move { Ok(p.get_block_number().await?) }
+                })
+                .await?
+            };
 
             // Wait for confirmations
             let safe_block = current_block.saturating_sub(self.config.confirmations);
@@ -109,7 +124,18 @@ impl OriginWatcher {
                 .from_block(last_block + 1)
                 .to_block(safe_block);
 
-            match provider.get_logs(&filter).await {
+            let logs_result = {
+                let p = Arc::clone(&provider);
+                let f = filter.clone();
+                with_retry("get_logs", || {
+                    let p = Arc::clone(&p);
+                    let f = f.clone();
+                    async move { Ok(p.get_logs(&f).await?) }
+                })
+                .await
+            };
+
+            match logs_result {
                 Ok(logs) => {
                     for log in logs {
                         if let Some(deposit) = self.parse_deposit_log(&log) {

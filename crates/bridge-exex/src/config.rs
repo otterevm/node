@@ -4,14 +4,69 @@ use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 
+/// KMS provider type
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum KmsProvider {
+    #[default]
+    Aws,
+    Gcp,
+}
+
+/// KMS configuration for production key management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KmsConfig {
+    /// KMS provider (aws or gcp)
+    #[serde(default)]
+    pub provider: KmsProvider,
+
+    /// AWS KMS key ID, key ARN, alias name, or alias ARN
+    /// For GCP: projects/{project}/locations/{location}/keyRings/{ring}/cryptoKeys/{key}/cryptoKeyVersions/{version}
+    pub key_id: String,
+
+    /// AWS region (required for AWS, ignored for GCP)
+    pub region: Option<String>,
+
+    /// The Ethereum address corresponding to the KMS key's public key
+    /// Must be provided since deriving from KMS requires an API call
+    pub address: Address,
+}
+
 /// Bridge configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BridgeConfig {
     /// Tempo chain ID
     pub tempo_chain_id: u64,
 
-    /// Validator's signing key path (uses existing key material)
+    /// Health server port (disabled if not set)
+    pub health_port: Option<u16>,
+
+    /// Tempo RPC URL for submitting transactions
+    pub tempo_rpc_url: Option<String>,
+
+    /// Secondary Tempo RPC URL for backup/quorum verification
+    pub tempo_secondary_rpc_url: Option<String>,
+
+    /// Consensus RPC URL for fetching finalization certificates.
+    /// Used for header relay to get BLS threshold signatures.
+    /// Typically the same as tempo_rpc_url unless running a separate consensus endpoint.
+    pub consensus_rpc_url: Option<String>,
+
+    /// When true, both Tempo RPCs must agree on block hashes
+    #[serde(default)]
+    pub require_tempo_rpc_quorum: bool,
+
+    /// Validator's signing key path (uses existing key material, fallback if attestation/broadcaster keys not set)
     pub validator_key_path: Option<String>,
+
+    /// Path to HSM/KMS key for attestation signing (higher privilege)
+    pub attestation_key_path: Option<String>,
+
+    /// Path to lower-privilege broadcaster key for transaction submission
+    pub broadcaster_key_path: Option<String>,
+
+    /// KMS configuration for attestation signing (takes precedence over attestation_key_path)
+    pub kms: Option<KmsConfig>,
 
     /// Origin chain configurations
     pub chains: HashMap<String, ChainConfig>,
@@ -26,6 +81,13 @@ pub struct ChainConfig {
     /// RPC URL
     pub rpc_url: String,
 
+    /// Secondary RPC URL for backup/quorum verification
+    pub secondary_rpc_url: Option<String>,
+
+    /// When true, both RPCs must agree on block hashes
+    #[serde(default)]
+    pub require_rpc_quorum: bool,
+
     /// WebSocket URL for subscriptions (optional)
     pub ws_url: Option<String>,
 
@@ -34,6 +96,9 @@ pub struct ChainConfig {
 
     /// Escrow contract address on this chain
     pub escrow_address: Address,
+
+    /// Tempo light client contract address on this chain (for burn verification)
+    pub light_client_address: Option<Address>,
 
     /// Supported token mappings: origin_token -> tempo_tip20
     pub tokens: HashMap<Address, TokenConfig>,
@@ -101,9 +166,12 @@ impl BridgeConfig {
             ChainConfig {
                 chain_id: 1,
                 rpc_url: "http://localhost:8545".to_string(),
+                secondary_rpc_url: None,
+                require_rpc_quorum: false,
                 ws_url: Some("ws://localhost:8546".to_string()),
                 confirmations: 12,
                 escrow_address: Address::ZERO, // Set in tests
+                light_client_address: None,    // Set in production
                 tokens,
                 poll_interval_secs: 12,
                 start_block: 0,
@@ -112,7 +180,15 @@ impl BridgeConfig {
 
         Self {
             tempo_chain_id: 62049,
+            health_port: None,
+            tempo_rpc_url: Some("http://localhost:8551".to_string()),
+            tempo_secondary_rpc_url: None,
+            consensus_rpc_url: Some("http://localhost:8551".to_string()),
+            require_tempo_rpc_quorum: false,
             validator_key_path: None,
+            attestation_key_path: None,
+            broadcaster_key_path: None,
+            kms: None,
             chains,
         }
     }
@@ -145,5 +221,66 @@ tempo_tip20 = "0x20C0000000000000000000000000000001000000"
         let config: BridgeConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.tempo_chain_id, 62049);
         assert!(config.chains.contains_key("anvil"));
+
+        // Verify optional fields default correctly
+        assert!(config.tempo_secondary_rpc_url.is_none());
+        assert!(!config.require_tempo_rpc_quorum);
+        assert!(config.attestation_key_path.is_none());
+        assert!(config.broadcaster_key_path.is_none());
+
+        let anvil = config.chains.get("anvil").unwrap();
+        assert!(anvil.secondary_rpc_url.is_none());
+        assert!(!anvil.require_rpc_quorum);
+    }
+
+    #[test]
+    fn test_parse_config_with_new_fields() {
+        let toml = r#"
+tempo_chain_id = 62049
+tempo_rpc_url = "http://localhost:8551"
+tempo_secondary_rpc_url = "http://localhost:8552"
+require_tempo_rpc_quorum = true
+attestation_key_path = "/path/to/attestation.key"
+broadcaster_key_path = "/path/to/broadcaster.key"
+
+[chains.anvil]
+chain_id = 31337
+rpc_url = "http://localhost:8545"
+secondary_rpc_url = "http://localhost:8546"
+require_rpc_quorum = true
+confirmations = 1
+escrow_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+poll_interval_secs = 1
+start_block = 0
+
+[chains.anvil.tokens."0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"]
+name = "USD Coin"
+symbol = "USDC"
+decimals = 6
+tempo_tip20 = "0x20C0000000000000000000000000000001000000"
+"#;
+
+        let config: BridgeConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.tempo_chain_id, 62049);
+        assert_eq!(
+            config.tempo_secondary_rpc_url,
+            Some("http://localhost:8552".to_string())
+        );
+        assert!(config.require_tempo_rpc_quorum);
+        assert_eq!(
+            config.attestation_key_path,
+            Some("/path/to/attestation.key".to_string())
+        );
+        assert_eq!(
+            config.broadcaster_key_path,
+            Some("/path/to/broadcaster.key".to_string())
+        );
+
+        let anvil = config.chains.get("anvil").unwrap();
+        assert_eq!(
+            anvil.secondary_rpc_url,
+            Some("http://localhost:8546".to_string())
+        );
+        assert!(anvil.require_rpc_quorum);
     }
 }
