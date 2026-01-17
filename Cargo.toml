@@ -117,51 +117,51 @@ tempo-telemetry-util = { path = "crates/telemetry-util", default-features = fals
 tempo-transaction-pool = { path = "crates/transaction-pool", default-features = false }
 
 # reth v1.10.0 (b25f32a)
-reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-chainspec = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-cli = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-cli-runner = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-cli-util = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-codecs = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-consensus = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-consensus-common = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-db = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-db-api = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-e2e-test-utils = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-engine-local = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-engine-tree = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-errors = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-eth-wire-types = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-ethereum-consensus = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-ethereum-engine-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369", default-features = false }
-reth-evm = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-metrics = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-network-peers = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-node-api = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-node-builder = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-node-core = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-node-metrics = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369", default-features = false }
-reth-provider = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-rpc = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-rpc-builder = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-storage-api = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-tracing = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
-reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369" }
+reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-cli = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-cli-runner = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-cli-util = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-codecs = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-consensus = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-consensus-common = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-db = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-db-api = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-e2e-test-utils = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-engine-local = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-engine-tree = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-errors = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-eth-wire-types = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-ethereum-consensus = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-ethereum-engine-primitives = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo", default-features = false }
+reth-evm = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-metrics = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-network-peers = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-node-api = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-node-builder = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-node-core = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-node-metrics = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo", default-features = false }
+reth-provider = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-rpc = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-rpc-builder = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-storage-api = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-tracing = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
+reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo" }
 
-reth-revm = { git = "https://github.com/paradigmxyz/reth", rev = "b25f32a977b489f9b84254c7811a2a5a25a81369", features = [
+reth-revm = { git = "https://github.com/paradigmxyz/reth", branch = "feat/resumable-downloads-tempo", features = [
   "std",
   "optional-checks",
 ] }
@@ -243,8 +243,8 @@ pyroscope_pprofrs = "0.2.10"
 rayon = "1.10"
 
 # build deps
-vergen = "9"
-vergen-git2 = "1"
+vergen = "=9.0.4"
+vergen-git2 = "=1.0.5"
 [patch.crates-io]
 # Commonware right after after PR #2841 was merged
 commonware-broadcast = { git = "https://github.com/commonwarexyz/monorepo", rev = "cf349ae38b862f0336e9b33b3559ec846a499e0c"}
