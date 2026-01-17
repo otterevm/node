@@ -5,12 +5,19 @@ use tempo_precompiles_macros::abi;
 #[abi(dispatch)]
 #[rustfmt::skip]
 pub mod abi {
-    use alloy::primitives::{Address, B256, U256};
+    use alloy::primitives::{Address, B256, U256, uint};
 
     #[cfg(feature = "precompile")]
     use crate::error::Result;
 
-    // IFeeManager trait
+    pub const FEE_BPS: u64 = 25; // 0.25% fee
+    pub const BASIS_POINTS: u64 = 10000;
+    pub const M: U256 = uint!(9970_U256); // m = 0.9970 (scaled by 10000)
+    pub const N: U256 = uint!(9985_U256);
+    pub const SCALE: U256 = uint!(10000_U256);
+    pub const MIN_LIQUIDITY: U256 = uint!(1000_U256);
+    pub const MINIMUM_BALANCE: U256 = uint!(1_000_000_000_U256); // 1e9
+
     pub trait IFeeManager {
         fn user_tokens(&self, user: Address) -> Result<Address>;
         fn validator_tokens(&self, validator: Address) -> Result<Address>;
@@ -21,13 +28,7 @@ pub mod abi {
         fn distribute_fees(&mut self, validator: Address, token: Address) -> Result<()>;
     }
 
-    // ITIPFeeAMM trait - AMM functionality
     pub trait ITIPFeeAMM {
-        fn m(&self) -> Result<U256>;
-        fn n(&self) -> Result<U256>;
-        fn scale(&self) -> Result<U256>;
-        fn min_liquidity(&self) -> Result<U256>;
-
         fn get_pool_id(&self, user_token: Address, validator_token: Address) -> Result<B256>;
         fn get_pool(&self, user_token: Address, validator_token: Address) -> Result<Pool>;
         fn pools(&self, pool_id: B256) -> Result<Pool>;

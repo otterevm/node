@@ -1,22 +1,21 @@
 pub mod amm;
 
 use crate::storage::Mapping;
-use alloy::primitives::{Address, B256, U256, uint};
+use alloy::primitives::{Address, B256, U256};
 use tempo_precompiles_macros::contract;
 
 pub use crate::abi::{
-    DEFAULT_FEE_TOKEN,
+    DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS,
     ITipFeeManager::{Error, Event, IFeeManager, ITIPFeeAMM, Pool},
-    TIP_FEE_MANAGER_ADDRESS,
     tip_fee_manager::abi,
 };
 use crate::{
-    abi::{ITIP20::traits::IToken as _, ITipFeeManager},
+    abi::{ITipFeeManager, ITIP20::traits::*},
     error::{Result, TempoPrecompileError},
     storage::Handler,
-    tip_fee_manager::amm::{M, MIN_LIQUIDITY, N, SCALE, compute_amount_out},
+    tip_fee_manager::amm::compute_amount_out,
     tip20::{TIP20Token, validate_usd_currency},
-    tip20_factory::{TIP20Factory, abi::traits::IFactory as _},
+    tip20_factory::{TIP20Factory, abi::traits::*},
 };
 
 #[contract(addr = TIP_FEE_MANAGER_ADDRESS, abi, dispatch)]
@@ -30,11 +29,6 @@ pub struct TipFeeManager {
 }
 
 impl TipFeeManager {
-    // Constants
-    pub const FEE_BPS: u64 = 25; // 0.25% fee
-    pub const BASIS_POINTS: u64 = 10000;
-    pub const MINIMUM_BALANCE: U256 = uint!(1_000_000_000_U256); // 1e9
-
     /// Initializes the contract
     ///
     /// This ensures the [`TipFeeManager`] isn't empty and prevents state clear.
@@ -63,10 +57,12 @@ impl TipFeeManager {
         max_amount: U256,
         beneficiary: Address,
     ) -> Result<Address> {
+        // Get the validator's token preference
         let validator_token = self.get_validator_token(beneficiary)?;
 
         let mut tip20_token = TIP20Token::from_address(user_token)?;
 
+        // Ensure that user and FeeManager are authorized to interact with the token
         tip20_token.ensure_transfer_authorized(fee_payer, self.address)?;
         tip20_token.transfer_fee_pre_tx(fee_payer, max_amount)?;
 
@@ -74,6 +70,7 @@ impl TipFeeManager {
             self.check_sufficient_liquidity(user_token, validator_token, max_amount)?;
         }
 
+        // Return the user's token preference
         Ok(user_token)
     }
 
@@ -89,6 +86,7 @@ impl TipFeeManager {
         fee_token: Address,
         beneficiary: Address,
     ) -> Result<()> {
+        // Refund unused tokens to user
         let mut tip20_token = TIP20Token::from_address(fee_token)?;
         tip20_token.transfer_fee_post_tx(fee_payer, refund_amount, actual_spending)?;
 
@@ -114,7 +112,6 @@ impl TipFeeManager {
         Ok(())
     }
 
-    /// Increment collected fees for a specific validator and token combination.
     fn increment_collected_fees(
         &mut self,
         validator: Address,
@@ -135,21 +132,17 @@ impl TipFeeManager {
         Ok(())
     }
 
-    /// Transfers the validator's fee balance for a specific token to their address.
-    pub fn distribute_fees(&mut self, validator: Address, token: Address) -> Result<()> {
+    fn _distribute_fees(&mut self, validator: Address, token: Address) -> Result<()> {
         let amount = self.collected_fees[validator][token].read()?;
         if amount.is_zero() {
             return Ok(());
         }
         self.collected_fees[validator][token].write(U256::ZERO)?;
 
-        // Transfer fees to validator
         let mut tip20_token = TIP20Token::from_address(token)?;
         tip20_token.transfer(self.address, validator, amount)?;
 
-        self.emit_event(ITipFeeManager::Event::fees_distributed(
-            validator, token, amount,
-        ))
+        self.emit_event(ITipFeeManager::Event::fees_distributed(validator, token, amount))
     }
 }
 
@@ -198,96 +191,11 @@ impl IFeeManager for TipFeeManager {
 
         self.validator_tokens[msg_sender].write(token)?;
 
-        self.emit_event(ITipFeeManager::Event::validator_token_set(
-            msg_sender, token,
-        ))
+        self.emit_event(ITipFeeManager::Event::validator_token_set(msg_sender, token))
     }
 
-    fn distribute_fees(
-        &mut self,
-        _msg_sender: Address,
-        validator: Address,
-        token: Address,
-    ) -> Result<()> {
+    fn distribute_fees(&mut self, _msg_sender: Address, validator: Address, token: Address) -> Result<()> {
         self._distribute_fees(validator, token)
-    }
-}
-
-impl ITIPFeeAMM for TipFeeManager {
-    fn m(&self) -> Result<U256> {
-        Ok(M)
-    }
-
-    fn n(&self) -> Result<U256> {
-        Ok(N)
-    }
-
-    fn scale(&self) -> Result<U256> {
-        Ok(SCALE)
-    }
-
-    fn min_liquidity(&self) -> Result<U256> {
-        Ok(MIN_LIQUIDITY)
-    }
-
-    fn get_pool_id(&self, user_token: Address, validator_token: Address) -> Result<B256> {
-        Ok(self.pool_id(user_token, validator_token))
-    }
-
-    fn get_pool(&self, user_token: Address, validator_token: Address) -> Result<Pool> {
-        let pool_id = self.pool_id(user_token, validator_token);
-        self.pools[pool_id].read()
-    }
-
-    fn pools(&self, pool_id: B256) -> Result<Pool> {
-        self.pools[pool_id].read()
-    }
-
-    fn total_supply(&self, pool_id: B256) -> Result<U256> {
-        self.total_supply[pool_id].read()
-    }
-
-    fn liquidity_balances(&self, pool_id: B256, user: Address) -> Result<U256> {
-        self.liquidity_balances[pool_id][user].read()
-    }
-
-    fn mint(
-        &mut self,
-        msg_sender: Address,
-        user_token: Address,
-        validator_token: Address,
-        amount_validator_token: U256,
-        to: Address,
-    ) -> Result<U256> {
-        self._mint(
-            msg_sender,
-            user_token,
-            validator_token,
-            amount_validator_token,
-            to,
-        )
-    }
-
-    fn burn(
-        &mut self,
-        msg_sender: Address,
-        user_token: Address,
-        validator_token: Address,
-        liquidity: U256,
-        to: Address,
-    ) -> Result<(U256, U256)> {
-        self._burn(msg_sender, user_token, validator_token, liquidity, to)
-    }
-
-    fn rebalance_swap(
-        &mut self,
-        msg_sender: Address,
-        user_token: Address,
-        validator_token: Address,
-        amount_out: U256,
-        to: Address,
-    ) -> Result<U256> {
-        self._rebalance_swap(msg_sender, user_token, validator_token, amount_out, to)
     }
 }
 

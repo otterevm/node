@@ -3,14 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use crate::{
-    abi::{
-        ITIP20::Error as TIP20Error, IValidatorConfig::Error as ValidatorConfigError,
-        tip_fee_manager::abi::Error as TipFeeManagerError,
-    },
-    tip20_factory::TIP20FactoryError,
-    tip403_registry::TIP403RegistryError,
-};
+use crate::abi::{ITIP20, ITIP20Factory, ITIP403Registry, ITipFeeManager, IValidatorConfig};
 use alloy::{
     primitives::{Selector, U256},
     sol_types::{Panic, PanicKind, SolError, SolInterface},
@@ -31,19 +24,19 @@ pub enum TempoPrecompileError {
 
     /// Error from TIP20 token
     #[error("TIP20 token error: {0:?}")]
-    TIP20(TIP20Error),
+    TIP20(ITIP20::Error),
 
     /// Error from TIP20 factory
     #[error("TIP20 factory error: {0:?}")]
-    TIP20Factory(TIP20FactoryError),
+    TIP20Factory(ITIP20Factory::Error),
 
     /// Error from 403 registry
     #[error("TIP403 registry error: {0:?}")]
-    TIP403RegistryError(TIP403RegistryError),
+    TIP403RegistryError(ITIP403Registry::Error),
 
     /// Error from TIP fee manager
     #[error("TIP fee manager error: {0:?}")]
-    TipFeeManager(TipFeeManagerError),
+    TipFeeManager(ITipFeeManager::Error),
 
     /// Error from Tempo Transaction nonce manager
     #[error("Tempo Transaction nonce error: {0:?}")]
@@ -54,7 +47,7 @@ pub enum TempoPrecompileError {
 
     /// Error from validator config
     #[error("Validator config error: {0:?}")]
-    ValidatorConfigError(ValidatorConfigError),
+    ValidatorConfigError(IValidatorConfig::Error),
 
     /// Error from account keychain precompile
     #[error("Account keychain error: {0:?}")]
