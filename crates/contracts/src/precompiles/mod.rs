@@ -1,7 +1,10 @@
 pub mod account_keychain;
 pub mod common_errors;
+pub mod multisig_signer;
 pub mod nonce;
+pub mod recovery_guardian;
 pub mod stablecoin_dex;
+pub mod tempo_signer;
 pub mod tip20;
 pub mod tip20_factory;
 pub mod tip403_registry;
@@ -11,8 +14,11 @@ pub mod validator_config;
 pub use account_keychain::*;
 use alloy_primitives::{Address, address};
 pub use common_errors::*;
+pub use multisig_signer::*;
 pub use nonce::*;
+pub use recovery_guardian::*;
 pub use stablecoin_dex::*;
+pub use tempo_signer::*;
 pub use tip_fee_manager::*;
 pub use tip20::*;
 pub use tip20_factory::*;
@@ -31,3 +37,7 @@ pub const VALIDATOR_CONFIG_ADDRESS: Address =
     address!("0xCCCCCCCC00000000000000000000000000000000");
 pub const ACCOUNT_KEYCHAIN_ADDRESS: Address =
     address!("0xAAAAAAAA00000000000000000000000000000000");
+pub const MULTISIG_SIGNER_ADDRESS: Address =
+    address!("0x5159000000000000000000000000000000000000");
+pub const RECOVERY_GUARDIAN_ADDRESS: Address =
+    address!("0x8EC0000000000000000000000000000000000000");

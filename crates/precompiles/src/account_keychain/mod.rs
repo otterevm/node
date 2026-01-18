@@ -165,6 +165,7 @@ impl AccountKeychain {
             SignatureType::Secp256k1 => 0,
             SignatureType::P256 => 1,
             SignatureType::WebAuthn => 2,
+            SignatureType::EvmContract => 3,
             _ => return Err(AccountKeychainError::invalid_signature_type().into()),
         };
 
@@ -300,6 +301,7 @@ impl AccountKeychain {
             0 => SignatureType::Secp256k1,
             1 => SignatureType::P256,
             2 => SignatureType::WebAuthn,
+            3 => SignatureType::EvmContract,
             _ => SignatureType::Secp256k1, // Default fallback
         };
 
