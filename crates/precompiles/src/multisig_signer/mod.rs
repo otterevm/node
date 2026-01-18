@@ -14,8 +14,10 @@ use crate::{
     error::Result,
     storage::{Handler, Mapping},
 };
-use alloy::primitives::{Address, B256, FixedBytes};
-use alloy::sol_types::SolValue;
+use alloy::{
+    primitives::{Address, B256, FixedBytes},
+    sol_types::SolValue,
+};
 use tempo_precompiles_macros::{Storable, contract};
 
 /// Maximum number of owners in a multisig
@@ -150,10 +152,11 @@ impl MultiSigSigner {
         }
 
         // Decode signature data: (address[] signers, bytes[] signatures)
-        let (signers, signatures) = match <(Vec<Address>, Vec<alloy::primitives::Bytes>)>::abi_decode(&signature_data) {
-            Ok(d) => d,
-            Err(_) => return Ok(FixedBytes::ZERO),
-        };
+        let (signers, signatures) =
+            match <(Vec<Address>, Vec<alloy::primitives::Bytes>)>::abi_decode(&signature_data) {
+                Ok(d) => d,
+                Err(_) => return Ok(FixedBytes::ZERO),
+            };
 
         // Check we have enough signatures
         if signers.len() < config.threshold as usize {
@@ -221,8 +224,10 @@ fn recover_signer(digest: &B256, signature: &[u8]) -> Option<Address> {
 mod tests {
     use super::*;
     use crate::storage::{StorageCtx, hashmap::HashMapStorageProvider};
-    use alloy::primitives::U256;
-    use alloy::signers::{Signer, local::PrivateKeySigner};
+    use alloy::{
+        primitives::U256,
+        signers::{Signer, local::PrivateKeySigner},
+    };
 
     fn create_test_signer() -> (PrivateKeySigner, Address) {
         let signer = PrivateKeySigner::random();
@@ -348,14 +353,13 @@ mod tests {
         StorageCtx::enter(&mut storage, || {
             let multisig = MultiSigSigner::new();
 
-            let result = multisig.is_valid_signature_with_key_hash(
-                isValidSignatureWithKeyHashCall {
+            let result =
+                multisig.is_valid_signature_with_key_hash(isValidSignatureWithKeyHashCall {
                     account,
                     digest,
                     keyHash: key_hash,
                     signature: signature_data.into(),
-                },
-            )?;
+                })?;
 
             assert_eq!(result.as_slice(), &ERC1271_MAGIC_VALUE);
 

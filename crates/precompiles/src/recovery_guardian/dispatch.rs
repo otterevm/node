@@ -23,13 +23,19 @@ impl Precompile for RecoveryGuardian {
                     })
                 }
                 IRecoveryGuardianCalls::approveRecovery(call) => {
-                    mutate_void(call, msg_sender, |sender, c| self.approve_recovery(sender, c))
+                    mutate_void(call, msg_sender, |sender, c| {
+                        self.approve_recovery(sender, c)
+                    })
                 }
                 IRecoveryGuardianCalls::cancelRecovery(call) => {
-                    mutate_void(call, msg_sender, |sender, c| self.cancel_recovery(sender, c))
+                    mutate_void(call, msg_sender, |sender, c| {
+                        self.cancel_recovery(sender, c)
+                    })
                 }
                 IRecoveryGuardianCalls::executeRecovery(call) => {
-                    mutate(call, msg_sender, |sender, c| self.execute_recovery(sender, c))
+                    mutate(call, msg_sender, |sender, c| {
+                        self.execute_recovery(sender, c)
+                    })
                 }
                 IRecoveryGuardianCalls::getConfig(call) => view(call, |c| self.get_config(c)),
                 IRecoveryGuardianCalls::getRecoveryRequest(call) => {

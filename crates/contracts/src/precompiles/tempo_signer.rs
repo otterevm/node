@@ -1,4 +1,6 @@
-pub use ITempoSigner::{ITempoSignerErrors as TempoSignerError, ITempoSignerEvents as TempoSignerEvent};
+pub use ITempoSigner::{
+    ITempoSignerErrors as TempoSignerError, ITempoSignerEvents as TempoSignerEvent,
+};
 
 crate::sol! {
     /// ITempoSigner interface for contract-based access key verification
