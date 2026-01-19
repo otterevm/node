@@ -23,9 +23,9 @@ pub(super) enum SynSolType {
     String,
 
     // Compound types
-    Array(Box<SynSolType>),             // T[]
-    FixedArray(Box<SynSolType>, usize), // T[N]
-    Tuple(Vec<SynSolType>),             // (T1, T2, ...)
+    Array(Box<Self>),             // T[]
+    FixedArray(Box<Self>, usize), // T[N]
+    Tuple(Vec<Self>),             // (T1, T2, ...)
 
     // Custom struct (implements SolStruct)
     Struct(syn::Ident),

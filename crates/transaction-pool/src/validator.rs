@@ -885,7 +885,7 @@ mod tests {
 
         // Add TIP403Registry with blacklist policy containing fee_payer
         let policy_data = PolicyData {
-            policy_type: ITIP403Registry::PolicyType::BLACKLIST as u8,
+            policy_type: ITIP403Registry::PolicyType::BLACKLIST,
             admin: Address::ZERO,
         };
         let policy_data_slot = TIP403Registry::new().policy_data[policy_id].base_slot();

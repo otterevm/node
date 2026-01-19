@@ -163,6 +163,7 @@ fn test_error_enum_selectors() {
     assert_eq!(insufficient.available, decoded.available);
 }
 
+#[allow(dead_code)]
 struct TestToken {
     info: e2e::TokenInfo,
     paused: bool,

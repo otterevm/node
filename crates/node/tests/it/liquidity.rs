@@ -5,7 +5,7 @@ use alloy::{
     sol_types::SolCall,
 };
 use alloy_eips::Encodable2718;
-use tempo_precompiles::{abi::ITIP20, tip_fee_manager::IFeeManager::setUserTokenCall};
+use tempo_precompiles::{abi::ITIP20, abi::ITipFeeManager::setUserTokenCall};
 use tempo_precompiles::DEFAULT_FEE_TOKEN;
 use tempo_primitives::{TempoTransaction, TempoTxEnvelope, transaction::tempo_transaction::Call};
 
@@ -105,7 +105,7 @@ async fn test_block_building_insufficient_fee_amm_liquidity() -> eyre::Result<()
     let pool = fee_amm.pools(pool_id).call().await?;
     println!(
         "Pool reserves - user_token: {}, validator_token: {}",
-        pool.reserveUserToken, pool.reserveValidatorToken
+        pool.reserve_user_token, pool.reserve_validator_token
     );
 
     // Mint payment tokens for transaction fees (while still using USDC for fees)

@@ -6,7 +6,7 @@ use tempo_precompiles_macros::contract;
 
 pub use crate::abi::{
     DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS,
-    ITipFeeManager::{Error, Event, Pool, abiInstance},
+    ITipFeeManager::{Error, Event, Pool, abiInstance, prelude::*},
     tip_fee_manager::abi,
 };
 

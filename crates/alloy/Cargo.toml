@@ -11,7 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-tempo-contracts = { workspace = true, features = ["rpc"] }
+tempo-contracts.workspace = true
 tempo-precompiles = { workspace = true, default-features = false, features = ["bindings"] }
 tempo-primitives = { workspace = true, features = ["serde"] }
 tempo-evm = { workspace = true, optional = true }
@@ -45,12 +45,15 @@ test-case.workspace = true
 tokio.workspace = true
 
 [features]
-default = []
+default = ["rpc"]
+# RPC bindings: enables provider-bound contract instances with .new(), methods, and event filters
+rpc = ["tempo-precompiles/rpc", "tempo-contracts/rpc"]
 asm-keccak = [
     "alloy-primitives/asm-keccak",
     "alloy/asm-keccak",
 ]
 tempo-compat = [
+    "rpc",
     "dep:reth-evm",
     "dep:reth-rpc-convert",
     "dep:reth-primitives-traits",

@@ -15,7 +15,7 @@ fn test_calls_enum_decode() {
     let call = abi::balanceOfCall {
         account: Address::random(),
     };
-    let encoded = <abi::ITokenCalls as SolInterface>::abi_encode(&call.clone().into());
+    let encoded = <abi::ITokenCalls as SolInterface>::abi_encode(&call.into());
 
     let decoded = abi::Calls::abi_decode(&encoded).unwrap();
     assert!(matches!(
