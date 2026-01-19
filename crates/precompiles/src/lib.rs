@@ -61,7 +61,9 @@ pub const INPUT_PER_WORD_COST: u64 = 6;
 
 #[inline]
 pub fn input_cost(calldata_len: usize) -> u64 {
-    revm::interpreter::gas::cost_per_word(calldata_len, INPUT_PER_WORD_COST).unwrap_or(u64::MAX)
+    INPUT_PER_WORD_COST
+        .checked_mul(revm::interpreter::num_words(calldata_len) as u64)
+        .unwrap_or(u64::MAX)
 }
 
 pub trait Precompile {
@@ -323,8 +325,7 @@ mod tests {
 
         let db = CacheDB::new(EmptyDB::new());
         let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());
-        let block = evm.block.clone();
-        let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
+        let evm_internals = EvmInternals::from_context(evm.ctx_mut());
 
         let target_address = Address::random();
         let bytecode_address = Address::random();
@@ -370,8 +371,7 @@ mod tests {
                 },
             );
             let mut evm = EthEvmFactory::default().create_evm(db, EvmEnv::default());
-            let block = evm.block.clone();
-            let evm_internals = EvmInternals::new(evm.journal_mut(), &block);
+            let evm_internals = EvmInternals::from_context(evm.ctx_mut());
 
             let input = PrecompileInput {
                 data: &calldata,

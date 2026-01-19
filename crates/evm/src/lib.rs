@@ -127,9 +127,10 @@ impl ConfigureEvm for TempoEvmConfig {
         );
 
         let spec = self.chain_spec().tempo_hardfork_at(header.timestamp());
+        let gas_params = cfg_env.gas_params.clone();
 
         Ok(EvmEnv {
-            cfg_env: cfg_env.with_spec(spec),
+            cfg_env: cfg_env.with_spec_and_gas_params(spec, gas_params),
             block_env: TempoBlockEnv {
                 inner: block_env,
                 timestamp_millis_part: header.timestamp_millis_part,
@@ -160,9 +161,10 @@ impl ConfigureEvm for TempoEvmConfig {
         );
 
         let spec = self.chain_spec().tempo_hardfork_at(attributes.timestamp);
+        let gas_params = cfg_env.gas_params.clone();
 
         Ok(EvmEnv {
-            cfg_env: cfg_env.with_spec(spec),
+            cfg_env: cfg_env.with_spec_and_gas_params(spec, gas_params),
             block_env: TempoBlockEnv {
                 inner: block_env,
                 timestamp_millis_part: attributes.timestamp_millis_part,
@@ -194,6 +196,7 @@ impl ConfigureEvm for TempoEvmConfig {
 
         Ok(TempoBlockExecutionCtx {
             inner: EthBlockExecutionCtx {
+                tx_count_hint: Some(block.body().transactions.len()),
                 parent_hash: block.header().parent_hash(),
                 parent_beacon_block_root: block.header().parent_beacon_block_root(),
                 // no ommers in tempo
@@ -217,6 +220,7 @@ impl ConfigureEvm for TempoEvmConfig {
     ) -> Result<TempoBlockExecutionCtx<'_>, Self::Error> {
         Ok(TempoBlockExecutionCtx {
             inner: EthBlockExecutionCtx {
+                tx_count_hint: None,
                 parent_hash: parent.hash(),
                 parent_beacon_block_root: attributes.parent_beacon_block_root,
                 ommers: &[],

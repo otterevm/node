@@ -133,7 +133,8 @@ impl Builder {
 
         {
             let cx = evm.ctx_mut();
-            StorageCtx::enter_evm(&mut cx.journaled_state, &cx.block, &cx.cfg, || {
+            let tempo_cfg = cx.cfg.clone();
+            StorageCtx::enter_evm(&mut cx.journaled_state, &cx.block, &cx.cfg, &cx.tx, &tempo_cfg, || {
                 // TODO(janis): figure out the owner of the test-genesis.json
                 let mut validator_config = ValidatorConfig::new();
                 validator_config

@@ -1,7 +1,7 @@
 use alloy::primitives::{Address, LogData, U256};
 use alloy_evm::{Database, EvmInternals};
 use revm::{
-    context::{Block, CfgEnv, JournalTr},
+    context::{Block, Cfg, CfgEnv, JournalTr, Transaction},
     state::{AccountInfo, Bytecode},
 };
 use scoped_tls::scoped_thread_local;
@@ -175,16 +175,20 @@ impl StorageCtx {
 impl<'evm> StorageCtx {
     /// Generic entry point for EVM-like environments.
     /// Sets up the storage provider and executes a closure within that context.
-    pub fn enter_evm<J, R>(
+    pub fn enter_evm<J, C, T, R>(
         journal: &'evm mut J,
         block_env: &'evm dyn Block,
+        cfg_env: &'evm C,
+        tx_env: &'evm T,
         cfg: &CfgEnv<TempoHardfork>,
         f: impl FnOnce() -> R,
     ) -> R
     where
         J: JournalTr<Database: Database> + Debug,
+        C: Cfg,
+        T: Transaction,
     {
-        let internals = EvmInternals::new(journal, block_env);
+        let internals = EvmInternals::new(journal, block_env, cfg_env, tx_env);
         let mut provider = EvmPrecompileStorageProvider::new_max_gas(internals, cfg);
 
         // The core logic of setting up thread-local storage is here.
@@ -192,19 +196,23 @@ impl<'evm> StorageCtx {
     }
 
     /// Entry point for a "canonical" precompile (with unique known address).
-    pub fn enter_precompile<J, P, R>(
+    pub fn enter_precompile<J, C, T, P, R>(
         journal: &'evm mut J,
         block_env: &'evm dyn Block,
+        cfg_env: &'evm C,
+        tx_env: &'evm T,
         cfg: &CfgEnv<TempoHardfork>,
         f: impl FnOnce(P) -> R,
     ) -> R
     where
         J: JournalTr<Database: Database> + Debug,
+        C: Cfg,
+        T: Transaction,
         P: Precompile + Default,
     {
         // Delegate all the setup logic to `enter_evm`.
         // We just need to provide a closure that `enter_evm` expects.
-        Self::enter_evm(journal, block_env, cfg, || f(P::default()))
+        Self::enter_evm(journal, block_env, cfg_env, tx_env, cfg, || f(P::default()))
     }
 }
 

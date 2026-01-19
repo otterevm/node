@@ -443,6 +443,10 @@ where
     fn evm(&self) -> &Self::Evm {
         self.inner.evm()
     }
+
+    fn receipts(&self) -> &[Self::Receipt] {
+        self.inner.receipts()
+    }
 }
 
 // Test-only methods to set internal state without exposing fields as pub(crate)

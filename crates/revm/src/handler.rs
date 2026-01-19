@@ -11,6 +11,7 @@ use revm::{
         result::{EVMError, ExecutionResult, InvalidTransaction},
         transaction::{AccessListItem, AccessListItemTr},
     },
+    context_interface::journaled_state::account::JournaledAccountTr,
     handler::{
         EvmTr, FrameResult, FrameTr, Handler, MainnetHandler,
         pre_execution::{self, calculate_caller_fee},
@@ -18,11 +19,12 @@ use revm::{
     },
     inspector::{Inspector, InspectorHandler},
     interpreter::{
-        Gas, InitialAndFloorGas,
+        Gas, InitialAndFloorGas, num_words,
         gas::{
             ACCESS_LIST_ADDRESS, ACCESS_LIST_STORAGE_KEY, CALLVALUE, COLD_ACCOUNT_ACCESS_COST,
-            COLD_SLOAD_COST, CREATE, SSTORE_SET, STANDARD_TOKEN_COST, WARM_SSTORE_RESET,
-            calc_tx_floor_cost, get_tokens_in_calldata, initcode_cost,
+            COLD_SLOAD_COST, CREATE, INITCODE_WORD_COST, NON_ZERO_BYTE_MULTIPLIER_ISTANBUL,
+            SSTORE_SET, STANDARD_TOKEN_COST, TOTAL_COST_FLOOR_PER_TOKEN, WARM_SSTORE_RESET,
+            get_tokens_in_calldata,
         },
         interpreter::EthInterpreter,
     },
@@ -84,7 +86,8 @@ fn primitive_signature_verification_gas(signature: &PrimitiveSignature) -> u64 {
         PrimitiveSignature::Secp256k1(_) => 0,
         PrimitiveSignature::P256(_) => P256_VERIFY_GAS,
         PrimitiveSignature::WebAuthn(webauthn_sig) => {
-            let tokens = get_tokens_in_calldata(&webauthn_sig.webauthn_data, true);
+            let tokens =
+                get_tokens_in_calldata(&webauthn_sig.webauthn_data, NON_ZERO_BYTE_MULTIPLIER_ISTANBUL);
             P256_VERIFY_GAS + tokens * STANDARD_TOKEN_COST
         }
     }
@@ -548,10 +551,9 @@ where
     /// of an aa_authorization_list in the tempo_tx_env.
     #[inline]
     fn apply_eip7702_auth_list(&self, evm: &mut Self::Evm) -> Result<u64, Self::Error> {
-        let ctx = evm.ctx();
-
         // Check if this is an AA transaction with an authorization list
-        let has_aa_auth_list = ctx
+        let has_aa_auth_list = evm
+            .ctx()
             .tx()
             .tempo_tx_env
             .as_ref()
@@ -565,8 +567,8 @@ where
             // For AA transactions, we need to apply the authorization list ourselves
             // because pre_execution::apply_eip7702_auth_list returns early for non-0x04 tx types
 
-            let chain_id = ctx.cfg().chain_id();
-            let spec = ctx.cfg().spec();
+            let chain_id = evm.ctx().cfg().chain_id();
+            let spec = *evm.ctx().cfg().spec();
 
             let (tx, journal) = evm.ctx().tx_journal_mut();
 
@@ -598,7 +600,7 @@ where
                 let mut authority_acc = journal.load_account_with_code_mut(authority)?;
 
                 // 4. Verify the code of `authority` is either empty or already delegated.
-                if let Some(bytecode) = &authority_acc.info.code {
+                if let Some(bytecode) = &authority_acc.data.account().info.code {
                     // if it is not empty and it is not eip7702
                     if !bytecode.is_empty() && !bytecode.is_eip7702() {
                         continue;
@@ -606,13 +608,16 @@ where
                 }
 
                 // 5. Verify the nonce of `authority` is equal to `nonce`.
-                if authorization.nonce != authority_acc.info.nonce {
+                if authorization.nonce != authority_acc.data.account().info.nonce {
                     continue;
                 }
 
                 // 6. Add gas refund if authority already exists
-                if !(authority_acc.is_empty()
-                    && authority_acc.is_loaded_as_not_existing_not_touched())
+                if !(authority_acc.data.account().is_empty()
+                    && authority_acc
+                        .data
+                        .account()
+                        .is_loaded_as_not_existing_not_touched())
                 {
                     refunded_accounts += 1;
                 }
@@ -621,7 +626,7 @@ where
                 //  * As a special case, if `address` is `0x0000000000000000000000000000000000000000` do not write the designation.
                 //    Clear the accounts code and reset the account's code hash to the empty hash `0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`.
                 // 8. Increase the nonce of `authority` by one.
-                authority_acc.delegate(*authorization.address());
+                authority_acc.data.delegate(*authorization.address());
             }
 
             let refunded_gas =
@@ -638,15 +643,19 @@ where
         &self,
         evm: &mut Self::Evm,
     ) -> Result<(), Self::Error> {
+        let tempo_cfg = evm.ctx.cfg.clone();
         let (block, tx, cfg, journal, _, _) = evm.ctx().all_mut();
 
         // Set tx.origin in the keychain's transient storage for spending limit checks.
         // This must be done for ALL transactions so precompiles can access it.
-        StorageCtx::enter_evm(journal, block, cfg, || {
+        let tx_caller = tx.caller();
+        StorageCtx::enter_evm(journal, block, cfg, tx, &tempo_cfg, || {
             let mut keychain = AccountKeychain::new();
-            keychain.set_tx_origin(tx.caller())
+            keychain.set_tx_origin(tx_caller)
         })
-        .map_err(|e| EVMError::Custom(e.to_string()))?;
+        .map_err(|e: TempoPrecompileError| EVMError::Custom(e.to_string()))?;
+
+        let (block, tx, cfg, journal, _, _) = evm.ctx().all_mut();
 
         // Load the fee payer balance
         let account_balance = get_token_balance(journal, self.fee_token, self.fee_payer)?;
@@ -662,7 +671,7 @@ where
 
         // Validate account nonce and code (EIP-3607) using upstream helper
         pre_execution::validate_account_nonce_and_code(
-            &caller_account.info,
+            &caller_account.account().info,
             tx.nonce(),
             cfg.is_eip3607_disabled(),
             // skip nonce check if 2D nonce is used
@@ -674,23 +683,31 @@ where
 
         let nonce_2d_gas;
 
+        // Capture values before closure
+        let tx_caller_nonce = tx.caller();
+        let tx_nonce_val = tx.nonce();
+        let is_nonce_check_disabled = cfg.is_nonce_check_disabled();
+        let is_call = tx.kind().is_call();
+
         if !nonce_key.is_zero() {
-            nonce_2d_gas = StorageCtx::enter_evm(journal, block, cfg, || {
+            nonce_2d_gas = StorageCtx::enter_evm(journal, block, cfg, tx, &tempo_cfg, || {
                 let mut nonce_manager = NonceManager::new();
 
                 // Calculate 2D nonce gas
-                let gas = calculate_2d_nonce_gas(&nonce_manager, tx.caller(), nonce_key).map_err(
-                    |err| match err {
-                        TempoPrecompileError::Fatal(err) => EVMError::Custom(err),
-                        err => TempoInvalidTransaction::NonceManagerError(err.to_string()).into(),
-                    },
-                )?;
+                let gas =
+                    calculate_2d_nonce_gas(&nonce_manager, tx_caller_nonce, nonce_key).map_err(
+                        |err| match err {
+                            TempoPrecompileError::Fatal(err) => EVMError::Custom(err),
+                            err => {
+                                TempoInvalidTransaction::NonceManagerError(err.to_string()).into()
+                            }
+                        },
+                    )?;
 
-                if !cfg.is_nonce_check_disabled() {
-                    let tx_nonce = tx.nonce();
+                if !is_nonce_check_disabled {
                     let state = nonce_manager
                         .get_nonce(getNonceCall {
-                            account: tx.caller(),
+                            account: tx_caller_nonce,
                             nonceKey: nonce_key,
                         })
                         .map_err(|err| match err {
@@ -700,17 +717,17 @@ where
                             }
                         })?;
 
-                    match tx_nonce.cmp(&state) {
+                    match tx_nonce_val.cmp(&state) {
                         Ordering::Greater => {
                             return Err(InvalidTransaction::NonceTooHigh {
-                                tx: tx_nonce,
+                                tx: tx_nonce_val,
                                 state,
                             }
                             .into());
                         }
                         Ordering::Less => {
                             return Err(InvalidTransaction::NonceTooLow {
-                                tx: tx_nonce,
+                                tx: tx_nonce_val,
                                 state,
                             }
                             .into());
@@ -721,7 +738,7 @@ where
 
                 // Always increment nonce for AA transactions with non-zero nonce keys.
                 nonce_manager
-                    .increment_nonce(tx.caller(), nonce_key)
+                    .increment_nonce(tx_caller_nonce, nonce_key)
                     .map_err(|err| match err {
                         TempoPrecompileError::Fatal(err) => EVMError::Custom(err),
                         err => TempoInvalidTransaction::NonceManagerError(err.to_string()).into(),
@@ -734,7 +751,7 @@ where
             // Bump the nonce for calls. Nonce for CREATE will be bumped in `make_create_frame`.
             // This applies uniformly to both standard and AA transactions - we only bump here
             // for CALLs, letting make_create_frame handle the nonce for CREATE operations.
-            if tx.kind().is_call() {
+            if is_call {
                 caller_account.bump_nonce();
             }
         }
@@ -800,7 +817,7 @@ where
             }
 
             // Now authorize the key in the precompile
-            StorageCtx::enter_precompile(journal, block, cfg, |mut keychain: AccountKeychain| {
+            StorageCtx::enter_precompile(journal, block, cfg, tx, &tempo_cfg, |mut keychain: AccountKeychain| {
                 let access_key_addr = key_auth.key_id;
 
                 // Convert signature type to precompile SignatureType enum
@@ -901,7 +918,7 @@ where
                 .unwrap_or(false);
 
             // Always need to set the transaction key for Keychain signatures
-            StorageCtx::enter_precompile(journal, block, cfg, |mut keychain: AccountKeychain| {
+            StorageCtx::enter_precompile(journal, block, cfg, tx, &tempo_cfg, |mut keychain: AccountKeychain| {
                 // Skip keychain validation when authorizing this key in the same tx
                 if !is_authorizing_this_key {
                     // Validate that user_address has authorized this access key in the keychain
@@ -935,12 +952,13 @@ where
 
         let checkpoint = journal.checkpoint();
 
-        let result = StorageCtx::enter_evm(journal, &block, cfg, || {
+        let beneficiary = block.beneficiary();
+        let result = StorageCtx::enter_evm(journal, block, cfg, tx, &tempo_cfg, || {
             TipFeeManager::new().collect_fee_pre_tx(
                 self.fee_payer,
                 self.fee_token,
                 gas_balance_spending,
-                block.beneficiary(),
+                beneficiary,
             )
         });
 
@@ -986,6 +1004,7 @@ where
         exec_result: &mut <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
     ) -> Result<(), Self::Error> {
         // Call collectFeePostTx on TipFeeManager precompile
+        let tempo_cfg = evm.ctx.cfg.clone();
         let context = &mut evm.inner.ctx;
         let tx = context.tx();
         let basefee = context.block().basefee() as u128;
@@ -1013,10 +1032,10 @@ where
         }
 
         // Create storage provider and fee manager
-        let (journal, block) = (&mut context.journaled_state, &context.block);
+        let (block, tx, cfg, journal, _, _) = context.all_mut();
         let beneficiary = block.beneficiary();
 
-        StorageCtx::enter_evm(&mut *journal, block, &context.cfg, || {
+        StorageCtx::enter_evm(&mut *journal, block, cfg, tx, &tempo_cfg, || {
             let mut fee_manager = TipFeeManager::new();
 
             if !actual_spending.is_zero() || !refund_amount.is_zero() {
@@ -1112,7 +1131,10 @@ where
     /// - P256 (129 bytes): 21k base + 5k for P256 verification
     /// - WebAuthn (>129 bytes): 21k base + 5k + calldata gas for variable data
     #[inline]
-    fn validate_initial_tx_gas(&self, evm: &Self::Evm) -> Result<InitialAndFloorGas, Self::Error> {
+    fn validate_initial_tx_gas(
+        &self,
+        evm: &mut Self::Evm,
+    ) -> Result<InitialAndFloorGas, Self::Error> {
         let tx = evm.ctx_ref().tx();
 
         // Route to appropriate gas calculation based on transaction type
@@ -1121,9 +1143,9 @@ where
             validate_aa_initial_tx_gas(evm)
         } else {
             // Standard transaction - use default revm validation
-            let spec = evm.ctx_ref().cfg().spec().into();
+            let spec: revm::primitives::hardfork::SpecId = (*evm.ctx_ref().cfg().spec()).into();
             Ok(validation::validate_initial_tx_gas(
-                tx,
+                evm.ctx_ref().tx(),
                 spec,
                 evm.ctx.cfg.is_eip7623_disabled(),
             )?)
@@ -1214,7 +1236,7 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
 
     for call in calls {
         // 4a. Calldata gas using revm helper
-        let tokens = get_tokens_in_calldata(&call.input, true);
+        let tokens = get_tokens_in_calldata(&call.input, NON_ZERO_BYTE_MULTIPLIER_ISTANBUL);
         total_tokens += tokens;
 
         // 4b. CREATE-specific costs
@@ -1222,8 +1244,8 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
             // CREATE costs 32000 additional gas
             gas.initial_gas += CREATE; // 32000 gas
 
-            // EIP-3860: Initcode analysis gas using revm helper
-            gas.initial_gas += initcode_cost(call.input.len());
+            // EIP-3860: Initcode analysis gas (2 gas per 32-byte word)
+            gas.initial_gas += INITCODE_WORD_COST * num_words(call.input.len()) as u64;
         }
 
         // Note: Transaction value is not allowed in AA transactions as there is no balances in accounts yet.
@@ -1254,8 +1276,8 @@ pub fn calculate_aa_batch_intrinsic_gas<'a>(
         gas.initial_gas += storages * ACCESS_LIST_STORAGE_KEY; // 1900 per storage
     }
 
-    // 6. Floor gas  using revm helper
-    gas.floor_gas = calc_tx_floor_cost(total_tokens); // tokens * 10 + 21000
+    // 6. Floor gas calculation (EIP-7623)
+    gas.floor_gas = total_tokens * TOTAL_COST_FLOOR_PER_TOKEN + 21_000;
 
     Ok(gas)
 }
@@ -2109,10 +2131,12 @@ mod tests {
         let mut journal = create_test_journal();
         let block = TempoBlockEnv::default();
         let cfg = CfgEnv::<TempoHardfork>::default();
+        let tx = TempoTxEnv::default();
+        let tempo_cfg = cfg.clone();
         let caller = Address::random();
 
         // Protocol nonce (key 0): always 0 gas
-        let gas = StorageCtx::enter_evm(&mut journal, &block, &cfg, || {
+        let gas = StorageCtx::enter_evm(&mut journal, &block, &cfg, &tx, &tempo_cfg, || {
             let nm = NonceManager::new();
             Ok::<_, EVMError<Infallible, TempoInvalidTransaction>>(
                 calculate_2d_nonce_gas(&nm, caller, U256::from(0)).unwrap(),
@@ -2122,7 +2146,7 @@ mod tests {
         assert_eq!(gas, 0);
 
         // New key (nonce == 0): 22,100 gas (cold SLOAD + SSTORE set)
-        let gas = StorageCtx::enter_evm(&mut journal, &block, &cfg, || {
+        let gas = StorageCtx::enter_evm(&mut journal, &block, &cfg, &tx, &tempo_cfg, || {
             let nm = NonceManager::new();
             Ok::<_, EVMError<Infallible, TempoInvalidTransaction>>(
                 calculate_2d_nonce_gas(&nm, caller, U256::from(1)).unwrap(),
@@ -2132,7 +2156,7 @@ mod tests {
         assert_eq!(gas, NEW_NONCE_KEY_GAS);
 
         // Increment the nonce to make it an existing key
-        StorageCtx::enter_evm(&mut journal, &block, &cfg, || {
+        StorageCtx::enter_evm(&mut journal, &block, &cfg, &tx, &tempo_cfg, || {
             NonceManager::new()
                 .increment_nonce(caller, U256::from(1))
                 .unwrap();
@@ -2141,7 +2165,7 @@ mod tests {
         .unwrap();
 
         // Existing key (nonce > 0): 5,000 gas (cold SLOAD + warm SSTORE reset)
-        let gas = StorageCtx::enter_evm(&mut journal, &block, &cfg, || {
+        let gas = StorageCtx::enter_evm(&mut journal, &block, &cfg, &tx, &tempo_cfg, || {
             let nm = NonceManager::new();
             Ok::<_, EVMError<Infallible, TempoInvalidTransaction>>(
                 calculate_2d_nonce_gas(&nm, caller, U256::from(1)).unwrap(),
