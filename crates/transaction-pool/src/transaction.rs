@@ -242,6 +242,10 @@ pub enum TempoPoolTransactionError {
     /// Thrown when an expiring nonce transaction's hash has already been seen (replay).
     #[error("Expiring nonce transaction replay: tx hash already seen and not expired")]
     ExpiringNonceReplay,
+
+    /// Thrown when an expiring nonce transaction is missing the required valid_before field.
+    #[error("Expiring nonce transactions must have 'valid_before' set")]
+    ExpiringNonceMissingValidBefore,
 }
 
 impl PoolTransactionError for TempoPoolTransactionError {
@@ -262,7 +266,8 @@ impl PoolTransactionError for TempoPoolTransactionError {
             | Self::InsufficientGasForAAIntrinsicCost { .. }
             | Self::TooManyAuthorizations { .. }
             | Self::TooManyCalls { .. }
-            | Self::CallInputTooLarge { .. } => true,
+            | Self::CallInputTooLarge { .. }
+            | Self::ExpiringNonceMissingValidBefore => true,
         }
     }
 

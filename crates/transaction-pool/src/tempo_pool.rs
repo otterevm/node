@@ -7,7 +7,7 @@ use crate::{
     tt_2d_pool::AA2dPool, validator::TempoTransactionValidator,
 };
 use alloy_consensus::Transaction;
-use alloy_primitives::{Address, B256, map::HashMap};
+use alloy_primitives::{Address, B256, TxHash, map::HashMap};
 use parking_lot::RwLock;
 use reth_chainspec::ChainSpecProvider;
 use reth_eth_wire_types::HandleMempoolData;
@@ -79,6 +79,17 @@ where
         self.protocol_pool
             .inner()
             .notify_on_transaction_updates(promoted, Vec::new());
+    }
+
+    /// Removes expiring nonce transactions that were included in a block.
+    ///
+    /// This is called with the transaction hashes from mined blocks to clean up
+    /// expiring nonce transactions on inclusion, rather than waiting for expiry.
+    pub(crate) fn remove_included_expiring_nonce_txs<'a>(
+        &self,
+        tx_hashes: impl Iterator<Item = &'a TxHash>,
+    ) {
+        self.aa_2d_pool.write().remove_included_expiring_nonce_txs(tx_hashes);
     }
 
     /// Evicts transactions that are no longer valid due to on-chain events.

@@ -780,6 +780,28 @@ impl AA2dPool {
         &self.metrics
     }
 
+    /// Removes expiring nonce transactions that were included in a block.
+    ///
+    /// This should be called with the transaction hashes from mined blocks to clean up
+    /// expiring nonce transactions on inclusion, rather than waiting for expiry.
+    pub(crate) fn remove_included_expiring_nonce_txs<'a>(
+        &mut self,
+        tx_hashes: impl Iterator<Item = &'a TxHash>,
+    ) -> Vec<Arc<ValidPoolTransaction<TempoPooledTransaction>>> {
+        let mut removed = Vec::new();
+        for tx_hash in tx_hashes {
+            if let Some(pending_tx) = self.expiring_nonce_txs.remove(tx_hash) {
+                self.by_hash.remove(tx_hash);
+                removed.push(pending_tx.transaction);
+            }
+        }
+        if !removed.is_empty() {
+            self.metrics.inc_removed(removed.len());
+            self.update_metrics();
+        }
+        removed
+    }
+
     /// Returns `true` if the transaction with the given hash is already included in this pool.
     pub(crate) fn contains(&self, tx_hash: &TxHash) -> bool {
         self.by_hash.contains_key(tx_hash)

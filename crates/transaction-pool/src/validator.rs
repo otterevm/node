@@ -201,6 +201,11 @@ where
     ) -> Result<(), TempoPoolTransactionError> {
         let current_time = self.inner.fork_tracker().tip_timestamp();
 
+        // Expiring nonce transactions MUST have valid_before set
+        if tx.is_expiring_nonce_tx() && tx.valid_before.is_none() {
+            return Err(TempoPoolTransactionError::ExpiringNonceMissingValidBefore);
+        }
+
         // Reject AA txs where `valid_before` is too close to current time (or already expired).
         if let Some(valid_before) = tx.valid_before {
             // Uses tip_timestamp, as if the node is lagging lagging, the maintenance task will evict expired txs.
