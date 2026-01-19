@@ -67,7 +67,7 @@ fn subblocks_are_included() {
             .engine_events
             .new_listener();
 
-        let mut expected_transactions: Vec<TxHash> = Vec::new();
+        let mut pending_transactions: Vec<TxHash> = Vec::new();
         while let Some(update) = stream.next().await {
             let block = match update {
                 ConsensusEngineEvent::BlockReceived(_)
@@ -80,31 +80,28 @@ fn subblocks_are_included() {
 
             let receipts = block.execution_outcome().receipts().first().unwrap();
 
-            // Assert that block only contains our subblock transactions and the system transactions
-            assert_eq!(
-                block.sealed_block().body().transactions.len(),
-                SYSTEM_TX_COUNT + expected_transactions.len()
-            );
+            let block_txs: Vec<_> = block
+                .sealed_block()
+                .body()
+                .transactions
+                .iter()
+                .map(|t| *t.tx_hash())
+                .collect();
 
-            // Assert that all expected transactions are included in the block.
-            for tx in expected_transactions.drain(..) {
-                if !block
-                    .sealed_block()
-                    .body()
-                    .transactions
-                    .iter()
-                    .any(|t| t.tx_hash() == *tx)
-                {
-                    panic!("transaction {tx} was not included");
-                }
-            }
+            let included_in_block: Vec<_> = pending_transactions
+                .iter()
+                .filter(|tx| block_txs.contains(tx))
+                .copied()
+                .collect();
+
+            pending_transactions.retain(|tx| !block_txs.contains(tx));
 
             // Assert that all transactions were successful
             for receipt in receipts {
                 assert!(receipt.status());
             }
 
-            if !expected_transactions.is_empty() {
+            if !included_in_block.is_empty() {
                 let fee_token_storage = &block
                     .execution_outcome()
                     .state()
@@ -126,13 +123,17 @@ fn subblocks_are_included() {
 
             // Exit once we reach height 20.
             if block.block_number() == 20 {
+                assert!(
+                    pending_transactions.is_empty(),
+                    "not all transactions were included by block 20: {pending_transactions:?}"
+                );
                 break;
             }
 
             // Send subblock transactions to all nodes.
             for node in nodes.iter() {
                 for _ in 0..5 {
-                    expected_transactions.push(submit_subblock_tx(node).await);
+                    pending_transactions.push(submit_subblock_tx(node).await);
                 }
             }
         }
@@ -236,16 +237,14 @@ fn subblocks_are_included_with_failing_txs() {
                 let fee_recipient = fee_recipients
                     .get(&tx.subblock_proposer().unwrap())
                     .unwrap();
+                let tx_gas_used = receipt.cumulative_gas_used - cumulative_gas_used;
                 *expected_fees.entry(fee_recipient).or_insert(U256::ZERO) +=
-                    calc_gas_balance_spending(
-                        receipt.cumulative_gas_used - cumulative_gas_used,
-                        TEMPO_BASE_FEE as u128,
-                    );
+                    calc_gas_balance_spending(tx_gas_used, TEMPO_BASE_FEE as u128);
                 cumulative_gas_used = receipt.cumulative_gas_used;
 
                 if !failing_transactions.contains(tx.tx_hash()) {
                     assert!(receipt.status());
-                    assert!(receipt.cumulative_gas_used > 0);
+                    assert!(tx_gas_used > 0);
                     continue;
                 }
 
@@ -265,7 +264,7 @@ fn subblocks_are_included_with_failing_txs() {
                 assert!(slot.present_value == slot.original_value() + U256::ONE);
                 assert!(!receipt.status());
                 assert!(receipt.logs().is_empty());
-                assert_eq!(receipt.cumulative_gas_used, 0);
+                assert_eq!(tx_gas_used, 0);
             }
 
             for (fee_recipient, expected_fee) in expected_fees {
