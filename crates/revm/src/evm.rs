@@ -215,7 +215,7 @@ mod tests {
         nonce::NonceManager,
         storage::{StorageCtx, evm::EvmPrecompileStorageProvider},
         test_util::TIP20Setup,
-        tip20::ITIP20,
+        abi::ITIP20,
     };
     use tempo_primitives::{
         TempoTransaction,

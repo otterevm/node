@@ -811,8 +811,9 @@ mod tests {
         use alloy_primitives::{Signature, TxKind, address, uint};
         use tempo_precompiles::{
             TIP403_REGISTRY_ADDRESS,
+            abi::ITIP403Registry,
             tip20::slots as tip20_slots,
-            tip403_registry::{ITIP403Registry, PolicyData},
+            tip403_registry::PolicyData,
         };
         use tempo_primitives::transaction::{
             TempoTransaction,

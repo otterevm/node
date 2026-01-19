@@ -4,15 +4,15 @@ use std::{
 };
 
 use crate::abi::{
-    IAccountKeychain, INonce, ITIP20, ITIP20Factory, ITIP403Registry, ITipFeeManager,
-    IValidatorConfig,
+    IAccountKeychain, INonce, IStablecoinDEX, ITIP20, ITIP20Factory, ITIP403Registry,
+    ITipFeeManager, IValidatorConfig,
 };
 use alloy::{
     primitives::{Selector, U256},
     sol_types::{Panic, PanicKind, SolError, SolInterface},
 };
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
-use tempo_contracts::precompiles::{StablecoinDEXError, UnknownFunctionSelector};
+use tempo_contracts::precompiles::UnknownFunctionSelector;
 
 /// Top-level error type for all Tempo precompile operations
 #[derive(
@@ -21,7 +21,7 @@ use tempo_contracts::precompiles::{StablecoinDEXError, UnknownFunctionSelector};
 pub enum TempoPrecompileError {
     /// Stablecoin DEX error
     #[error("Stablecoin DEX error: {0:?}")]
-    StablecoinDEX(StablecoinDEXError),
+    StablecoinDEX(IStablecoinDEX::Error),
 
     /// Error from TIP20 token
     #[error("TIP20 token error: {0:?}")]

@@ -15,10 +15,9 @@ use reth_primitives_traits::transaction::TxHashRef;
 use reth_transaction_pool::TransactionPool;
 use tempo_alloy::TempoNetwork;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_contracts::precompiles::DEFAULT_FEE_TOKEN;
 use tempo_precompiles::{
-    ACCOUNT_KEYCHAIN_ADDRESS,
-    tip20::ITIP20::{self, transferCall},
+    ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN,
+    abi::ITIP20::{self, transferCall},
 };
 
 use tempo_primitives::{
@@ -649,7 +648,7 @@ fn sign_aa_tx_with_p256_access_key(
 /// Helper to create a TIP20 transfer call
 fn create_transfer_call(to: Address, amount: U256) -> Call {
     use alloy::sol_types::SolCall;
-    use tempo_contracts::precompiles::ITIP20::transferCall;
+    use tempo_precompiles::abi::ITIP20::transferCall;
 
     Call {
         to: DEFAULT_FEE_TOKEN.into(),
@@ -4080,7 +4079,7 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_transaction_key_authorization_and_spending_limits() -> eyre::Result<()> {
     use alloy::sol_types::SolCall;
-    use tempo_contracts::precompiles::ITIP20::{balanceOfCall, transferCall};
+    use tempo_precompiles::abi::ITIP20::{balanceOfCall, transferCall};
     use tempo_precompiles::account_keychain::updateSpendingLimitCall;
     use tempo_primitives::transaction::TokenLimit;
 

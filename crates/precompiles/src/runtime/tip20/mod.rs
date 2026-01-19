@@ -17,6 +17,7 @@ use tempo_precompiles_macros::contract;
 pub use crate::abi::{
     ITIP20::{Error as TIP20Error, InvalidCurrency, PolicyForbids},
     tip20::abi,
+    tip20::abi::{BURN_BLOCKED_ROLE, ISSUER_ROLE, PAUSE_ROLE, UNPAUSE_ROLE},
 };
 use crate::{
     abi::{
@@ -745,7 +746,6 @@ pub(crate) mod tests {
         error::TempoPrecompileError,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
         test_util::{TIP20Setup, setup_storage},
-        tip20::abi,
         tip20_factory::TIP20Factory,
         tip403_registry::{PolicyType, TIP403Registry},
     };

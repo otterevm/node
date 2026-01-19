@@ -8,7 +8,7 @@ use alloy::{
 };
 use tempo_alloy::{
     TempoNetwork,
-    contracts::precompiles::{ITIPFeeAMM, TIP_FEE_MANAGER_ADDRESS},
+    precompiles::{TIP_FEE_MANAGER_ADDRESS, tip_fee_manager::ITIPFeeAMM},
 };
 
 #[tokio::main]

@@ -1,3 +1,4 @@
+#![allow(unused_imports, unreachable_pub)]
 //! Integration tests for the `#[abi]` macro.
 //!
 //! This file contains general macro integration tests. EIP-712 specific tests

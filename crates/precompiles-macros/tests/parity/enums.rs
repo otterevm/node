@@ -1,3 +1,4 @@
+#![allow(unused_imports, unreachable_pub)]
 //! Enum encoding parity tests between `#[abi]` and `sol!`.
 
 use alloy::sol_types::SolValue;

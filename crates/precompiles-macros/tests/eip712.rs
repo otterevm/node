@@ -1,3 +1,4 @@
+#![allow(unused_imports, unreachable_pub)]
 //! EIP-712 tests for the `#[abi]` macro.
 //!
 //! These tests mirror alloy's `sol-types/tests/macros/sol/eip712.rs` to ensure

@@ -1,7 +1,7 @@
 use super::*;
 use alloy::providers::DynProvider;
 use indicatif::ProgressIterator;
-use tempo_contracts::precompiles::IStablecoinDEX;
+use tempo_precompiles::abi::IStablecoinDEX;
 use tempo_precompiles::{
     PATH_USD_ADDRESS,
     tip20::{U128_MAX, abi::grantRoleCall},

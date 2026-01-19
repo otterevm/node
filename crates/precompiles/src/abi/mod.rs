@@ -2,6 +2,7 @@ use alloy::primitives::{Address, address};
 
 pub mod account_keychain;
 pub mod nonce;
+pub mod stablecoin_dex;
 pub mod tip20;
 pub mod tip20_factory;
 pub mod tip403_registry;
@@ -10,6 +11,7 @@ pub mod validator_config;
 
 pub use account_keychain::abi as IAccountKeychain;
 pub use nonce::abi as INonce;
+pub use stablecoin_dex::abi as IStablecoinDEX;
 pub use tip_fee_manager::abi as ITipFeeManager;
 pub use tip20::abi as ITIP20;
 pub use tip20_factory::abi as ITIP20Factory;

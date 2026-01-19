@@ -53,7 +53,7 @@ use std::{
     thread,
     time::Duration,
 };
-use tempo_contracts::precompiles::IStablecoinDEX::IStablecoinDEXInstance;
+use tempo_precompiles::abi::IStablecoinDEX::abiInstance as IStablecoinDEXInstance;
 use tempo_precompiles::{
     STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
     abi::{

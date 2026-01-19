@@ -417,6 +417,7 @@ mod tests {
 /// These tests validate that the macros generate correct selectors and EIP-712 signatures,
 /// especially for complex types like structs.
 #[cfg(test)]
+#[allow(unreachable_pub, unused_imports)]
 mod macro_tests {
     use alloy::{
         primitives::{Address, U256},

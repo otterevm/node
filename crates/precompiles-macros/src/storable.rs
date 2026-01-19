@@ -511,10 +511,10 @@ fn derive_repr_u8_enum(
 ) -> syn::Result<TokenStream> {
     // Verify the enum has #[repr(u8)]
     let has_repr_u8 = input.attrs.iter().any(|attr| {
-        if attr.path().is_ident("repr") {
-            if let Ok(list) = attr.meta.require_list() {
-                return list.tokens.to_string() == "u8";
-            }
+        if attr.path().is_ident("repr")
+            && let Ok(list) = attr.meta.require_list()
+        {
+            return list.tokens.to_string() == "u8";
         }
         false
     });

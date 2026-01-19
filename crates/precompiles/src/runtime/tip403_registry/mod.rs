@@ -373,7 +373,7 @@ mod tests {
             let err = result.unwrap_err();
             assert!(matches!(
                 err,
-                crate::error::TempoPrecompileError::TIP403RegistryError(
+                crate::error::TempoPrecompileError::TIP403Registry(
                     TIP403RegistryError::PolicyNotFound(_)
                 )
             ));

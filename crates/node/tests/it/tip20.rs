@@ -6,7 +6,7 @@ use alloy::{
 };
 use futures::future::try_join_all;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_contracts::precompiles::ITIP20;
+use tempo_precompiles::abi::ITIP20;
 use tempo_precompiles::{TIP403_REGISTRY_ADDRESS, abi::ITIP403Registry};
 
 use crate::utils::{TestNodeBuilder, await_receipts, setup_test_token};
@@ -421,7 +421,7 @@ async fn test_tip20_blacklist() -> eyre::Result<()> {
         .filter_map(|log| ITIP403Registry::PolicyCreated::decode_log(&log.inner).ok())
         .next()
         .expect("PolicyCreated event should be emitted")
-        .policyId;
+        .policy_id;
 
     // Update the token policy to the blacklist
     token
@@ -547,7 +547,7 @@ async fn test_tip20_whitelist() -> eyre::Result<()> {
         .filter_map(|log| ITIP403Registry::PolicyCreated::decode_log(&log.inner).ok())
         .next()
         .expect("PolicyCreated event should be emitted")
-        .policyId;
+        .policy_id;
 
     // Update the token policy to the whitelist
     token
@@ -782,8 +782,11 @@ async fn test_tip20_rewards() -> eyre::Result<()> {
 /// and subsequent transactions fail at fee collection.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_tip20_pause_blocks_fee_collection() -> eyre::Result<()> {
-    use tempo_contracts::precompiles::{IFeeManager, ITIPFeeAMM};
-    use tempo_precompiles::{PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS, tip20::PAUSE_ROLE};
+    use tempo_precompiles::{
+        PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
+        tip20::PAUSE_ROLE,
+        tip_fee_manager::{IFeeManager, ITIPFeeAMM},
+    };
 
     reth_tracing::init_test_tracing();
 

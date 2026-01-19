@@ -6,9 +6,12 @@ use tempo_precompiles_macros::contract;
 
 pub use crate::abi::{
     DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS,
-    ITipFeeManager::{Error, Event, IFeeManager, ITIPFeeAMM, Pool},
+    ITipFeeManager::{Error, Event, Pool, abiInstance},
     tip_fee_manager::abi,
 };
+
+pub use abiInstance as IFeeManager;
+pub use abiInstance as ITIPFeeAMM;
 use crate::{
     abi::{ITipFeeManager, ITIP20::traits::*},
     error::{Result, TempoPrecompileError},
@@ -146,7 +149,7 @@ impl TipFeeManager {
     }
 }
 
-impl IFeeManager for TipFeeManager {
+impl abi::IFeeManager for TipFeeManager {
     fn user_tokens(&self, user: Address) -> Result<Address> {
         self.user_tokens[user].read()
     }
@@ -209,6 +212,7 @@ mod tests {
         test_util::TIP20Setup,
         tip20::{InvalidCurrency, TIP20Error, TIP20Token},
     };
+    use abi::IFeeManager as _;
 
     #[test]
     fn test_set_user_token() -> eyre::Result<()> {
@@ -219,13 +223,10 @@ mod tests {
 
             let mut fee_manager = TipFeeManager::new();
 
-            let result = IFeeManager::set_user_token(&mut fee_manager, user, token.address());
+            let result = fee_manager.set_user_token(user, token.address());
             assert!(result.is_ok());
 
-            assert_eq!(
-                IFeeManager::user_tokens(&fee_manager, user)?,
-                token.address()
-            );
+            assert_eq!(fee_manager.user_tokens(user)?, token.address());
 
             Ok(())
         })
@@ -240,11 +241,10 @@ mod tests {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut fee_manager = TipFeeManager::new();
 
-            let result =
-                IFeeManager::set_validator_token(&mut fee_manager, validator, token.address());
+            let result = fee_manager.set_validator_token(validator, token.address());
             assert!(result.is_ok());
 
-            let returned_token = IFeeManager::validator_tokens(&fee_manager, validator)?;
+            let returned_token = fee_manager.validator_tokens(validator)?;
             assert_eq!(returned_token, token.address());
 
             Ok(())
@@ -260,8 +260,7 @@ mod tests {
             let token = TIP20Setup::create("Test", "TST", admin).apply()?;
             let mut fee_manager = TipFeeManager::new();
 
-            let result =
-                IFeeManager::set_validator_token(&mut fee_manager, validator, token.address());
+            let result = fee_manager.set_validator_token(validator, token.address());
             assert!(result.is_ok());
 
             Ok(())
@@ -284,8 +283,8 @@ mod tests {
 
             let mut fee_manager = TipFeeManager::new();
 
-            IFeeManager::set_validator_token(&mut fee_manager, validator, token.address())?;
-            IFeeManager::set_user_token(&mut fee_manager, user, token.address())?;
+            fee_manager.set_validator_token(validator, token.address())?;
+            fee_manager.set_user_token(user, token.address())?;
 
             let result =
                 fee_manager.collect_fee_pre_tx(user, token.address(), max_amount, validator);
@@ -314,8 +313,8 @@ mod tests {
 
             let mut fee_manager = TipFeeManager::new();
 
-            IFeeManager::set_validator_token(&mut fee_manager, validator, token.address())?;
-            IFeeManager::set_user_token(&mut fee_manager, user, token.address())?;
+            fee_manager.set_validator_token(validator, token.address())?;
+            fee_manager.set_user_token(user, token.address())?;
             let result = fee_manager.collect_fee_post_tx(
                 user,
                 actual_used,
@@ -350,8 +349,7 @@ mod tests {
 
             let mut fee_manager = TipFeeManager::new();
 
-            let result =
-                IFeeManager::set_user_token(&mut fee_manager, user, non_usd_token.address());
+            let result = fee_manager.set_user_token(user, non_usd_token.address());
             assert!(matches!(
                 result,
                 Err(TempoPrecompileError::TIP20(TIP20Error::InvalidCurrency(
@@ -359,11 +357,7 @@ mod tests {
                 )))
             ));
 
-            let result = IFeeManager::set_validator_token(
-                &mut fee_manager,
-                validator,
-                non_usd_token.address(),
-            );
+            let result = fee_manager.set_validator_token(validator, non_usd_token.address());
             assert!(matches!(
                 result,
                 Err(TempoPrecompileError::TIP20(TIP20Error::InvalidCurrency(
@@ -406,11 +400,7 @@ mod tests {
                 reserve_validator_token: 10000,
             })?;
 
-            IFeeManager::set_validator_token(
-                &mut fee_manager,
-                validator,
-                validator_token.address(),
-            )?;
+            fee_manager.set_validator_token(validator, validator_token.address())?;
 
             let max_amount = U256::from(1000);
             fee_manager.collect_fee_pre_tx(user, user_token.address(), max_amount, validator)?;
@@ -470,11 +460,7 @@ mod tests {
                 reserve_validator_token: 10000,
             })?;
 
-            IFeeManager::set_validator_token(
-                &mut fee_manager,
-                validator,
-                validator_token.address(),
-            )?;
+            fee_manager.set_validator_token(validator, validator_token.address())?;
 
             let max_amount = U256::from(1000);
             let actual_spending = U256::from(800);
@@ -538,11 +524,7 @@ mod tests {
                 reserve_validator_token: 100,
             })?;
 
-            IFeeManager::set_validator_token(
-                &mut fee_manager,
-                validator,
-                validator_token.address(),
-            )?;
+            fee_manager.set_validator_token(validator, validator_token.address())?;
 
             let max_amount = U256::from(1000);
             let result =
@@ -568,17 +550,12 @@ mod tests {
 
             let mut fee_manager = TipFeeManager::new();
 
-            IFeeManager::set_validator_token(&mut fee_manager, validator, token.address())?;
+            fee_manager.set_validator_token(validator, token.address())?;
 
             let collected = fee_manager.collected_fees[validator][token.address()].read()?;
             assert_eq!(collected, U256::ZERO);
 
-            let result = IFeeManager::distribute_fees(
-                &mut fee_manager,
-                validator,
-                validator,
-                token.address(),
-            );
+            let result = fee_manager.distribute_fees(validator, validator, token.address());
             assert!(result.is_ok(), "Should succeed even with zero balance");
 
             // Validator balance should still be zero
@@ -606,7 +583,7 @@ mod tests {
 
             let mut fee_manager = TipFeeManager::new();
 
-            IFeeManager::set_validator_token(&mut fee_manager, validator, token.address())?;
+            fee_manager.set_validator_token(validator, token.address())?;
 
             let fee_amount = U256::from(500);
             fee_manager.collected_fees[validator][token.address()].write(fee_amount)?;
@@ -616,7 +593,7 @@ mod tests {
             assert_eq!(balance_before, U256::ZERO);
 
             let mut fee_manager = TipFeeManager::new();
-            IFeeManager::distribute_fees(&mut fee_manager, validator, validator, token.address())?;
+            fee_manager.distribute_fees(validator, validator, token.address())?;
 
             // Verify validator received the fees
             let tip20_token = TIP20Token::from_address(token.address())?;

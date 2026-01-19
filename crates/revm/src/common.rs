@@ -9,7 +9,7 @@ use revm::{
     state::{AccountInfo, Bytecode},
 };
 use tempo_chainspec::hardfork::TempoHardfork;
-use tempo_contracts::precompiles::IStablecoinDEX;
+use tempo_precompiles::abi::IStablecoinDEX;
 use tempo_precompiles::{
     DEFAULT_FEE_TOKEN, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     error::{Result as TempoResult, TempoPrecompileError},
@@ -178,13 +178,13 @@ pub trait TempoStateAccess<M = ()> {
             && (!tx.is_aa() || calls.next().is_none())
         {
             if let Ok(call) = IStablecoinDEX::swapExactAmountInCall::abi_decode(input)
-                && self.is_valid_fee_token(spec, call.tokenIn)?
+                && self.is_valid_fee_token(spec, call.token_in)?
             {
-                return Ok(call.tokenIn);
+                return Ok(call.token_in);
             } else if let Ok(call) = IStablecoinDEX::swapExactAmountOutCall::abi_decode(input)
-                && self.is_valid_fee_token(spec, call.tokenIn)?
+                && self.is_valid_fee_token(spec, call.token_in)?
             {
-                return Ok(call.tokenIn);
+                return Ok(call.token_in);
             }
         }
 
@@ -407,7 +407,7 @@ mod tests {
     use super::*;
     use alloy_primitives::address;
     use revm::{context::TxEnv, database::EmptyDB, interpreter::instructions::utility::IntoU256};
-    use tempo_precompiles::PATH_USD_ADDRESS;
+    use tempo_precompiles::{PATH_USD_ADDRESS, abi::ITipFeeManager::setUserTokenCall};
 
     #[test]
     fn test_get_fee_token_fee_token_set() -> eyre::Result<()> {
@@ -436,7 +436,7 @@ mod tests {
         let caller = Address::random();
         let token = Address::random();
 
-        let call = IFeeManager::setUserTokenCall { token };
+        let call = setUserTokenCall { token };
         let tx_env = TxEnv {
             data: call.abi_encode().into(),
             kind: TxKind::Call(TIP_FEE_MANAGER_ADDRESS),
@@ -521,10 +521,10 @@ mod tests {
 
         // Test swapExactAmountIn
         let call = IStablecoinDEX::swapExactAmountInCall {
-            tokenIn: token_in,
-            tokenOut: token_out,
-            amountIn: 1000,
-            minAmountOut: 900,
+            token_in,
+            token_out,
+            amount_in: 1000,
+            min_amount_out: 900,
         };
 
         let tx_env = TxEnv {
@@ -544,10 +544,10 @@ mod tests {
 
         // Test swapExactAmountOut
         let call = IStablecoinDEX::swapExactAmountOutCall {
-            tokenIn: token_in,
-            tokenOut: token_out,
-            amountOut: 900,
-            maxAmountIn: 1000,
+            token_in,
+            token_out,
+            amount_out: 900,
+            max_amount_in: 1000,
         };
 
         let tx_env = TxEnv {
@@ -588,7 +588,10 @@ mod tests {
 
     #[test]
     fn test_is_tip20_fee_inference_call() {
-        use tempo_precompiles::tip20::{IRewards::*, IRolesAuth::*, ITIP20::*};
+        use tempo_precompiles::tip20::abi::{
+            approveCall, distributeRewardCall, grantRoleCall, mintCall, transferCall,
+            transferWithMemoCall,
+        };
 
         // Allowed selectors
         assert!(is_tip20_fee_inference_call(&transferCall::SELECTOR));

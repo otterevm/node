@@ -9,7 +9,7 @@ use crate::{
     tip20::{TIP20Token, validate_usd_currency},
 };
 
-pub use crate::abi::tip_fee_manager::abi::Pool;
+pub use crate::abi::tip_fee_manager::abi::{MIN_LIQUIDITY, Pool};
 use alloy::{
     primitives::{Address, B256, U256, keccak256, uint},
     sol_types::SolValue,

@@ -4,7 +4,7 @@
 //! Orders support price-time priority matching, partial fills, and flip orders that
 //! automatically place opposite-side orders when filled.
 
-use crate::stablecoin_dex::{IStablecoinDEX, error::OrderError};
+use crate::{abi::stablecoin_dex::abi, stablecoin_dex::error::OrderError};
 use alloy::primitives::{Address, B256};
 use tempo_precompiles_macros::Storable;
 
@@ -280,20 +280,20 @@ impl Order {
     }
 }
 
-impl From<Order> for IStablecoinDEX::Order {
+impl From<Order> for abi::Order {
     fn from(value: Order) -> Self {
         Self {
-            orderId: value.order_id,
+            order_id: value.order_id,
             maker: value.maker,
-            bookKey: value.book_key,
-            isBid: value.is_bid,
+            book_key: value.book_key,
+            is_bid: value.is_bid,
             tick: value.tick,
             amount: value.amount,
             remaining: value.remaining,
             prev: value.prev,
             next: value.next,
-            isFlip: value.is_flip,
-            flipTick: value.flip_tick,
+            is_flip: value.is_flip,
+            flip_tick: value.flip_tick,
         }
     }
 }

@@ -1445,8 +1445,7 @@ mod tests {
     };
     use std::convert::Infallible;
     use tempo_chainspec::hardfork::TempoHardfork;
-    use tempo_contracts::precompiles::DEFAULT_FEE_TOKEN;
-    use tempo_precompiles::{PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS};
+    use tempo_precompiles::{DEFAULT_FEE_TOKEN, PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS};
     use tempo_primitives::transaction::Call;
 
     fn create_test_journal() -> Journal<CacheDB<EmptyDB>> {

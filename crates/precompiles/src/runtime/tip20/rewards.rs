@@ -316,11 +316,11 @@ impl TIP20Token {
 mod tests {
     use super::*;
     use crate::{
-        abi::ITIP20::{self, PolicyForbids, traits::IToken as _},
+        abi::ITIP20::{self, PolicyForbids, traits::*},
         error::TempoPrecompileError,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
-        tip403_registry::{PolicyType, TIP403Registry, abi::IRegistry as _},
+        tip403_registry::{PolicyType, TIP403Registry, abi::traits::*},
     };
     use alloy::primitives::{Address, U256};
 

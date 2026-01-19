@@ -1,3 +1,4 @@
+#![allow(unused_imports, unreachable_pub)]
 //! Function call encoding parity tests between `#[abi]` and `sol!`.
 
 use alloy::{

@@ -7,11 +7,7 @@ use alloy::{
 use alloy_eips::BlockId;
 use alloy_primitives::{Address, uint};
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_contracts::precompiles::{
-    IFeeManager,
-    ITIP20::{self, ITIP20Instance},
-    ITIPFeeAMM,
-};
+use tempo_precompiles::abi::ITIP20::{self, abiInstance as ITIP20Instance};
 use tempo_precompiles::{
     DEFAULT_FEE_TOKEN, PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
     tip_fee_manager::amm::{MIN_LIQUIDITY, PoolKey},
