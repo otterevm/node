@@ -2424,7 +2424,7 @@ dependencies = [
 [[package]]
 name = "commonware-broadcast"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "commonware-codec",
@@ -2442,7 +2442,7 @@ dependencies = [
 [[package]]
 name = "commonware-codec"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "paste",
@@ -2454,7 +2454,7 @@ dependencies = [
 [[package]]
 name = "commonware-consensus"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2482,7 +2482,7 @@ dependencies = [
 [[package]]
 name = "commonware-cryptography"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -2513,7 +2513,7 @@ dependencies = [
 [[package]]
 name = "commonware-macros"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "futures",
  "proc-macro-crate",
@@ -2528,7 +2528,7 @@ dependencies = [
 [[package]]
 name = "commonware-math"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "commonware-codec",
@@ -2540,7 +2540,7 @@ dependencies = [
 [[package]]
 name = "commonware-p2p"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "commonware-codec",
@@ -2566,7 +2566,7 @@ dependencies = [
 [[package]]
 name = "commonware-parallel"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "cfg-if",
  "rayon",
@@ -2575,7 +2575,7 @@ dependencies = [
 [[package]]
 name = "commonware-resolver"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "commonware-codec",
@@ -2595,7 +2595,7 @@ dependencies = [
 [[package]]
 name = "commonware-runtime"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "async-lock",
  "axum",
@@ -2631,7 +2631,7 @@ dependencies = [
 [[package]]
 name = "commonware-storage"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2654,7 +2654,7 @@ dependencies = [
 [[package]]
 name = "commonware-stream"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "chacha20poly1305",
@@ -2674,7 +2674,7 @@ dependencies = [
 [[package]]
 name = "commonware-utils"
 version = "0.0.65"
-source = "git+https://github.com/commonwarexyz/monorepo?rev=f966223ac7775606eb23c85c35f1c272d8f61d0b#f966223ac7775606eb23c85c35f1c272d8f61d0b"
+source = "git+https://github.com/commonwarexyz/monorepo?rev=374285d20a3333acf06ffd954e6eb7eb2826568e#374285d20a3333acf06ffd954e6eb7eb2826568e"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -12130,6 +12130,7 @@ dependencies = [
  "derive_more",
  "eyre",
  "p256",
+ "proptest",
  "reth-evm",
  "reth-rpc-eth-types",
  "reth-storage-api",
@@ -12186,6 +12187,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-signer",
  "alloy-signer-local",
+ "alloy-sol-types",
  "futures",
  "metrics",
  "parking_lot",
@@ -12201,6 +12203,7 @@ dependencies = [
  "reth-transaction-pool",
  "revm",
  "tempo-chainspec",
+ "tempo-contracts",
  "tempo-precompiles",
  "tempo-primitives",
  "tempo-revm",

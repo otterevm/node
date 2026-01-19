@@ -518,6 +518,7 @@ where
         // since the default implementation only checks for TransactionType::Eip7702
         if has_aa_auth_list {
             let chain_id = ctx.cfg().chain_id();
+            let spec = *ctx.cfg().spec();
 
             let (tx, journal) = evm.ctx().tx_journal_mut();
 
@@ -528,7 +529,8 @@ where
                 tempo_tx_env
                     .tempo_authorization_list
                     .iter()
-                    .filter(|auth| !auth.signature().is_keychain()),
+                    // T0 hardfork: skip keychain signatures in auth list processing
+                    .filter(|auth| !(spec.is_t0() && auth.signature().is_keychain())),
                 journal,
             )
             .unwrap();
