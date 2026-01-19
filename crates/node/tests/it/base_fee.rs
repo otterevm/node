@@ -8,7 +8,7 @@ use futures::{StreamExt, future::join_all, stream};
 use std::env;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
 use tempo_precompiles::PATH_USD_ADDRESS;
-use tempo_precompiles::abi::tip20::tip20;
+use tempo_precompiles::contracts::tip20::tip20;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_base_fee() -> eyre::Result<()> {

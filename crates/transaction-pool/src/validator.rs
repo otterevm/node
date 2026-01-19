@@ -810,10 +810,8 @@ mod tests {
     async fn test_blacklisted_fee_payer_rejected() {
         use alloy_primitives::{Signature, TxKind, address, uint};
         use tempo_precompiles::{
-            TIP403_REGISTRY_ADDRESS,
-            abi::tip403_registry::tip403_registry,
-            tip20::slots as tip20_slots,
-            tip403_registry::PolicyData,
+            TIP403_REGISTRY_ADDRESS, contracts::tip403_registry::tip403_registry,
+            tip20::slots as tip20_slots, tip403_registry::PolicyData,
         };
         use tempo_primitives::transaction::{
             TempoTransaction,

@@ -14,10 +14,10 @@ use alloy_rpc_types_eth::TransactionInput;
 use reth_evm::revm::interpreter::instructions::utility::IntoU256;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
 use tempo_precompiles::contracts::UnknownFunctionSelector;
+use tempo_precompiles::contracts::tip_fee_manager::fee_manager::new as new_fee_manager;
+use tempo_precompiles::contracts::tip20::tip20;
 use tempo_precompiles::{PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, tip20::TIP20Token};
-use tempo_precompiles::abi::tip20::tip20;
 use tip20::transferCall;
-use tempo_precompiles::abi::tip_fee_manager::fee_manager::new as new_fee_manager;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_eth_call() -> eyre::Result<()> {
@@ -274,8 +274,7 @@ async fn test_eth_estimate_gas_different_fee_tokens() -> eyre::Result<()> {
         .await?;
 
     // Setup fee manager to configure different tokens
-    let fee_manager =
-        new_fee_manager(tempo_precompiles::TIP_FEE_MANAGER_ADDRESS, provider.clone());
+    let fee_manager = new_fee_manager(tempo_precompiles::TIP_FEE_MANAGER_ADDRESS, provider.clone());
 
     // Supply liquidity to enable fee token swapping
     let validator_token_address = PATH_USD_ADDRESS;

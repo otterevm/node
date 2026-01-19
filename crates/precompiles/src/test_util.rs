@@ -1,8 +1,9 @@
 //! Test utilities for precompile dispatch testing
 
+use crate::contracts::UnknownFunctionSelector;
 use crate::{
     PATH_USD_ADDRESS, Precompile, TIP20_FACTORY_ADDRESS,
-    abi::tip20::tip20::{Error as TIP20Error, prelude::*, ISSUER_ROLE},
+    contracts::tip20::tip20::{Error as TIP20Error, ISSUER_ROLE, prelude::*},
     error::Result,
     storage::{ContractStorage, StorageCtx, hashmap::HashMapStorageProvider},
     tip20::TIP20Token,
@@ -13,10 +14,9 @@ use alloy::{
     sol_types::SolError,
 };
 use revm::precompile::PrecompileError;
-use crate::contracts::UnknownFunctionSelector;
 
 #[cfg(any(test, feature = "test-utils"))]
-use crate::{abi::tip20_factory::tip20_factory::TokenCreated, error::TempoPrecompileError};
+use crate::{contracts::tip20_factory::tip20_factory::TokenCreated, error::TempoPrecompileError};
 
 /// Checks that all selectors in an interface have dispatch handlers.
 ///

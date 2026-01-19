@@ -2,7 +2,7 @@ use alloy::primitives::{Address, B256};
 use tempo_precompiles_macros::contract;
 use tracing::trace;
 
-pub use crate::abi::{
+pub use crate::contracts::{
     VALIDATOR_CONFIG_ADDRESS, validator_config::validator_config,
     validator_config::validator_config::prelude::*,
 };
@@ -281,7 +281,7 @@ mod tests {
                 "Owner should be owner1 after initialization"
             );
 
-            validator_config.change_owner( owner1, owner2)?;
+            validator_config.change_owner(owner1, owner2)?;
 
             let current_owner = validator_config.owner()?;
             assert_eq!(current_owner, owner2, "Owner should be owner2 after change");
@@ -318,11 +318,7 @@ mod tests {
             assert_eq!(validators[0].public_key, public_key);
             assert!(validators[0].active, "New validator should be active");
 
-            validator_config.change_validator_status(
-                owner1,
-                validator1,
-                false,
-            )?;
+            validator_config.change_validator_status(owner1, validator1, false)?;
 
             let validators = validator_config.get_validators()?;
             assert!(!validators[0].active, "Validator should be inactive");
@@ -337,11 +333,7 @@ mod tests {
             );
             assert_eq!(res, Err(validator_config::Error::unauthorized().into()));
 
-            let res = validator_config.change_validator_status(
-                owner2,
-                validator1,
-                true,
-            );
+            let res = validator_config.change_validator_status(owner2, validator1, true);
             assert_eq!(res, Err(validator_config::Error::unauthorized().into()));
 
             Ok(())
@@ -649,25 +641,15 @@ mod tests {
             let mut validator_config = ValidatorConfig::new();
             validator_config.initialize(owner)?;
 
-            assert_eq!(
-                validator_config.get_next_full_dkg_ceremony()?,
-                0
-            );
+            assert_eq!(validator_config.get_next_full_dkg_ceremony()?, 0);
 
-            validator_config.set_next_full_dkg_ceremony( owner, 42)?;
-            assert_eq!(
-                validator_config.get_next_full_dkg_ceremony()?,
-                42
-            );
+            validator_config.set_next_full_dkg_ceremony(owner, 42)?;
+            assert_eq!(validator_config.get_next_full_dkg_ceremony()?, 42);
 
-            let result =
-                validator_config.set_next_full_dkg_ceremony( non_owner, 100);
+            let result = validator_config.set_next_full_dkg_ceremony(non_owner, 100);
             assert_eq!(result, Err(validator_config::Error::unauthorized().into()));
 
-            assert_eq!(
-                validator_config.get_next_full_dkg_ceremony()?,
-                42
-            );
+            assert_eq!(validator_config.get_next_full_dkg_ceremony()?, 42);
 
             Ok(())
         })

@@ -1,7 +1,9 @@
 //! Orderbook and tick level management for the stablecoin DEX.
 
 use crate::{
-    abi::stablecoin_dex::stablecoin_dex::{self, MAX_TICK, MIN_TICK, PRICE_SCALE, MAX_PRICE, MIN_PRICE},
+    contracts::stablecoin_dex::stablecoin_dex::{
+        self, MAX_PRICE, MAX_TICK, MIN_PRICE, MIN_TICK, PRICE_SCALE,
+    },
     error::Result,
     storage::{Handler, Mapping},
 };
@@ -76,8 +78,6 @@ pub fn quote_to_base(quote_amount: u128, tick: i16, rounding: RoundingDirection)
 
     result.try_into().ok()
 }
-
-
 
 /// Represents a price level in the orderbook with a doubly-linked list of orders
 /// Orders are maintained in FIFO order at each tick level

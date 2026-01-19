@@ -5,9 +5,10 @@ use alloy::{
     sol_types::SolEvent,
 };
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::abi::tip20::tip20;
-use tempo_precompiles::{
-    PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, abi::tip20_factory::tip20_factory, tip20::is_tip20_prefix,
+contracts::use tempo_precompiles::{
+    PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS,
+    contracts::tip20_factory::tip20_factory},
+    tip20::is_tip20_prefix,
 };
 
 #[tokio::test(flavor = "multi_thread")]

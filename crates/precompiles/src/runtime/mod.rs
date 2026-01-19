@@ -10,12 +10,12 @@ pub mod tip_fee_manager;
 pub mod validator_config;
 
 use crate::{
-    abi::{
+    account_keychain::AccountKeychain,
+    contracts::{
         ACCOUNT_KEYCHAIN_ADDRESS, NONCE_PRECOMPILE_ADDRESS, STABLECOIN_DEX_ADDRESS,
         TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS,
         VALIDATOR_CONFIG_ADDRESS,
     },
-    account_keychain::AccountKeychain,
     error::{IntoPrecompileResult, Result, TempoPrecompileError},
     nonce::NonceManager,
     stablecoin_dex::StablecoinDEX,
@@ -286,8 +286,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        abi::PATH_USD_ADDRESS,
-        tip20::{tip20, TIP20Token},
+        contracts::PATH_USD_ADDRESS,
+        tip20::{TIP20Token, tip20},
     };
     use alloy::primitives::{Address, Bytes, U256, bytes};
     use alloy_evm::{

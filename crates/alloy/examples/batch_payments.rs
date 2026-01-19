@@ -8,7 +8,7 @@ use alloy::{
     sol_types::SolCall,
 };
 use tempo_alloy::{
-    TempoNetwork, precompiles::abi::tip20::tip20, primitives::transaction::Call,
+    TempoNetwork, precompiles::contracts::tip20::tip20, primitives::transaction::Call,
     rpc::TempoTransactionRequest,
 };
 

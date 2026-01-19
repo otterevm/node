@@ -1,17 +1,17 @@
 use crate::{
-    abi::{tip_fee_manager::fee_manager::prelude::*, tip20::tip20::traits::*},
+    contracts::{tip_fee_manager::fee_manager::prelude::*, tip20::tip20::traits::*},
     error::{Result, TempoPrecompileError},
     storage::Handler,
     tip_fee_manager::TipFeeManager,
     tip20::{TIP20Token, validate_usd_currency},
 };
-
-pub use crate::abi::tip_fee_manager::fee_manager::{MIN_LIQUIDITY, Pool};
 use alloy::{
     primitives::{Address, B256, U256, keccak256, uint},
     sol_types::SolValue,
 };
 use tempo_precompiles_macros::Storable;
+
+pub use crate::contracts::tip_fee_manager::fee_manager::{MIN_LIQUIDITY, Pool};
 
 /// Compute amount out for a fee swap
 #[inline]

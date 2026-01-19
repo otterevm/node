@@ -7,13 +7,12 @@ use alloy::{
 use alloy_eips::BlockId;
 use alloy_primitives::{Address, uint};
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::abi::tip20::tip20;
-use tip20::Tip20Instance;
-use tempo_precompiles::{
+contracts::use tempo_precompiles::{
     DEFAULT_FEE_TOKEN, PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
-    abi::tip_fee_manager::fee_manager,
+    contracts::tip_fee_manager::fee_manager, tip20::tip20},
     tip_fee_manager::amm::{MIN_LIQUIDITY, PoolKey},
 };
+use tip20::Tip20Instance;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_mint_liquidity() -> eyre::Result<()> {

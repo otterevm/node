@@ -1,8 +1,13 @@
 use super::*;
 use alloy::providers::DynProvider;
 use indicatif::ProgressIterator;
-use tempo_precompiles::abi::stablecoin_dex::stablecoin_dex::StablecoinDexInstance;
-use tempo_precompiles::{PATH_USD_ADDRESS, abi::tip20::tip20::grantRoleCall, tip20::U128_MAX};
+use tempo_precompiles::{
+    PATH_USD_ADDRESS,
+    contracts::{
+        stablecoin_dex::stablecoin_dex::StablecoinDexInstance, tip20::tip20::grantRoleCall,
+    },
+    tip20::U128_MAX,
+};
 
 /// This method performs a one-time setup for sending a lot of transactions:
 /// * Deploys the specified number of user tokens.

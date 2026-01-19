@@ -4,7 +4,7 @@
 //! Orders support price-time priority matching, partial fills, and flip orders that
 //! automatically place opposite-side orders when filled.
 
-use crate::{abi::stablecoin_dex::stablecoin_dex, stablecoin_dex::error::OrderError};
+use crate::{contracts::stablecoin_dex::stablecoin_dex, stablecoin_dex::error::OrderError};
 use alloy::primitives::{Address, B256};
 use tempo_precompiles_macros::Storable;
 

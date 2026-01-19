@@ -6,8 +6,10 @@ use alloy::{
 };
 use futures::future::try_join_all;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::abi::tip20::tip20;
-use tempo_precompiles::{TIP403_REGISTRY_ADDRESS, abi::tip403_registry::tip403_registry};
+contracts::use tempo_precompiles::{
+    TIP403_REGISTRY_ADDRESS,
+    contracts::tip403_registry::tip403_registry},
+};
 
 use crate::utils::{TestNodeBuilder, await_receipts, setup_test_token};
 
@@ -217,9 +219,7 @@ async fn test_tip20_mint() -> eyre::Result<()> {
     let err = max_mint_result.unwrap_err();
     assert_eq!(
         err.as_decoded_interface_error::<tip20::Error>(),
-        Some(tip20::Error::SupplyCapExceeded(
-            tip20::SupplyCapExceeded {}
-        ))
+        Some(tip20::Error::SupplyCapExceeded(tip20::SupplyCapExceeded {}))
     );
 
     Ok(())
@@ -783,8 +783,7 @@ async fn test_tip20_rewards() -> eyre::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_tip20_pause_blocks_fee_collection() -> eyre::Result<()> {
     use tempo_precompiles::{
-        PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
-        abi::tip_fee_manager::fee_manager,
+        PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS, contracts::tip_fee_manager::fee_manager,
         tip20::PAUSE_ROLE,
     };
 

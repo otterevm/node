@@ -24,13 +24,14 @@ use reth_node_core::args::RpcServerArgs;
 use reth_rpc_builder::RpcModuleSelection;
 use std::{sync::Arc, time::Duration};
 use tempo_chainspec::spec::TempoChainSpec;
-use tempo_precompiles::abi::tip20::tip20;
-use tip20::{Tip20Instance, grantRoleCall};
-use tempo_node::node::TempoNode;
+contracts::use tempo_node::node::TempoNode;
 use tempo_payload_types::{TempoPayloadAttributes, TempoPayloadBuilderAttributes};
 use tempo_precompiles::{
-    PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, abi::tip20_factory::tip20_factory, tip20::ISSUER_ROLE,
+    PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS,
+    contracts::tip20_factory::tip20_factory},
+    tip20::ISSUER_ROLE,
 };
+use tip20::{Tip20Instance, grantRoleCall};
 
 /// Creates a test TIP20 token with issuer role granted to the caller
 pub(crate) async fn setup_test_token<P>(

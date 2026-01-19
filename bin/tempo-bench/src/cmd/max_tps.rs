@@ -55,13 +55,13 @@ use std::{
 };
 use tempo_precompiles::{
     DEFAULT_FEE_TOKEN, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
-    abi::{
+    contracts::{
         stablecoin_dex::stablecoin_dex::{
             MAX_TICK, MIN_ORDER_AMOUNT, MIN_TICK, StablecoinDexInstance, TICK_SPACING,
         },
+        tip_fee_manager::fee_manager::FeeManagerInstance,
         tip20::tip20::{self, ISSUER_ROLE, Tip20Instance},
         tip20_factory::tip20_factory,
-        tip_fee_manager::fee_manager::FeeManagerInstance,
     },
 };
 use tokio::{

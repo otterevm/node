@@ -7,95 +7,96 @@ use alloy::{
     primitives::{Address, B256, IntoLogData, U256},
     sol_types::{SolCall, SolInterface},
 };
-use tempo_precompiles::abi::tip20::tip20 as abi;
+use tempo_precompiles::contracts::tip20::tip20;
 
 #[test]
 fn test_calls_enum_decode() {
     // Test Token calls
-    let call = abi::balanceOfCall {
+    let call = tip20::balanceOfCall {
         account: Address::random(),
     };
-    let encoded = <abi::ITokenCalls as SolInterface>::abi_encode(&call.into());
+    let encoded = <tip20::ITokenCalls as SolInterface>::abi_encode(&call.into());
 
-    let decoded = abi::Calls::abi_decode(&encoded).unwrap();
+    let decoded = tip20::Calls::abi_decode(&encoded).unwrap();
     assert!(matches!(
         decoded,
-        abi::Calls::IToken(abi::ITokenCalls::balanceOf(_))
+        tip20::Calls::IToken(tip20::ITokenCalls::balanceOf(_))
     ));
 
     // Test RolesAuth calls
-    let call = abi::hasRoleCall {
+    let call = tip20::hasRoleCall {
         role: B256::random(),
         account: Address::random(),
     };
-    let encoded = <abi::IRolesAuthCalls as SolInterface>::abi_encode(&call.into());
+    let encoded = <tip20::IRolesAuthCalls as SolInterface>::abi_encode(&call.into());
 
-    let decoded = abi::Calls::abi_decode(&encoded).unwrap();
+    let decoded = tip20::Calls::abi_decode(&encoded).unwrap();
     assert!(matches!(
         decoded,
-        abi::Calls::IRolesAuth(abi::IRolesAuthCalls::hasRole(_))
+        tip20::Calls::IRolesAuth(tip20::IRolesAuthCalls::hasRole(_))
     ));
 }
 
 #[test]
 fn test_calls_selectors() {
-    assert!(!abi::Calls::SELECTORS.is_empty());
+    assert!(!tip20::Calls::SELECTORS.is_empty());
 
     // Verify all selectors are valid
-    for selector in abi::Calls::SELECTORS {
-        assert!(abi::Calls::valid_selector(*selector));
+    for selector in tip20::Calls::SELECTORS {
+        assert!(tip20::Calls::valid_selector(*selector));
     }
 
     // Check specific selectors
-    assert!(abi::Calls::valid_selector(abi::balanceOfCall::SELECTOR));
-    assert!(abi::Calls::valid_selector(abi::hasRoleCall::SELECTOR));
-    assert!(abi::Calls::valid_selector(
-        abi::distributeRewardCall::SELECTOR
+    assert!(tip20::Calls::valid_selector(tip20::balanceOfCall::SELECTOR));
+    assert!(tip20::Calls::valid_selector(tip20::hasRoleCall::SELECTOR));
+    assert!(tip20::Calls::valid_selector(
+        tip20::distributeRewardCall::SELECTOR
     ));
 }
 
 #[test]
 fn test_error_constructors() {
-    let err = abi::Error::insufficient_balance(U256::from(100), U256::from(200), Address::random());
-    assert!(matches!(err, abi::Error::InsufficientBalance(_)));
+    let err =
+        tip20::Error::insufficient_balance(U256::from(100), U256::from(200), Address::random());
+    assert!(matches!(err, tip20::Error::InsufficientBalance(_)));
 
-    let err = abi::Error::unauthorized();
-    assert!(matches!(err, abi::Error::Unauthorized(_)));
+    let err = tip20::Error::unauthorized();
+    assert!(matches!(err, tip20::Error::Unauthorized(_)));
 }
 
 #[test]
 fn test_event_constructors() {
-    let event = abi::Event::transfer(Address::random(), Address::random(), U256::from(100));
-    assert!(matches!(event, abi::Event::Transfer(_)));
+    let event = tip20::Event::transfer(Address::random(), Address::random(), U256::from(100));
+    assert!(matches!(event, tip20::Event::Transfer(_)));
     let log_data = event.into_log_data();
     assert!(!log_data.topics().is_empty());
 
-    let event = abi::Event::role_membership_updated(
+    let event = tip20::Event::role_membership_updated(
         B256::random(),
         Address::random(),
         Address::random(),
         true,
     );
-    assert!(matches!(event, abi::Event::RoleMembershipUpdated(_)));
+    assert!(matches!(event, tip20::Event::RoleMembershipUpdated(_)));
 }
 
 #[test]
 fn test_unknown_selector_returns_error() {
     let unknown_calldata = [0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00];
-    let result = abi::Calls::abi_decode(&unknown_calldata);
+    let result = tip20::Calls::abi_decode(&unknown_calldata);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_sol_call_trait_methods() {
-    let call = abi::balanceOfCall {
+    let call = tip20::balanceOfCall {
         account: Address::random(),
     };
 
     // Test SolCall trait via associated items
     assert_eq!(
-        <abi::balanceOfCall as SolCall>::SELECTOR,
-        abi::balanceOfCall::SELECTOR
+        <tip20::balanceOfCall as SolCall>::SELECTOR,
+        tip20::balanceOfCall::SELECTOR
     );
-    assert!(<abi::balanceOfCall as SolCall>::abi_encoded_size(&call) > 0);
+    assert!(<tip20::balanceOfCall as SolCall>::abi_encoded_size(&call) > 0);
 }

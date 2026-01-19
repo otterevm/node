@@ -212,10 +212,10 @@ mod tests {
     use tempo_evm::TempoEvmFactory;
     use tempo_precompiles::{
         NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS,
+        contracts::tip20::tip20,
         nonce::NonceManager,
         storage::{StorageCtx, evm::EvmPrecompileStorageProvider},
         test_util::TIP20Setup,
-        abi::tip20::tip20,
     };
     use tempo_primitives::{
         TempoTransaction,

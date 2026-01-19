@@ -3,9 +3,9 @@ pub mod error;
 pub mod order;
 pub mod orderbook;
 
-pub use crate::abi::{
-    stablecoin_dex::stablecoin_dex, stablecoin_dex::stablecoin_dex::prelude::*, PATH_USD_ADDRESS,
-    STABLECOIN_DEX_ADDRESS,
+pub use crate::contracts::{
+    PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS, stablecoin_dex::stablecoin_dex,
+    stablecoin_dex::stablecoin_dex::prelude::*,
 };
 pub use order::Order;
 pub use orderbook::{
@@ -13,7 +13,10 @@ pub use orderbook::{
 };
 
 use crate::{
-    abi::{tip20::tip20::traits::*, tip20_factory::tip20_factory::traits::*, tip403_registry::tip403_registry::traits::*},
+    contracts::{
+        tip20::tip20::traits::*, tip20_factory::tip20_factory::traits::*,
+        tip403_registry::tip403_registry::traits::*,
+    },
     error::{Result, TempoPrecompileError},
     stablecoin_dex::orderbook::compute_book_key,
     storage::{Handler, Mapping},
@@ -3690,9 +3693,7 @@ mod tests {
 
     #[test]
     fn test_blacklisted_user_cannot_use_internal_balance() -> eyre::Result<()> {
-        use crate::tip403_registry::{
-            traits::IRegistry as _, PolicyType, TIP403Registry,
-        };
+        use crate::tip403_registry::{PolicyType, TIP403Registry, traits::IRegistry as _};
 
         let mut storage = HashMapStorageProvider::new(1);
         StorageCtx::enter(&mut storage, || {

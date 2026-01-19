@@ -2,12 +2,12 @@ use alloy::{
     primitives::U256, providers::ProviderBuilder, signers::local::MnemonicBuilder,
     sol_types::SolError,
 };
-use tempo_precompiles::abi::tip20::tip20;
-use tip20::Tip20Instance;
-use tempo_precompiles::abi::stablecoin_dex::stablecoin_dex;
+use tempo_precompiles::contracts::stablecoin_dex::stablecoin_dex;
+use tempo_precompiles::contracts::tip20::tip20;
 use tempo_precompiles::{
     PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS, stablecoin_dex::MIN_ORDER_AMOUNT,
 };
+use tip20::Tip20Instance;
 
 use crate::utils::{TestNodeBuilder, await_receipts, setup_test_token};
 

@@ -2,7 +2,6 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub mod abi;
 pub mod contracts;
 
 #[cfg(feature = "precompile")]
@@ -21,7 +20,7 @@ pub mod storage;
 pub mod test_util;
 
 // Re-export all precompile address constants from abi module
-pub use abi::{
+pub use contracts::{
     ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN, NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS,
     STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
     TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,

@@ -6,8 +6,8 @@ use alloy::{
 };
 use alloy_eips::Encodable2718;
 use tempo_precompiles::DEFAULT_FEE_TOKEN;
-use tempo_precompiles::abi::tip_fee_manager::fee_manager::setUserTokenCall;
-use tempo_precompiles::abi::tip20::tip20;
+use tempo_precompiles::contracts::tip_fee_manager::fee_manager::setUserTokenCall;
+use tempo_precompiles::contracts::tip20::tip20;
 use tempo_primitives::{TempoTransaction, TempoTxEnvelope, transaction::tempo_transaction::Call};
 
 use crate::utils::setup_test_token;
@@ -35,7 +35,7 @@ async fn test_block_building_insufficient_fee_amm_liquidity() -> eyre::Result<()
     let payment_token_addr = *payment_token.address();
 
     // Get validator token address (default fee token from genesis)
-    use tempo_precompiles::{TIP_FEE_MANAGER_ADDRESS, abi::tip_fee_manager::fee_manager};
+    use tempo_precompiles::{TIP_FEE_MANAGER_ADDRESS, contracts::tip_fee_manager::fee_manager};
     let validator_token_addr = DEFAULT_FEE_TOKEN;
 
     let fee_amm = fee_manager::new(TIP_FEE_MANAGER_ADDRESS, provider.clone());

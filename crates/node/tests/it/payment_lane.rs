@@ -7,9 +7,9 @@ use alloy::{
 };
 use alloy_rpc_types_eth::TransactionRequest;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::abi::tip20::tip20;
-use tempo_precompiles::abi::tip_fee_manager::fee_manager;
 use tempo_precompiles::TIP_FEE_MANAGER_ADDRESS;
+use tempo_precompiles::contracts::tip_fee_manager::fee_manager;
+use tempo_precompiles::contracts::tip20::tip20;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {

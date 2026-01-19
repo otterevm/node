@@ -11,10 +11,11 @@ use alloy_network::{Ethereum, TxSignerSync};
 use alloy_primitives::Bytes;
 use alloy_rpc_types_eth::TransactionRequest;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::abi::tip20::tip20;
 use tempo_node::node::TempoNode;
+use tempo_precompiles::contracts::tip20::tip20;
 use tempo_precompiles::{
-    PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, abi::tip20_factory::tip20_factory, tip20::ISSUER_ROLE,
+    PATH_USD_ADDRESS, TIP20_FACTORY_ADDRESS, contracts::tip20_factory::tip20_factory,
+    tip20::ISSUER_ROLE,
 };
 use tempo_primitives::TempoTxEnvelope;
 

@@ -1,7 +1,7 @@
 use alloy::primitives::{Address, B256, U256};
 use tempo_precompiles_macros::{Storable, contract};
 
-pub use crate::abi::{
+pub use crate::contracts::{
     ACCOUNT_KEYCHAIN_ADDRESS, account_keychain::account_keychain,
     account_keychain::account_keychain::prelude::*,
 };
@@ -456,8 +456,8 @@ mod tests {
         error::TempoPrecompileError,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
     };
-    use alloy::primitives::{Address, U256};
     use account_keychain::IAccountKeychain as _;
+    use alloy::primitives::{Address, U256};
 
     // Helper function to assert unauthorized error
     fn assert_unauthorized_error(error: TempoPrecompileError) {
@@ -557,8 +557,7 @@ mod tests {
             assert_unauthorized_error(auth_result.unwrap_err());
 
             // Test 2: revoke_key should fail with access key
-            let revoke_result =
-                keychain.revoke_key( msg_sender, existing_key);
+            let revoke_result = keychain.revoke_key(msg_sender, existing_key);
             assert!(
                 revoke_result.is_err(),
                 "revoke_key should fail when using access key"
@@ -566,12 +565,8 @@ mod tests {
             assert_unauthorized_error(revoke_result.unwrap_err());
 
             // Test 3: update_spending_limit should fail with access key
-            let update_result = keychain.update_spending_limit(
-                msg_sender,
-                existing_key,
-                token,
-                U256::from(1000),
-            );
+            let update_result =
+                keychain.update_spending_limit(msg_sender, existing_key, token, U256::from(1000));
             assert!(
                 update_result.is_err(),
                 "update_spending_limit should fail when using access key"
@@ -605,15 +600,15 @@ mod tests {
             )?;
 
             // Verify key exists
-            let key_info = keychain.get_key( account, key_id)?;
+            let key_info = keychain.get_key(account, key_id)?;
             assert_eq!(key_info.expiry, u64::MAX);
             assert!(!key_info.is_revoked);
 
             // Step 2: Revoke the key
-            keychain.revoke_key( account, key_id)?;
+            keychain.revoke_key(account, key_id)?;
 
             // Verify key is revoked
-            let key_info = keychain.get_key( account, key_id)?;
+            let key_info = keychain.get_key(account, key_id)?;
             assert_eq!(key_info.expiry, 0);
             assert!(key_info.is_revoked);
 
@@ -670,20 +665,13 @@ mod tests {
             )?;
 
             // Revoke key 1
-            keychain.revoke_key( account, key_id_1)?;
+            keychain.revoke_key(account, key_id_1)?;
 
             // Authorizing a different key (key 2) should still work
-            keychain.authorize_key(
-                account,
-                key_id_2,
-                SignatureType::P256,
-                1000,
-                true,
-                vec![],
-            )?;
+            keychain.authorize_key(account, key_id_2, SignatureType::P256, 1000, true, vec![])?;
 
             // Verify key 2 is authorized
-            let key_info = keychain.get_key( account, key_id_2)?;
+            let key_info = keychain.get_key(account, key_id_2)?;
             assert_eq!(key_info.expiry, 1000);
             assert!(!key_info.is_revoked);
 
@@ -720,8 +708,7 @@ mod tests {
                 }],
             )?;
 
-            let initial_limit =
-                keychain.get_remaining_limit( eoa, access_key, token)?;
+            let initial_limit = keychain.get_remaining_limit(eoa, access_key, token)?;
             assert_eq!(initial_limit, U256::from(100));
 
             // Switch to access key for remaining tests
@@ -730,29 +717,25 @@ mod tests {
             // Increase approval by 30, which deducts from the limit
             keychain.authorize_approve(eoa, token, U256::ZERO, U256::from(30))?;
 
-            let limit_after =
-                keychain.get_remaining_limit( eoa, access_key, token)?;
+            let limit_after = keychain.get_remaining_limit(eoa, access_key, token)?;
             assert_eq!(limit_after, U256::from(70));
 
             // Decrease approval to 20, does not affect limit
             keychain.authorize_approve(eoa, token, U256::from(30), U256::from(20))?;
 
-            let limit_unchanged =
-                keychain.get_remaining_limit( eoa, access_key, token)?;
+            let limit_unchanged = keychain.get_remaining_limit(eoa, access_key, token)?;
             assert_eq!(limit_unchanged, U256::from(70));
 
             // Increase from 20 to 50, reducing the limit by 30
             keychain.authorize_approve(eoa, token, U256::from(20), U256::from(50))?;
 
-            let limit_after_increase =
-                keychain.get_remaining_limit( eoa, access_key, token)?;
+            let limit_after_increase = keychain.get_remaining_limit(eoa, access_key, token)?;
             assert_eq!(limit_after_increase, U256::from(40));
 
             // Assert that spending limits only applied when account is tx origin
             keychain.authorize_approve(contract, token, U256::ZERO, U256::from(1000))?;
 
-            let limit_after_contract =
-                keychain.get_remaining_limit( eoa, access_key, token)?;
+            let limit_after_contract = keychain.get_remaining_limit(eoa, access_key, token)?;
             assert_eq!(limit_after_contract, U256::from(40)); // unchanged
 
             // Assert that exceeding remaining limit fails
@@ -768,8 +751,7 @@ mod tests {
             keychain.set_transaction_key(Address::ZERO)?;
             keychain.authorize_approve(eoa, token, U256::ZERO, U256::from(1000))?;
 
-            let limit_main_key =
-                keychain.get_remaining_limit( eoa, access_key, token)?;
+            let limit_main_key = keychain.get_remaining_limit(eoa, access_key, token)?;
             assert_eq!(limit_main_key, U256::from(40));
 
             Ok(())
@@ -815,8 +797,7 @@ mod tests {
             )?;
 
             // Verify spending limit is set
-            let limit =
-                keychain.get_remaining_limit( eoa_alice, access_key, token)?;
+            let limit = keychain.get_remaining_limit(eoa_alice, access_key, token)?;
             assert_eq!(
                 limit,
                 U256::from(100),
@@ -831,8 +812,7 @@ mod tests {
             // Spending limit SHOULD be enforced
             keychain.authorize_transfer(eoa_alice, token, U256::from(30))?;
 
-            let limit_after =
-                keychain.get_remaining_limit( eoa_alice, access_key, token)?;
+            let limit_after = keychain.get_remaining_limit(eoa_alice, access_key, token)?;
             assert_eq!(
                 limit_after,
                 U256::from(70),
@@ -843,8 +823,7 @@ mod tests {
             // Spending limit should NOT be enforced - the contract isn't spending Alice's tokens
             keychain.authorize_transfer(contract_address, token, U256::from(1000))?;
 
-            let limit_unchanged =
-                keychain.get_remaining_limit( eoa_alice, access_key, token)?;
+            let limit_unchanged = keychain.get_remaining_limit(eoa_alice, access_key, token)?;
             assert_eq!(
                 limit_unchanged,
                 U256::from(70),
@@ -854,8 +833,7 @@ mod tests {
             // Test 3: Alice can still spend her remaining limit
             keychain.authorize_transfer(eoa_alice, token, U256::from(70))?;
 
-            let limit_depleted =
-                keychain.get_remaining_limit( eoa_alice, access_key, token)?;
+            let limit_depleted = keychain.get_remaining_limit(eoa_alice, access_key, token)?;
             assert_eq!(
                 limit_depleted,
                 U256::ZERO,

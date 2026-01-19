@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc, types::error::INTERNAL_ERROR_CODE};
 use reth_rpc_server_types::result::rpc_err;
 use tempo_alloy::TempoNetwork;
-use tempo_precompiles::abi::tip20::tip20::Tip20Instance;
+use tempo_precompiles::contracts::tip20::tip20::Tip20Instance;
 
 #[rpc(server, namespace = "tempo")]
 pub trait TempoFaucetExtApi {

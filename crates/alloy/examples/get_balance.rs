@@ -3,7 +3,7 @@
 //! Run with: `cargo run --example get_balance`
 
 use alloy::{primitives::address, providers::ProviderBuilder};
-use tempo_alloy::{TempoNetwork, precompiles::abi::tip20::tip20};
+use tempo_alloy::{TempoNetwork, precompiles::contracts::tip20::tip20};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

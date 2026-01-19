@@ -56,7 +56,7 @@ use tempo_node::{
 };
 use tempo_precompiles::{
     VALIDATOR_CONFIG_ADDRESS,
-    abi::validator_config::validator_config::ValidatorConfigInstance as IValidatorConfigInstance,
+    contracts::validator_config::validator_config::ValidatorConfigInstance as IValidatorConfigInstance,
     storage::StorageCtx,
     validator_config::{ValidatorConfig, traits::IValidatorConfig},
 };

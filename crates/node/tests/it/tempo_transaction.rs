@@ -15,11 +15,9 @@ use reth_primitives_traits::transaction::TxHashRef;
 use reth_transaction_pool::TransactionPool;
 use tempo_alloy::TempoNetwork;
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
-use tempo_precompiles::{
-    ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN,
-};
-use tempo_precompiles::abi::tip20::tip20;
-use tip20::transferCall;
+use tempo_precompiles::contracts::tip20::tip20;
+use tempo_precompiles::{ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN};
+contracts::use tip20::transferCall;
 
 use tempo_primitives::{
     SignatureType, TempoTransaction, TempoTxEnvelope,
@@ -649,7 +647,7 @@ fn sign_aa_tx_with_p256_access_key(
 /// Helper to create a TIP20 transfer call
 fn create_transfer_call(to: Address, amount: U256) -> Call {
     use alloy::sol_types::SolCall;
-    use tempo_precompiles::abi::tip20::tip20::transferCall;
+    use tempo_precompiles::contracts::tip20::tip20::transferCall;
 
     Call {
         to: DEFAULT_FEE_TOKEN.into(),
@@ -3715,7 +3713,9 @@ async fn test_aa_access_key() -> eyre::Result<()> {
 
     use alloy::sol_types::SolCall;
     use alloy_primitives::address;
-    use tempo_precompiles::abi::account_keychain::account_keychain::{getKeyCall, getRemainingLimitCall};
+    use tempo_precompiles::contracts::account_keychain::account_keychain::{
+        getKeyCall, getRemainingLimitCall,
+    };
     const ACCOUNT_KEYCHAIN_ADDRESS: Address =
         address!("0xAAAAAAAA00000000000000000000000000000000");
 
@@ -3766,7 +3766,9 @@ async fn test_aa_access_key() -> eyre::Result<()> {
 /// Tests: zero public key, duplicate key, unauthorized authorize
 #[tokio::test]
 async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
-    use tempo_precompiles::abi::account_keychain::account_keychain::{SignatureType, authorizeKeyCall};
+    use tempo_precompiles::contracts::account_keychain::account_keychain::{
+        SignatureType, authorizeKeyCall,
+    };
     use tempo_primitives::transaction::TokenLimit;
 
     reth_tracing::init_test_tracing();
@@ -4080,8 +4082,9 @@ async fn test_aa_keychain_negative_cases() -> eyre::Result<()> {
 #[tokio::test]
 async fn test_transaction_key_authorization_and_spending_limits() -> eyre::Result<()> {
     use alloy::sol_types::SolCall;
-    use tempo_precompiles::abi::tip20::tip20::{balanceOfCall, transferCall};
-    use tempo_precompiles::abi::account_keychain::account_keychain::updateSpendingLimitCall;
+    use tempo_precompiles::contracts::    contracts::account_keychain::account_keychain::updateSpendingLimitCall,
+        tip20::tip20::{balanceOfCall, transferCall},
+    };
     use tempo_primitives::transaction::TokenLimit;
 
     reth_tracing::init_test_tracing();

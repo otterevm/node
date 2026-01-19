@@ -18,7 +18,7 @@
 //! ## `prelude` - All public types
 //!
 //! ```ignore
-//! use crate::tip20::abi::prelude::*;
+//! use crate::tip20::contracts::prelude::*;
 //! ```
 //!
 //! Includes: all traits, `{Trait}Calls` enums, `Calls`, `Error`, `Event`,
@@ -27,7 +27,7 @@
 //! ## `traits` - Interface traits and constants (for cross-calling)
 //!
 //! ```ignore
-//! use crate::tip20::abi::traits::*;
+//! use crate::tip20::contracts::traits::*;
 //! ```
 //!
 //! Includes: `{ModName}Constants`, interface traits (`IToken`, `IRolesAuth`, etc.),
@@ -106,7 +106,10 @@ fn generate_submodules(
     has_error: bool,
     has_event: bool,
 ) -> TokenStream {
-    let iconstants_name = format_ident!("{}Constants", crate::utils::to_pascal_case(&mod_name.to_string()));
+    let iconstants_name = format_ident!(
+        "{}Constants",
+        crate::utils::to_pascal_case(&mod_name.to_string())
+    );
     // Collect trait names
     let trait_names: Vec<&Ident> = interfaces.iter().map(|i| &i.name).collect();
 
@@ -185,7 +188,7 @@ fn generate_submodules(
         ///
         /// Import interface traits and constants:
         /// ```ignore
-        /// use crate::module::abi::traits::*;
+        /// use crate::module::contracts::traits::*;
         /// ```
         ///
         /// For implementing a contract (when you need Error, Event, structs),
@@ -209,7 +212,7 @@ fn generate_submodules(
         ///
         /// Import all public types with:
         /// ```ignore
-        /// use crate::module::abi::prelude::*;
+        /// use crate::module::contracts::prelude::*;
         /// ```
         pub mod prelude {
             // Unified Calls enum (always present)

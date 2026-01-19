@@ -44,7 +44,10 @@ pub(crate) fn generate_abi_aliases(
     let calls_alias = format_ident!("{}Calls", struct_name);
     let error_alias = format_ident!("{}Error", struct_name);
     let event_alias = format_ident!("{}Event", struct_name);
-    let iconstants_name = format_ident!("{}Constants", crate::utils::to_pascal_case(&abi_mod.to_string()));
+    let iconstants_name = format_ident!(
+        "{}Constants",
+        crate::utils::to_pascal_case(&abi_mod.to_string())
+    );
 
     let dispatch_impls = if dispatch {
         // For dynamic precompiles (no fixed address), add initialization check.

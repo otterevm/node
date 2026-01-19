@@ -3,7 +3,7 @@
 use alloy::primitives::{Address, B256};
 
 use crate::{
-    abi::tip20::tip20::{self, traits::*},
+    contracts::tip20::tip20::{self, traits::*},
     error::Result,
     storage::Handler,
     tip20::TIP20Token,
@@ -120,9 +120,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        abi::tip20::tip20,
-        error::TempoPrecompileError,
-        storage::StorageCtx,
+        contracts::tip20::tip20, error::TempoPrecompileError, storage::StorageCtx,
         test_util::TIP20Setup,
     };
 

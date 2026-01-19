@@ -2,7 +2,7 @@
 
 use crate::{
     TIP20_FACTORY_ADDRESS,
-    abi::{
+    contracts::{
         PATH_USD_ADDRESS,
         tip20::tip20::{Error as TIP20Error, traits::*},
         tip20_factory::tip20_factory::{self, traits::*},

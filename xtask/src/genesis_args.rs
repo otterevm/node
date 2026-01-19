@@ -38,18 +38,18 @@ use std::{
 };
 use tempo_chainspec::spec::TEMPO_BASE_FEE;
 use tempo_commonware_node_config::{SigningKey, SigningShare};
-use tempo_precompiles::contracts::{
-    ARACHNID_CREATE2_FACTORY_ADDRESS, ARACHNID_CREATE2_FACTORY_BYTECODE, CREATEX_ADDRESS,
-    CreateX, MULTICALL3_ADDRESS, Multicall3, PERMIT2_ADDRESS, PERMIT2_SALT, SAFE_DEPLOYER_ADDRESS,
-    SafeDeployer,
-};
 use tempo_dkg_onchain_artifacts::OnchainDkgOutcome;
 use tempo_evm::evm::{TempoEvm, TempoEvmFactory};
+use tempo_precompiles::contracts::{
+    ARACHNID_CREATE2_FACTORY_ADDRESS, ARACHNID_CREATE2_FACTORY_BYTECODE, CREATEX_ADDRESS, CreateX,
+    MULTICALL3_ADDRESS, Multicall3, PERMIT2_ADDRESS, PERMIT2_SALT, SAFE_DEPLOYER_ADDRESS,
+    SafeDeployer,
+};
 use tempo_precompiles::{
     PATH_USD_ADDRESS,
-    abi::tip20::tip20::{ISSUER_ROLE, prelude::*},
-    abi::tip_fee_manager::fee_manager::traits::IFeeAMM,
     account_keychain::AccountKeychain,
+    contracts::tip_fee_manager::fee_manager::traits::IFeeAMM,
+    contracts::tip20::tip20::{ISSUER_ROLE, prelude::*},
     nonce::NonceManager,
     stablecoin_dex::StablecoinDEX,
     storage::{ContractStorage, StorageCtx},

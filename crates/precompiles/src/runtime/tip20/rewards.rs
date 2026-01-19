@@ -1,7 +1,7 @@
 //! TIP20 Rewards distribution and claiming implementation.
 
 use crate::{
-    abi::tip20::tip20::{self, prelude::*},
+    contracts::tip20::tip20::{self, prelude::*},
     error::{Result, TempoPrecompileError},
     storage::Handler,
     tip20::{ACC_PRECISION, TIP20Token},
@@ -316,8 +316,8 @@ impl TIP20Token {
 mod tests {
     use super::*;
     use crate::{
-        abi::tip20::tip20::{self, traits::*},
-        abi::tip403_registry::tip403_registry::traits::IRegistry as _,
+        contracts::tip20::tip20::{self, traits::*},
+        contracts::tip403_registry::tip403_registry::traits::*,
         error::TempoPrecompileError,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
         test_util::TIP20Setup,
@@ -580,7 +580,10 @@ mod tests {
 
             let err = token.claim_rewards(alice).unwrap_err();
             assert!(
-                matches!(err, TempoPrecompileError::TIP20(tip20::Error::PolicyForbids(_))),
+                matches!(
+                    err,
+                    TempoPrecompileError::TIP20(tip20::Error::PolicyForbids(_))
+                ),
                 "Expected PolicyForbids error, got: {err:?}"
             );
 

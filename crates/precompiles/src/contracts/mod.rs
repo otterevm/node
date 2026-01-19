@@ -9,6 +9,9 @@ pub mod tip403_registry;
 pub mod tip_fee_manager;
 pub mod validator_config;
 
+mod external;
+pub use external::*;
+
 pub const TIP403_REGISTRY_ADDRESS: Address = address!("0x403C000000000000000000000000000000000000");
 pub const TIP20_FACTORY_ADDRESS: Address = address!("0x20FC000000000000000000000000000000000000");
 pub const STABLECOIN_DEX_ADDRESS: Address = address!("0xdec0000000000000000000000000000000000000");

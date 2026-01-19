@@ -2,7 +2,7 @@ use alloy::primitives::{Address, FixedBytes, U256};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use tempo_precompiles::{
-    abi::{
+    contracts::{
         tip20::tip20::{ISSUER_ROLE, PAUSE_ROLE, UNPAUSE_ROLE, traits::*},
         tip403_registry::tip403_registry::{PolicyType, traits::*},
     },
@@ -448,11 +448,7 @@ fn tip403_registry_view(c: &mut Criterion) {
         StorageCtx::enter(&mut storage, || {
             let mut registry = TIP403Registry::new();
             let policy_id = registry
-                .create_policy(
-                    admin,
-                    admin,
-                    PolicyType::WHITELIST,
-                )
+                .create_policy(admin, admin, PolicyType::WHITELIST)
                 .unwrap();
 
             b.iter(|| {
@@ -471,11 +467,7 @@ fn tip403_registry_view(c: &mut Criterion) {
         StorageCtx::enter(&mut storage, || {
             let mut registry = TIP403Registry::new();
             let policy_id = registry
-                .create_policy(
-                    admin,
-                    admin,
-                    PolicyType::WHITELIST,
-                )
+                .create_policy(admin, admin, PolicyType::WHITELIST)
                 .unwrap();
 
             b.iter(|| {

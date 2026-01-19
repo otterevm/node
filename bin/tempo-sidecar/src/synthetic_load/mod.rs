@@ -14,7 +14,7 @@ use eyre::Context;
 use rand_distr::{Distribution, Exp, Zipf};
 use reqwest::Url;
 use tempo_precompiles::{
-    TIP_FEE_MANAGER_ADDRESS, abi::tip20::tip20,
+    TIP_FEE_MANAGER_ADDRESS, contracts::tip20::tip20,
     tip_fee_manager::fee_manager::FeeManagerInstance,
 };
 use tempo_telemetry_util::error_field;

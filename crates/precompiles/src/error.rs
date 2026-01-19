@@ -3,17 +3,17 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use crate::abi::{
+use crate::contracts::UnknownFunctionSelector;
+use crate::contracts::{
     account_keychain::IAccountKeychain, nonce::INonce, stablecoin_dex::IStablecoinDex,
-    tip20::ITip20, tip20_factory::ITip20Factory, tip403_registry::ITip403Registry,
-    tip_fee_manager::IFeeManager, validator_config::IValidatorConfig,
+    tip_fee_manager::IFeeManager, tip20::ITip20, tip20_factory::ITip20Factory,
+    tip403_registry::ITip403Registry, validator_config::IValidatorConfig,
 };
 use alloy::{
     primitives::{Selector, U256},
     sol_types::{Panic, PanicKind, SolError, SolInterface},
 };
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
-use crate::contracts::UnknownFunctionSelector;
 
 /// Top-level error type for all Tempo precompile operations
 #[derive(

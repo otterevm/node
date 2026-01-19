@@ -8,7 +8,9 @@ use crate::{
 use alloy::primitives::{Address, U256};
 use tempo_precompiles_macros::{Storable, contract};
 
-pub use crate::abi::{tip403_registry::tip403_registry, tip403_registry::tip403_registry::PolicyType};
+pub use crate::contracts::{
+    tip403_registry::tip403_registry, tip403_registry::tip403_registry::PolicyType,
+};
 
 #[derive(Debug, Clone, Storable)]
 pub struct PolicyData {

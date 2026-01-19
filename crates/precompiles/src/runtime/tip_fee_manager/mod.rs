@@ -4,14 +4,13 @@ use crate::storage::Mapping;
 use alloy::primitives::{Address, B256, U256};
 use tempo_precompiles_macros::contract;
 
-pub use crate::abi::{
-    DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS,
-    tip_fee_manager::fee_manager,
+pub use crate::contracts::{
+    DEFAULT_FEE_TOKEN, TIP_FEE_MANAGER_ADDRESS, tip_fee_manager::fee_manager,
     tip_fee_manager::fee_manager::prelude::*,
 };
 
 use crate::{
-    abi::{tip20::tip20::traits::*, tip20_factory::tip20_factory::traits::*},
+    contracts::{tip20::tip20::traits::*, tip20_factory::tip20_factory::traits::*},
     error::{Result, TempoPrecompileError},
     storage::Handler,
     tip_fee_manager::amm::compute_amount_out,

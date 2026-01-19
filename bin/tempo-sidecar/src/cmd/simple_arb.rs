@@ -15,7 +15,7 @@ use poem::{EndpointExt as _, Route, Server, get, listener::TcpListener};
 use std::{collections::HashSet, time::Duration};
 use tempo_precompiles::{
     TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
-    abi::tip20_factory::tip20_factory,
+    contracts::tip20_factory::tip20_factory,
     tip_fee_manager::fee_manager::{FeeManagerInstance, getPoolCall, rebalanceSwapCall},
 };
 use tempo_telemetry_util::error_field;

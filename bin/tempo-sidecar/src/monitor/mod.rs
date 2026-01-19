@@ -18,7 +18,7 @@ use std::{
 };
 use tempo_precompiles::{
     TIP_FEE_MANAGER_ADDRESS,
-    abi::tip20::tip20,
+    contracts::tip20::tip20,
     tip_fee_manager::{
         Pool,
         fee_manager::{FeeManagerInstance, Mint, getPoolCall},

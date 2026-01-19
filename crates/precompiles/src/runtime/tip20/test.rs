@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
     use crate::{
+        contracts::tip20::tip20::{self as tip20, Error as TIP20Error, prelude::*},
         dispatch::Precompile,
         storage::StorageCtx,
         test_util::{TIP20Setup, setup_storage},
         tip20::TIP20Token,
-        abi::tip20::tip20::{self as tip20, Error as TIP20Error, prelude::*},
         tip403_registry::{PolicyType, TIP403Registry, traits::*},
     };
     use alloy::{

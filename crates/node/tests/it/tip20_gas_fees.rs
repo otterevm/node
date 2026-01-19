@@ -10,9 +10,8 @@ use alloy_primitives::Bytes;
 use alloy_rpc_types_eth::TransactionRequest;
 use std::env;
 use tempo_alloy::rpc::TempoTransactionReceipt;
-use tempo_precompiles::abi::tip20::tip20;
-use tempo_precompiles::abi::tip_fee_manager::fee_manager;
-use tempo_precompiles::{PATH_USD_ADDRESS, TIP_FEE_MANAGER_ADDRESS};
+contracts::use tempo_precompiles::contracts::tip_fee_manager::fee_manager, tip20::tip20},
+};
 use tempo_primitives::transaction::calc_gas_balance_spending;
 
 use crate::utils::TestNodeBuilder;

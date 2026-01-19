@@ -14,7 +14,7 @@ use crate::storage::Mapping;
 use alloy::primitives::{Address, B256, U256, hex, uint};
 use tempo_precompiles_macros::contract;
 
-pub use crate::abi::{
+pub use crate::contracts::{
     tip20::tip20,
     tip20::tip20::{
         BURN_BLOCKED_ROLE, Error as TIP20Error, ISSUER_ROLE, InvalidCurrency, PAUSE_ROLE,
@@ -22,12 +22,12 @@ pub use crate::abi::{
     },
 };
 use crate::{
-    abi::{
-        tip20::tip20::prelude::*, tip20_factory::tip20_factory::traits::*,
-        tip403_registry::tip403_registry::traits::*, PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS,
-        TIP_FEE_MANAGER_ADDRESS,
-    },
     account_keychain::AccountKeychain,
+    contracts::{
+        PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
+        tip20::tip20::prelude::*, tip20_factory::tip20_factory::traits::*,
+        tip403_registry::tip403_registry::traits::*,
+    },
     error::{Result, TempoPrecompileError},
     storage::Handler,
     tip20_factory::TIP20Factory,
@@ -745,7 +745,7 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::{
-        abi::{PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS},
+        contracts::{PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS},
         error::TempoPrecompileError,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
         test_util::{TIP20Setup, setup_storage},
@@ -1111,9 +1111,7 @@ pub(crate) mod tests {
             let result = token.transfer(from, to, amount);
             assert!(matches!(
                 result,
-                Err(TempoPrecompileError::TIP20(tip20::Error::ContractPaused(
-                    _
-                )))
+                Err(TempoPrecompileError::TIP20(tip20::Error::ContractPaused(_)))
             ));
 
             Ok(())
@@ -1284,9 +1282,9 @@ pub(crate) mod tests {
             let result = token.set_supply_cap(admin, new_cap);
             assert!(matches!(
                 result,
-                Err(TempoPrecompileError::TIP20(
-                    tip20::Error::InvalidSupplyCap(_)
-                ))
+                Err(TempoPrecompileError::TIP20(tip20::Error::InvalidSupplyCap(
+                    _
+                )))
             ));
 
             Ok(())
@@ -1451,9 +1449,9 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 result,
-                Err(TempoPrecompileError::TIP20(
-                    tip20::Error::ProtectedAddress(_)
-                ))
+                Err(TempoPrecompileError::TIP20(tip20::Error::ProtectedAddress(
+                    _
+                )))
             ));
 
             // Verify FeeManager balance is unchanged
@@ -1465,9 +1463,9 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 result,
-                Err(TempoPrecompileError::TIP20(
-                    tip20::Error::ProtectedAddress(_)
-                ))
+                Err(TempoPrecompileError::TIP20(tip20::Error::ProtectedAddress(
+                    _
+                )))
             ));
 
             // Verify StablecoinDEX balance is unchanged
