@@ -1,0 +1,99 @@
+name: Invariant Tests
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Number of fuzzing runs per invariant"
+        default: "50000"
+        type: string
+      depth:
+        description: "Call depth per run"
+        default: "5000"
+        type: string
+      ref:
+        description: "Git ref to test (tag, branch, or commit)"
+        default: ""
+        type: string
+
+env:
+  ARGO_SERVER: "dev-euw-argo-workflows.tail388b2e.ts.net:443"
+  ARGO_NAMESPACE: "tempo-devnet-nightly"
+
+jobs:
+  trigger-invariant-tests:
+    name: Trigger Invariant Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version and ref
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            echo "ref=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            echo "runs=50000" >> $GITHUB_OUTPUT
+            echo "depth=5000" >> $GITHUB_OUTPUT
+          else
+            REF="${{ inputs.ref }}"
+            if [ -z "$REF" ]; then
+              REF="${{ github.sha }}"
+            fi
+            echo "version=manual-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "ref=$REF" >> $GITHUB_OUTPUT
+            echo "runs=${{ inputs.runs }}" >> $GITHUB_OUTPUT
+            echo "depth=${{ inputs.depth }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Argo CLI
+        run: |
+          curl -sLO https://github.com/argoproj/argo-workflows/releases/download/v3.5.5/argo-linux-amd64.gz
+          gunzip argo-linux-amd64.gz
+          chmod +x argo-linux-amd64
+          sudo mv argo-linux-amd64 /usr/local/bin/argo
+
+      - name: Submit Argo Workflow
+        env:
+          ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_TOKEN }}
+        run: |
+          echo "Submitting invariant tests for version: ${{ steps.version.outputs.version }}"
+          echo "Git ref: ${{ steps.version.outputs.ref }}"
+          echo "Runs: ${{ steps.version.outputs.runs }}"
+          echo "Depth: ${{ steps.version.outputs.depth }}"
+
+          argo submit \
+            --from workflowtemplate/tempo-invariant-release \
+            --namespace "$ARGO_NAMESPACE" \
+            --parameter trigger="release" \
+            --parameter version="${{ steps.version.outputs.version }}" \
+            --parameter tempo-ref="${{ steps.version.outputs.ref }}" \
+            --parameter runs="${{ steps.version.outputs.runs }}" \
+            --parameter depth="${{ steps.version.outputs.depth }}" \
+            --wait=false \
+            --output name > workflow_name.txt
+
+          WORKFLOW_NAME=$(cat workflow_name.txt)
+          echo "Submitted workflow: $WORKFLOW_NAME"
+          echo "View at: https://${ARGO_SERVER}/workflows/${ARGO_NAMESPACE}/${WORKFLOW_NAME}"
+
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          WORKFLOW_NAME=$(cat workflow_name.txt)
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"text\": \"🚀 Invariant tests triggered for release ${{ steps.version.outputs.version }}\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"🚀 *Invariant tests triggered for release ${{ steps.version.outputs.version }}*\n• Runs: ${{ steps.version.outputs.runs }}\n• Depth: ${{ steps.version.outputs.depth }}\n• <https://${ARGO_SERVER}/workflows/${ARGO_NAMESPACE}/${WORKFLOW_NAME}|View in Argo Workflows>\"
+                  }
+                }
+              ]
+            }"
