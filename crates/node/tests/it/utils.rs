@@ -52,6 +52,7 @@ where
             caller,
             salt,
         )
+        .gas(5_000_000)
         .send()
         .await?
         .get_receipt()
@@ -64,6 +65,7 @@ where
 
     roles
         .grantRole(*ISSUER_ROLE, caller)
+        .gas(1_000_000)
         .send()
         .await?
         .get_receipt()

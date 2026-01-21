@@ -39,7 +39,7 @@ async fn test_eth_call() -> eyre::Result<()> {
     token
         .mint(caller, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(300_000)
+        .gas(1_000_000)
         .send()
         .await?
         .get_receipt()
@@ -79,7 +79,7 @@ async fn test_eth_trace_call() -> eyre::Result<()> {
     token
         .mint(caller, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(300_000)
+        .gas(1_000_000)
         .send()
         .await?
         .get_receipt()
@@ -171,7 +171,7 @@ async fn test_eth_get_logs() -> eyre::Result<()> {
     let mint_receipt = token
         .mint(caller, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(300_000)
+        .gas(1_000_000)
         .send()
         .await?
         .get_receipt()
@@ -181,7 +181,7 @@ async fn test_eth_get_logs() -> eyre::Result<()> {
     token
         .transfer(recipient, mint_amount)
         .gas_price(TEMPO_BASE_FEE as u128)
-        .gas(300_000)
+        .gas(1_000_000)
         .send()
         .await?
         .get_receipt()
@@ -231,7 +231,8 @@ async fn test_eth_estimate_gas() -> eyre::Result<()> {
 
     let gas = provider.estimate_gas(tx.clone()).await?;
     // gas estimation is calldata dependent, but should be consistent with same calldata
-    assert_eq!(gas, 84654);
+    // TIP-1000 (T1): gas includes 250k new account cost when nonce=0
+    assert_eq!(gas, 549423);
 
     // ensure we can successfully send the tx with that gas
     let receipt = provider

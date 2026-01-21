@@ -2323,7 +2323,7 @@ mod tests {
                 .with_cfg(cfg)
                 .with_tx(TempoTxEnv {
                     inner: revm::context::TxEnv {
-                        gas_limit: 100_000,
+                        gas_limit: 1_000_000,
                         ..Default::default()
                     },
                     tempo_tx_env: Some(Box::new(TempoBatchCallEnv {
@@ -2356,7 +2356,7 @@ mod tests {
                 .with_cfg(cfg)
                 .with_tx(TempoTxEnv {
                     inner: revm::context::TxEnv {
-                        gas_limit: 100_000,
+                        gas_limit: 1_000_000,
                         nonce: 0, // First use of this key
                         ..Default::default()
                     },
@@ -2390,7 +2390,7 @@ mod tests {
                 .with_cfg(cfg)
                 .with_tx(TempoTxEnv {
                     inner: revm::context::TxEnv {
-                        gas_limit: 100_000,
+                        gas_limit: 1_000_000,
                         nonce: 5, // Existing key (nonce > 0)
                         ..Default::default()
                     },
@@ -2492,7 +2492,7 @@ mod tests {
         };
         use tempo_primitives::transaction::Call;
 
-        const GAS_LIMIT: u64 = 100_000;
+        const GAS_LIMIT: u64 = 1_000_000;
         const INTRINSIC_GAS: u64 = 21_000;
         // Mock call's gas: (CALL_0, CALL_1)
         const SPENT: (u64, u64) = (1000, 500);
