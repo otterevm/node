@@ -188,5 +188,3 @@ impl Args {
             .map(|signing_key| signing_key.public_key()))
     }
 }
-
-
