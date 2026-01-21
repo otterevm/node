@@ -5,6 +5,7 @@
 
 pub(crate) mod alias;
 mod args;
+pub mod channel_metrics;
 pub(crate) mod config;
 pub mod consensus;
 pub(crate) mod dkg;
@@ -32,6 +33,7 @@ pub use crate::config::{
     RECOVERED_CHANNEL_IDENT, RECOVERED_LIMIT, RESOLVER_CHANNEL_IDENT, RESOLVER_LIMIT,
     SUBBLOCKS_CHANNEL_IDENT, SUBBLOCKS_LIMIT,
 };
+pub use channel_metrics::{ChannelName, channel_id_to_name_mapping};
 
 pub use args::Args;
 
