@@ -585,7 +585,7 @@ async fn test_payment_lane_gas_limits() -> eyre::Result<()> {
             .into_transaction_request()
             .from(caller)
             .gas_price(TEMPO_BASE_FEE as u128)
-            .gas_limit(100000);
+            .gas_limit(1_000_000);
 
         let pending_tx = provider.send_transaction(tx).await?;
         let receipt = pending_tx.get_receipt().await?;

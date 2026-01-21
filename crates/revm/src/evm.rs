@@ -464,7 +464,7 @@ mod tests {
                 calls: vec![],
                 nonce: 0,
                 nonce_key: U256::ZERO,
-                gas_limit: 100_000,
+                gas_limit: 1_000_000,
                 max_fee_per_gas: 0,
                 max_priority_fee_per_gas: 0,
                 valid_before: Some(u64::MAX),
@@ -1410,7 +1410,7 @@ mod tests {
             let mut evm = create_evm_with_tx(
                 TxBuilder::new()
                     .call_identity(&large_calldata)
-                    .gas_limit(100_000) // Plenty of gas for both initial and floor
+                    .gas_limit(1_000_000) // Plenty of gas for both initial and floor
                     .build(),
             )?;
 
@@ -1435,7 +1435,7 @@ mod tests {
             let mut evm = create_evm_with_tx(
                 TxBuilder::new()
                     .call_identity(&[0x01, 0x02, 0x03, 0x04])
-                    .gas_limit(100_000)
+                    .gas_limit(1_000_000)
                     .build(),
             )?;
 

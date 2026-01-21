@@ -376,7 +376,7 @@ mod tests {
             inner: TxEnv {
                 caller: Address::ZERO,
                 gas_price: 0,
-                gas_limit: 100000,
+                gas_limit: 1_000_000,
                 kind: TxKind::Call(contract_addr),
                 ..Default::default()
             },

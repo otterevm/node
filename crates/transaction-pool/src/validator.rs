@@ -1200,8 +1200,8 @@ mod tests {
             ),
         }
 
-        // Test 2: 100k gas should pass intrinsic gas check
-        let tx_high_gas = create_aa_tx(100_000);
+        // Test 2: 1M gas should pass intrinsic gas check
+        let tx_high_gas = create_aa_tx(1_000_000);
         let validator = setup_validator(&tx_high_gas, current_time);
         let outcome = validator
             .validate_transaction(TransactionOrigin::External, tx_high_gas)
@@ -1352,7 +1352,7 @@ mod tests {
                 chain_id: 42431, // MODERATO chain_id
                 max_priority_fee_per_gas: 1_000_000_000,
                 max_fee_per_gas: 2_000_000_000,
-                gas_limit: 100_000,
+                gas_limit: 1_000_000,
                 calls: vec![Call {
                     to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
                     value: U256::ZERO,
@@ -1814,7 +1814,7 @@ mod tests {
                 chain_id: 42431,
                 max_priority_fee_per_gas: 1_000_000_000,
                 max_fee_per_gas: 2_000_000_000,
-                gas_limit: 100_000,
+                gas_limit: 1_000_000,
                 calls: vec![Call {
                     to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
                     value: U256::ZERO,
@@ -1923,7 +1923,7 @@ mod tests {
             chain_id: 1,
             max_priority_fee_per_gas: 1_000_000_000,
             max_fee_per_gas: 2_000_000_000,
-            gas_limit: 100_000,
+            gas_limit: 1_000_000,
             calls: vec![Call {
                 to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
                 value: U256::ZERO,

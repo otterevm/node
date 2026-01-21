@@ -301,7 +301,7 @@ fn subblocks_are_included_with_failing_txs() {
                     // Randomly submit some of the transactions from a new signer that doesn't have any funds
                     if rand::random::<bool>() {
                         let tx =
-                            submit_subblock_tx_from(node, &PrivateKeySigner::random(), 100_000)
+                            submit_subblock_tx_from(node, &PrivateKeySigner::random(), 1_000_000)
                                 .await;
                         failing_transactions.push(tx);
                         expected_transactions.push(tx);
