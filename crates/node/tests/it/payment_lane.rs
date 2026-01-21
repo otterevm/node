@@ -40,11 +40,11 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
 
     // Get fee tokens for both accounts
     let fee_manager = IFeeManager::new(TIP_FEE_MANAGER_ADDRESS, provider.clone());
-    let fee_token_address1 = fee_manager.userTokens(caller).call().await?;
+    let fee_token_address1 = fee_manager.userTokens(caller).gas(1_000_000).call().await?;
     let fee_token1 = ITIP20::new(fee_token_address1, provider.clone());
 
     let fee_manager2 = IFeeManager::new(TIP_FEE_MANAGER_ADDRESS, provider2.clone());
-    let fee_token_address2 = fee_manager2.userTokens(caller2).call().await?;
+    let fee_token_address2 = fee_manager2.userTokens(caller2).gas(1_000_000).call().await?;
     let fee_token2 = ITIP20::new(fee_token_address2, provider2.clone());
 
     // Setup TIP20 tokens for payment transactions
@@ -109,7 +109,7 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
                     .from(accounts[i])
                     .to(accounts[i]) // Send to self
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(300_000)
+                    .gas_limit(1_000_000)
                     .value(U256::ZERO);
 
                 batch_futures.push(provider.send_transaction(tx));
@@ -223,7 +223,7 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
                     .from(accounts[j])
                     .to(accounts[j]) // Send to self
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(300_000)
+                    .gas_limit(1_000_000)
                     .value(U256::ZERO);
 
                 all_futures.push((provider.send_transaction(tx), "non-payment"));
@@ -390,8 +390,8 @@ async fn test_payment_lane_with_mixed_load() -> eyre::Result<()> {
     );
 
     // Check fee token balances were properly deducted
-    let balance1_after = fee_token1.balanceOf(caller).call().await?;
-    let balance2_after = fee_token2.balanceOf(caller2).call().await?;
+    let balance1_after = fee_token1.balanceOf(caller).gas(1_000_000).call().await?;
+    let balance2_after = fee_token2.balanceOf(caller2).gas(1_000_000).call().await?;
 
     println!("\nFee token balance changes:");
     println!("  Account 1 (non-payment sender): balance after = {balance1_after}");
@@ -475,7 +475,7 @@ async fn test_payment_lane_ordering() -> eyre::Result<()> {
                     .into_transaction_request()
                     .from(caller)
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(80000);
+                    .gas_limit(1_000_000);
                 println!("Sending PAYMENT tx {i} from account {account_idx}");
                 let pending = provider.send_transaction(tx).await?;
                 Ok::<_, eyre::Error>((pending, format!("payment-{i}")))
@@ -488,7 +488,7 @@ async fn test_payment_lane_ordering() -> eyre::Result<()> {
                     .from(caller)
                     .to(caller)
                     .gas_price(TEMPO_BASE_FEE as u128)
-                    .gas_limit(80000)
+                    .gas_limit(1_000_000)
                     .value(U256::ZERO);
                 println!("Sending NON-PAYMENT tx {i} from account {account_idx}");
                 let pending = provider.send_transaction(tx).await?;

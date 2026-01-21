@@ -47,9 +47,12 @@ async fn test_eth_call() -> eyre::Result<()> {
 
     let recipient = Address::random();
     let calldata = token.transfer(recipient, mint_amount).calldata().clone();
+    // With TIP-1000 (T1), nonce=0 transactions require 250k additional gas for new account creation.
+    // eth_call needs explicit gas limit to accommodate this intrinsic gas requirement.
     let tx = TransactionRequest::default()
         .to(*token.address())
         .gas_price(0)
+        .gas_limit(1_000_000)
         .input(TransactionInput::new(calldata));
 
     let res = provider.call(tx).await?;
@@ -90,6 +93,7 @@ async fn test_eth_trace_call() -> eyre::Result<()> {
     let tx = TransactionRequest::default()
         .from(caller)
         .to(*token.address())
+        .gas_limit(1_000_000)
         .input(TransactionInput::new(calldata));
 
     let res = provider.call(tx.clone()).await?;
@@ -308,9 +312,9 @@ async fn test_eth_estimate_gas_different_fee_tokens() -> eyre::Result<()> {
         .await?;
 
     // Verify the tokens are set correctly
-    let user_token = fee_manager.userTokens(user_address).call().await?;
+    let user_token = fee_manager.userTokens(user_address).gas(1_000_000).call().await?;
     let validator_token = fee_manager
-        .validatorTokens(validator_address)
+        .validatorTokens(validator_address).gas(1_000_000)
         .call()
         .await?;
 
@@ -368,6 +372,7 @@ async fn test_unknown_selector_error_via_rpc() -> eyre::Result<()> {
 
     let tx = TransactionRequest::default()
         .to(TIP20_FACTORY_ADDRESS)
+        .gas_limit(1_000_000)
         .input(TransactionInput::new(Bytes::from(calldata)));
 
     // The call should fail with UnknownFunctionSelector error

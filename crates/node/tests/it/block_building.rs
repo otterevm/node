@@ -115,7 +115,7 @@ async fn inject_non_payment_txs(
             .build()?;
         let mut tx = TxEip1559 {
             chain_id,
-            gas_limit: 300_000,
+            gas_limit: 1_000_000,
             to: Address::ZERO.into(),
             max_fee_per_gas: TEMPO_BASE_FEE as u128,
             max_priority_fee_per_gas: TEMPO_BASE_FEE as u128,
@@ -404,10 +404,10 @@ async fn test_block_building_more_txs_than_fit() -> eyre::Result<()> {
 
     // Use a gas limit high enough for token setup (~5M per token) but low enough
     // to cause overflow when many transactions are injected.
-    // With T1 gas costs, we need at least 5M for token creation, so use 10M to allow
-    // setup but still force overflow during the test phase.
+    // With T1 gas costs, we need at least 10M for token creation (250k new account overhead),
+    // so use 20M to allow setup but still force overflow during the test phase.
     let mut setup = crate::utils::TestNodeBuilder::new()
-        .with_gas_limit("0x989680") // 10,000,000 gas
+        .with_gas_limit("0x1312D00") // 20,000,000 gas
         .build_with_node_access()
         .await?;
 
