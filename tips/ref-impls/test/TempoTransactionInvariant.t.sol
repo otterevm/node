@@ -243,10 +243,11 @@ contract TempoTransactionInvariantTest is InvariantChecker {
     /// @dev This reproduces the counterexample from CI failure
     function test_repro_E3_expiringNonceWindowTooFar() public {
         // Counterexample parameters (shrunk to minimal form)
-        uint256 actorSeed = 23203150671946371973052279058128223995455138008172157;
-        uint256 recipientSeed = 80168099265617208832252192288785735794293412420329280112139450787910417844;
-        uint256 amount = 1014939366398513864327459799412681561048;
-        uint256 extraOffset = 16872248669215900637927064056;
+        uint256 actorSeed = 23_203_150_671_946_371_973_052_279_058_128_223_995_455_138_008_172_157;
+        uint256 recipientSeed =
+            80_168_099_265_617_208_832_252_192_288_785_735_794_293_412_420_329_280_112_139_450_787_910_417_844;
+        uint256 amount = 1_014_939_366_398_513_864_327_459_799_412_681_561_048;
+        uint256 extraOffset = 16_872_248_669_215_900_637_927_064_056;
 
         // Simulate the handler
         uint256 senderIdx = actorSeed % actors.length;
