@@ -456,7 +456,9 @@ impl ConsensusFeed for FeedStateHandle {
         let epocher = self.epocher()?;
         let state = self.state.read();
         let height = state.latest_finalized.as_ref()?.height?;
-        epocher.containing(height).map(|info| info.epoch().get())
+        epocher
+            .containing(Height::new(height))
+            .map(|info| info.epoch().get())
     }
 }
 
