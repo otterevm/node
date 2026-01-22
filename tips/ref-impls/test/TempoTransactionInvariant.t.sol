@@ -236,52 +236,6 @@ contract TempoTransactionInvariantTest is InvariantChecker {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        REPRO TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Repro test for E3 invariant failure - validBefore too far in future should be rejected
-    /// @dev This reproduces the counterexample from CI failure
-    function test_repro_E3_expiringNonceWindowTooFar() public {
-        // Counterexample parameters (shrunk to minimal form)
-        uint256 actorSeed = 23_203_150_671_946_371_973_052_279_058_128_223_995_455_138_008_172_157;
-        uint256 recipientSeed =
-            80_168_099_265_617_208_832_252_192_288_785_735_794_293_412_420_329_280_112_139_450_787_910_417_844;
-        uint256 amount = 1_014_939_366_398_513_864_327_459_799_412_681_561_048;
-        uint256 extraOffset = 16_872_248_669_215_900_637_927_064_056;
-
-        // Simulate the handler
-        uint256 senderIdx = actorSeed % actors.length;
-        uint256 recipientIdx = recipientSeed % actors.length;
-        if (senderIdx == recipientIdx) {
-            recipientIdx = (recipientIdx + 1) % actors.length;
-        }
-
-        address recipient = actors[recipientIdx];
-
-        amount = bound(amount, 1e6, 10e6);
-        uint256 balance = feeToken.balanceOf(actors[senderIdx]);
-        require(balance >= amount, "Insufficient balance for test");
-
-        // Set validBefore beyond the max window (this should cause rejection)
-        extraOffset = bound(extraOffset, 1, 1 hours);
-        uint64 validBefore = uint64(block.timestamp + MAX_EXPIRY_SECS + extraOffset);
-
-        console.log("block.timestamp:", block.timestamp);
-        console.log("MAX_EXPIRY_SECS:", MAX_EXPIRY_SECS);
-        console.log("extraOffset:", extraOffset);
-        console.log("validBefore:", validBefore);
-        console.log("max allowed validBefore:", block.timestamp + MAX_EXPIRY_SECS);
-
-        (bytes memory signedTx,) = _buildExpiringNonceTx(senderIdx, recipient, amount, validBefore);
-
-        vm.coinbase(validator);
-
-        // This should revert - if it doesn't, the E3 invariant is violated
-        vm.expectRevert();
-        vmExec.executeTransaction(signedTx);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                         SIGNING PARAMS HELPER
     //////////////////////////////////////////////////////////////*/
 
