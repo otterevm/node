@@ -140,6 +140,89 @@ The current implementation adds partial signatures directly to the local aggrega
 
 ---
 
+## Devnet E2E Testing Strategy
+
+The bridge sidecar reuses the same BLS key shares that validators use for consensus. No key extraction needed.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Validator Pod                                 │
+│  ┌─────────────────┐    ┌─────────────────┐                        │
+│  │  tempo-node     │    │  bridge-sidecar │                        │
+│  │                 │    │                 │                        │
+│  │ --consensus.    │    │ Uses same       │                        │
+│  │   signing-share │◄───│ signing share   │                        │
+│  └─────────────────┘    └─────────────────┘                        │
+│           │                      │                                  │
+│           ▼                      ▼                                  │
+│     ┌──────────────────────────────────────┐                       │
+│     │  /secrets/signing.share (mounted)    │                       │
+│     └──────────────────────────────────────┘                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Step 1: Get Group Public Key from Chain
+
+The DKG outcome (including group public key) is stored on-chain:
+
+```bash
+cargo run -p xtask -- get-dkg-outcome \
+  --rpc-url https://tempo-devnet-nightly-rpc.tail388b2e.ts.net \
+  --epoch 1 \
+  --epoch-length 100
+```
+
+Returns `network_identity` (compressed G2, 96 bytes) which needs conversion to EIP-2537 format (256 bytes).
+
+### Step 2: Deploy MessageBridge
+
+```bash
+# Convert G2 to EIP-2537 and deploy
+forge create MessageBridge \
+  --rpc-url https://tempo-devnet-nightly-rpc.tail388b2e.ts.net \
+  --private-key <funded-key> \
+  --constructor-args <owner> 1 <g2-pubkey-256-bytes>
+```
+
+### Step 3: Add Bridge Sidecar to Validator Pods
+
+Update the validator helm chart to include bridge-sidecar container:
+
+```yaml
+# In validator deployment
+containers:
+  - name: tempo-node
+    # ... existing config
+  - name: bridge-sidecar
+    image: ghcr.io/tempoxyz/tempo:latest
+    command: ["bridge-sidecar"]
+    args: ["--config", "/config/bridge.toml"]
+    volumeMounts:
+      - name: signing-share
+        mountPath: /secrets/signing.share
+        subPath: signing.share
+```
+
+The sidecar reads the same signing share the validator uses.
+
+### Step 4: Test the Flow
+
+1. Send a message on Ethereum (Anvil or testnet)
+2. Bridge sidecars detect the `MessageSent` event
+3. Each sidecar signs with its share and broadcasts partial
+4. Once threshold reached, aggregated signature is submitted to Tempo
+5. Verify `MessageReceived` event on Tempo
+
+### What Needs to Be Built
+
+1. **Helm chart update** - Add bridge-sidecar container to validator pods
+2. **P2P gossip** - Sidecars need to share partial signatures (currently TODO)
+3. **Bridge WorkflowTemplate** - Argo workflow to test bridge on devnets
+
+---
+
 ## Test Infrastructure
 
 ### Anvil Configuration
