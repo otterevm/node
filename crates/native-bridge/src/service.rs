@@ -78,7 +78,24 @@ impl<G: BridgeGossip + 'static> BridgeService<G> {
             let watcher = ChainWatcher::new(chain.clone()).await?;
             watchers.push(watcher);
 
-            let submitter = Submitter::new(chain.clone()).await?;
+            let submitter = match &chain.submitter_private_key {
+                Some(pk) => {
+                    tracing::info!(
+                        chain = chain.name,
+                        chain_id = chain.chain_id,
+                        "bridge: submitter configured with signer"
+                    );
+                    Submitter::with_signer(chain.clone(), pk).await?
+                }
+                None => {
+                    tracing::warn!(
+                        chain = chain.name,
+                        chain_id = chain.chain_id,
+                        "bridge: submitter in simulation-only mode (no private key)"
+                    );
+                    Submitter::new(chain.clone()).await?
+                }
+            };
             submitters.insert(chain.chain_id, submitter);
         }
 

@@ -41,6 +41,10 @@ pub struct ChainConfig {
     pub bridge_address: String,
     #[serde(default)]
     pub finality_blocks: u64,
+    /// Private key for submitting attestations to this chain.
+    /// If not set, attestations are simulated but not submitted.
+    #[serde(default)]
+    pub submitter_private_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
