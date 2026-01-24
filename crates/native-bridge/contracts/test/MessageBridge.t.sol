@@ -14,14 +14,15 @@ contract MessageBridgeTest is Test {
     uint64 public constant INITIAL_EPOCH = 1;
     uint64 public constant TEMPO_CHAIN_ID = 12345;
 
-    // Dummy G1 public key (128 bytes) - in production this would be a real BLS key
+    // Dummy G2 public key (256 bytes) - in production this would be a real BLS key
+    // MinSig variant: public keys are G2 points
     bytes public dummyPublicKey;
 
     function setUp() public {
-        // Create a dummy 128-byte public key
-        dummyPublicKey = new bytes(128);
-        for (uint256 i = 0; i < 128; i++) {
-            dummyPublicKey[i] = bytes1(uint8(i));
+        // Create a dummy 256-byte G2 public key
+        dummyPublicKey = new bytes(256);
+        for (uint256 i = 0; i < 256; i++) {
+            dummyPublicKey[i] = bytes1(uint8(i % 256));
         }
 
         vm.chainId(TEMPO_CHAIN_ID);
@@ -151,9 +152,9 @@ contract MessageBridgeTest is Test {
     //=============================================================
 
     function test_forceSetGroupPublicKey() public {
-        bytes memory newKey = new bytes(128);
-        for (uint256 i = 0; i < 128; i++) {
-            newKey[i] = bytes1(uint8(128 - i));
+        bytes memory newKey = new bytes(256);
+        for (uint256 i = 0; i < 256; i++) {
+            newKey[i] = bytes1(uint8((256 - i) % 256));
         }
 
         vm.prank(owner);
@@ -166,7 +167,8 @@ contract MessageBridgeTest is Test {
     }
 
     function test_forceSetGroupPublicKey_epochMustIncrease() public {
-        bytes memory newKey = new bytes(128);
+        bytes memory newKey = new bytes(256);
+        newKey[0] = 0x01; // Make it non-zero
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IMessageBridge.EpochMustIncrease.selector, INITIAL_EPOCH, INITIAL_EPOCH));
@@ -174,7 +176,8 @@ contract MessageBridgeTest is Test {
     }
 
     function test_forceSetGroupPublicKey_invalidLength() public {
-        bytes memory shortKey = new bytes(64);
+        bytes memory shortKey = new bytes(128); // Wrong length (should be 256)
+        shortKey[0] = 0x01;
 
         vm.prank(owner);
         vm.expectRevert(IMessageBridge.InvalidPublicKeyLength.selector);
@@ -182,7 +185,8 @@ contract MessageBridgeTest is Test {
     }
 
     function test_forceSetGroupPublicKey_unauthorized() public {
-        bytes memory newKey = new bytes(128);
+        bytes memory newKey = new bytes(256);
+        newKey[0] = 0x01;
 
         vm.prank(user);
         vm.expectRevert(IMessageBridge.Unauthorized.selector);
@@ -226,9 +230,9 @@ contract MessageBridgeTest is Test {
     //=============================================================
 
     function test_computeKeyRotationHash() public view {
-        bytes memory newKey = new bytes(128);
-        for (uint256 i = 0; i < 128; i++) {
-            newKey[i] = bytes1(uint8(i));
+        bytes memory newKey = new bytes(256);
+        for (uint256 i = 0; i < 256; i++) {
+            newKey[i] = bytes1(uint8(i % 256));
         }
 
         bytes32 hash = bridge.computeKeyRotationHash(1, 2, newKey);
@@ -247,16 +251,16 @@ contract MessageBridgeTest is Test {
     //=============================================================
 
     function test_constructor_rejectsInfinityKey() public {
-        // Point at infinity is all zeros for G1 (128 bytes)
-        bytes memory infinityKey = new bytes(128);
+        // Point at infinity is all zeros for G2 (256 bytes)
+        bytes memory infinityKey = new bytes(256);
 
         vm.expectRevert(IMessageBridge.PublicKeyIsInfinity.selector);
         new MessageBridge(owner, INITIAL_EPOCH, infinityKey);
     }
 
     function test_forceSetGroupPublicKey_rejectsInfinityKey() public {
-        // Point at infinity is all zeros for G1 (128 bytes)
-        bytes memory infinityKey = new bytes(128);
+        // Point at infinity is all zeros for G2 (256 bytes)
+        bytes memory infinityKey = new bytes(256);
 
         vm.prank(owner);
         vm.expectRevert(IMessageBridge.PublicKeyIsInfinity.selector);

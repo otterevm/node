@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use commonware_codec::Read as CwRead;
-use commonware_cryptography::bls12381::primitives::{sharing::Sharing, variant::MinPk};
+use commonware_cryptography::bls12381::primitives::{sharing::Sharing, variant::MinSig};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::config::Config;
@@ -132,7 +132,9 @@ impl BridgeSidecar {
 }
 
 /// Load a sharing from a hex-encoded file.
-fn load_sharing(path: &str) -> Result<Sharing<MinPk>> {
+///
+/// Uses MinSig variant (same as consensus) so we can reuse the same DKG shares.
+fn load_sharing(path: &str) -> Result<Sharing<MinSig>> {
     use commonware_utils::NZU32;
 
     let hex_content = std::fs::read_to_string(path).map_err(|e| {
@@ -147,7 +149,7 @@ fn load_sharing(path: &str) -> Result<Sharing<MinPk>> {
     // Maximum supported validator count for the bridge (reasonable upper bound)
     let max_validators = NZU32!(1000);
 
-    Sharing::<MinPk>::read_cfg(&mut &bytes[..], &max_validators).map_err(|e| {
+    Sharing::<MinSig>::read_cfg(&mut &bytes[..], &max_validators).map_err(|e| {
         BridgeError::Config(format!("failed to parse sharing: {e}"))
     })
 }

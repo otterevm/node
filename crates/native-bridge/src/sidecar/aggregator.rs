@@ -1,27 +1,33 @@
 //! Signature aggregator - collects partials and recovers threshold signatures.
+//!
+//! Uses the MinSig variant (G2 public keys, G1 signatures) to match consensus,
+//! allowing reuse of the same DKG shares for both consensus and bridge signing.
 
 use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use commonware_codec::Encode;
 use commonware_cryptography::bls12381::primitives::{
-    group::G2,
+    group::G1,
     ops::threshold,
     sharing::Sharing,
-    variant::{MinPk, PartialSignature as CwPartialSignature},
+    variant::{MinSig, PartialSignature as CwPartialSignature},
 };
 use commonware_parallel::Sequential;
 use commonware_utils::{Faults, N3f1, Participant};
 
 use crate::attestation::{AggregatedSignature, PartialSignature, PendingAttestation};
 use crate::error::{BridgeError, Result};
-use crate::message::{Message, G2_COMPRESSED_LEN};
-use crate::signer::deserialize_g2;
+use crate::message::{Message, G1_COMPRESSED_LEN};
+use crate::signer::deserialize_g1;
 
 /// Aggregates partial signatures into threshold signatures.
+///
+/// Uses MinSig variant (same as consensus): G1 signatures, G2 public keys.
 pub struct Aggregator {
     /// The sharing information from DKG (contains polynomial and interpolation info).
-    sharing: Sharing<MinPk>,
+    /// This is the same sharing from consensus DKG.
+    sharing: Sharing<MinSig>,
     /// Current epoch for the aggregated signatures.
     epoch: u64,
     /// Pending attestations awaiting enough partial signatures.
@@ -31,9 +37,10 @@ pub struct Aggregator {
 impl Aggregator {
     /// Create a new aggregator with the given sharing and epoch.
     ///
-    /// The sharing comes from the DKG ceremony and contains the public polynomial
-    /// needed for threshold signature recovery.
-    pub fn new(sharing: Sharing<MinPk>, epoch: u64) -> Self {
+    /// The sharing comes from the consensus DKG ceremony and contains the public polynomial
+    /// needed for threshold signature recovery. The same sharing is used for both
+    /// consensus and bridge signing.
+    pub fn new(sharing: Sharing<MinSig>, epoch: u64) -> Self {
         Self {
             sharing,
             epoch,
@@ -52,7 +59,7 @@ impl Aggregator {
     }
 
     /// Update the sharing (e.g., after a key rotation).
-    pub fn set_sharing(&mut self, sharing: Sharing<MinPk>) {
+    pub fn set_sharing(&mut self, sharing: Sharing<MinSig>) {
         self.sharing = sharing;
     }
 
@@ -110,27 +117,27 @@ impl Aggregator {
     /// Aggregate partial signatures into a threshold signature using Lagrange interpolation.
     fn aggregate_partials(&self, partials: &[PartialSignature]) -> Result<AggregatedSignature> {
         // Convert our wire-format partial signatures to commonware format
-        let cw_partials: Vec<CwPartialSignature<MinPk>> = partials
+        let cw_partials: Vec<CwPartialSignature<MinSig>> = partials
             .iter()
             .map(|p| {
-                let g2_sig = deserialize_g2(&p.signature)?;
+                let g1_sig = deserialize_g1(&p.signature)?;
                 Ok(CwPartialSignature {
                     index: Participant::new(p.index),
-                    value: g2_sig,
+                    value: g1_sig,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
 
         // Recover the threshold signature using the sharing's interpolation
-        let threshold_sig: G2 = threshold::recover::<MinPk, _, N3f1>(
+        let threshold_sig: G1 = threshold::recover::<MinSig, _, N3f1>(
             &self.sharing,
             &cw_partials,
             &Sequential,
         )
         .map_err(|e| BridgeError::Aggregation(format!("threshold recovery failed: {e:?}")))?;
 
-        // Serialize the recovered signature
-        let sig_bytes = serialize_g2(&threshold_sig)?;
+        // Serialize the recovered signature (G1, 48 bytes)
+        let sig_bytes = serialize_g1(&threshold_sig)?;
 
         Ok(AggregatedSignature::new(sig_bytes, self.epoch))
     }
@@ -154,17 +161,17 @@ impl Aggregator {
     }
 }
 
-/// Serialize a G2 point to compressed bytes (96 bytes).
-fn serialize_g2(point: &G2) -> Result<[u8; G2_COMPRESSED_LEN]> {
+/// Serialize a G1 point to compressed bytes (48 bytes).
+fn serialize_g1(point: &G1) -> Result<[u8; G1_COMPRESSED_LEN]> {
     let bytes = point.encode();
-    if bytes.len() != G2_COMPRESSED_LEN {
+    if bytes.len() != G1_COMPRESSED_LEN {
         return Err(BridgeError::InvalidSignatureLength {
-            expected: G2_COMPRESSED_LEN,
+            expected: G1_COMPRESSED_LEN,
             actual: bytes.len(),
         });
     }
 
-    let mut result = [0u8; G2_COMPRESSED_LEN];
+    let mut result = [0u8; G1_COMPRESSED_LEN];
     result.copy_from_slice(&bytes);
     Ok(result)
 }
@@ -185,8 +192,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let n = NZU32!(5);
 
-        // Generate shares using commonware DKG
-        let (sharing, shares) = dkg::deal_anonymous::<MinPk, N3f1>(&mut rng, Mode::default(), n);
+        // Generate shares using commonware DKG (MinSig variant, same as consensus)
+        let (sharing, shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
         let threshold = sharing.required::<N3f1>();
         let threshold_public = sharing.public();
 
@@ -215,12 +222,12 @@ mod tests {
         assert!(result.is_some(), "threshold signature should be recovered");
 
         let (agg_sig, _msg) = result.unwrap();
-        assert_eq!(agg_sig.signature.len(), 96);
+        assert_eq!(agg_sig.signature.len(), 48); // G1 compressed
         assert_eq!(agg_sig.epoch, 1);
 
-        // Verify the aggregated signature against the threshold public key
-        let threshold_sig = deserialize_g2(&agg_sig.signature).unwrap();
-        let result = verify::<MinPk>(
+        // Verify the aggregated signature against the threshold public key (G2)
+        let threshold_sig = deserialize_g1(&agg_sig.signature).unwrap();
+        let result = verify::<MinSig>(
             &threshold_public,
             BLS_DST,
             attestation_hash.as_slice(),
@@ -234,7 +241,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(43);
         let n = NZU32!(5);
 
-        let (sharing, shares) = dkg::deal_anonymous::<MinPk, N3f1>(&mut rng, Mode::default(), n);
+        let (sharing, shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
         let threshold = sharing.required::<N3f1>();
 
         let mut aggregator = Aggregator::new(sharing, 1);
@@ -265,7 +272,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(44);
         let n = NZU32!(5);
 
-        let (sharing, shares) = dkg::deal_anonymous::<MinPk, N3f1>(&mut rng, Mode::default(), n);
+        let (sharing, shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
 
         let mut aggregator = Aggregator::new(sharing, 1);
 

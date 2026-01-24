@@ -9,7 +9,7 @@ use alloy::sol_types::SolCall;
 
 use crate::attestation::AggregatedSignature;
 use crate::config::ChainConfig;
-use crate::eip2537::g2_to_eip2537;
+use crate::eip2537::g1_to_eip2537;
 use crate::error::{BridgeError, Result};
 use crate::message::Message;
 
@@ -70,15 +70,16 @@ impl Submitter {
 
     /// Submit an attestation to the bridge.
     ///
-    /// Converts the aggregated signature from compressed (96 bytes) to
-    /// EIP-2537 uncompressed format (256 bytes) before submission.
+    /// Converts the aggregated signature from compressed G1 (48 bytes) to
+    /// EIP-2537 uncompressed format (128 bytes) before submission.
+    /// Uses MinSig variant: G1 signatures, G2 public keys.
     pub async fn submit(
         &self,
         message: &Message,
         signature: &AggregatedSignature,
     ) -> Result<alloy::primitives::B256> {
-        // Convert signature to EIP-2537 format (256 bytes uncompressed)
-        let eip2537_signature = g2_to_eip2537(&signature.signature)?;
+        // Convert G1 signature to EIP-2537 format (128 bytes uncompressed)
+        let eip2537_signature = g1_to_eip2537(&signature.signature)?;
 
         let call = writeCall {
             sender: message.sender,

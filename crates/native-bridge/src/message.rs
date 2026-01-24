@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 pub const BRIDGE_DOMAIN: &[u8] = b"TEMPO_BRIDGE_V1";
 
 /// BLS domain separation tag for hash-to-curve.
-pub const BLS_DST: &[u8] = b"TEMPO_BRIDGE_BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_";
+/// Uses G1 target curve (MinSig variant) to match consensus signing.
+pub const BLS_DST: &[u8] = b"TEMPO_BRIDGE_BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
 /// Domain separator for key rotation.
 pub const KEY_ROTATION_DOMAIN: &[u8] = b"TEMPO_BRIDGE_KEY_ROTATION_V1";

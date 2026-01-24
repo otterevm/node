@@ -18,14 +18,14 @@ contract MessageBridge is IMessageBridge {
     /// @notice Domain separator for key rotation
     bytes public constant KEY_ROTATION_DOMAIN = "TEMPO_BRIDGE_KEY_ROTATION_V1";
 
-    /// @notice BLS Domain Separation Tag for hash-to-curve
+    /// @notice BLS Domain Separation Tag for hash-to-curve (targets G1 for MinSig variant)
     /// @dev Must match the DST used by validators when signing
-    bytes public constant BLS_DST = "TEMPO_BRIDGE_BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_";
+    bytes public constant BLS_DST = "TEMPO_BRIDGE_BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
-    /// @notice Expected length for uncompressed G1 point (public key)
+    /// @notice Expected length for uncompressed G1 point (signature in MinSig)
     uint256 internal constant G1_POINT_LENGTH = 128;
 
-    /// @notice Expected length for uncompressed G2 point (signature)
+    /// @notice Expected length for uncompressed G2 point (public key in MinSig)
     uint256 internal constant G2_POINT_LENGTH = 256;
 
     //=============================================================
@@ -47,10 +47,10 @@ contract MessageBridge is IMessageBridge {
     /// @notice Previous epoch (for grace period)
     uint64 public previousEpoch;
 
-    /// @notice BLS group public key for current epoch (G1 point, 128 bytes)
+    /// @notice BLS group public key for current epoch (G2 point, 256 bytes for MinSig)
     bytes public groupPublicKey;
 
-    /// @notice BLS group public key for previous epoch
+    /// @notice BLS group public key for previous epoch (G2 point)
     bytes public previousGroupPublicKey;
 
     /// @notice Sent messages: sender => messageHash => sent
@@ -79,9 +79,9 @@ contract MessageBridge is IMessageBridge {
 
     /// @param _owner Contract owner
     /// @param _initialEpoch Initial epoch number
-    /// @param _initialPublicKey Initial BLS group public key (G1, 128 bytes)
+    /// @param _initialPublicKey Initial BLS group public key (G2, 256 bytes for MinSig)
     constructor(address _owner, uint64 _initialEpoch, bytes memory _initialPublicKey) {
-        if (_initialPublicKey.length != G1_POINT_LENGTH) revert InvalidPublicKeyLength();
+        if (_initialPublicKey.length != G2_POINT_LENGTH) revert InvalidPublicKeyLength();
         if (!BLS12381.isValidPublicKey(_initialPublicKey)) revert PublicKeyIsInfinity();
 
         owner = _owner;
@@ -118,7 +118,7 @@ contract MessageBridge is IMessageBridge {
         uint64 originChainId,
         bytes calldata signature
     ) external whenNotPaused {
-        if (signature.length != G2_POINT_LENGTH) revert InvalidSignatureLength();
+        if (signature.length != G1_POINT_LENGTH) revert InvalidSignatureLength();
 
         if (received[originChainId][sender][messageHash] != 0) {
             revert MessageAlreadyReceived(originChainId, sender, messageHash);
@@ -167,8 +167,8 @@ contract MessageBridge is IMessageBridge {
         bytes calldata newPublicKey,
         bytes calldata authSignature
     ) external whenNotPaused {
-        if (newPublicKey.length != G1_POINT_LENGTH) revert InvalidPublicKeyLength();
-        if (authSignature.length != G2_POINT_LENGTH) revert InvalidSignatureLength();
+        if (newPublicKey.length != G2_POINT_LENGTH) revert InvalidPublicKeyLength();
+        if (authSignature.length != G1_POINT_LENGTH) revert InvalidSignatureLength();
         if (newEpoch <= epoch) revert EpochMustIncrease(epoch, newEpoch);
         if (groupPublicKey.length == 0) revert NoActivePublicKey();
 
@@ -197,7 +197,7 @@ contract MessageBridge is IMessageBridge {
 
     /// @inheritdoc IMessageBridge
     function forceSetGroupPublicKey(uint64 newEpoch, bytes calldata publicKey) external onlyOwner {
-        if (publicKey.length != G1_POINT_LENGTH) revert InvalidPublicKeyLength();
+        if (publicKey.length != G2_POINT_LENGTH) revert InvalidPublicKeyLength();
         if (newEpoch <= epoch) revert EpochMustIncrease(epoch, newEpoch);
 
         _rotateKey(newEpoch, publicKey);
@@ -272,10 +272,10 @@ contract MessageBridge is IMessageBridge {
         emit KeyRotated(oldEpoch, newEpoch, oldKey, newPublicKey);
     }
 
-    /// @notice Verify a BLS signature using RFC 9380 hash-to-curve
-    /// @param publicKey G1 public key (128 bytes)
-    /// @param messageHash The 32-byte message hash (will be hashed to G2)
-    /// @param signature G2 signature (256 bytes)
+    /// @notice Verify a BLS signature using RFC 9380 hash-to-curve (MinSig variant)
+    /// @param publicKey G2 public key (256 bytes)
+    /// @param messageHash The 32-byte message hash (will be hashed to G1)
+    /// @param signature G1 signature (128 bytes)
     /// @return True if signature is valid
     function _verifyBLSSignature(
         bytes memory publicKey,
@@ -283,7 +283,7 @@ contract MessageBridge is IMessageBridge {
         bytes calldata signature
     ) internal view returns (bool) {
         // Use the BLS12381 library for signature verification
-        // This implements RFC 9380 hash-to-curve with our DST
+        // This implements RFC 9380 hash-to-curve to G1 with our DST
         return BLS12381.verifyHash(
             publicKey,
             messageHash,

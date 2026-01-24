@@ -8,9 +8,9 @@
 //!
 //! Each Fp element is 64 bytes: 16 zero-padding bytes + 48-byte value (big-endian).
 //!
-//! This module provides conversion between:
-//! - Compressed G2 signatures (96 bytes) used internally
-//! - EIP-2537 uncompressed G2 format (256 bytes) required by on-chain verification
+//! For MinSig variant (matching consensus):
+//! - Signatures are G1 (48 bytes compressed → 128 bytes EIP-2537)
+//! - Public keys are G2 (96 bytes compressed → 256 bytes EIP-2537)
 
 use crate::error::{BridgeError, Result};
 use crate::message::{G1_COMPRESSED_LEN, G1_UNCOMPRESSED_LEN, G2_COMPRESSED_LEN, G2_UNCOMPRESSED_LEN};
@@ -119,10 +119,10 @@ mod tests {
     use commonware_cryptography::bls12381::{
         dkg,
         primitives::{
-            group::G2,
+            group::G1,
             ops::sign,
             sharing::Mode,
-            variant::MinPk,
+            variant::MinSig,
         },
     };
     use commonware_utils::{NZU32, N3f1};
@@ -130,30 +130,31 @@ mod tests {
     use rand::SeedableRng;
 
     #[test]
-    fn test_g2_to_eip2537_produces_256_bytes() {
-        // Create test share
+    fn test_g1_to_eip2537_produces_128_bytes() {
+        // Create test share (MinSig variant, same as consensus)
         let mut rng = StdRng::seed_from_u64(42);
         let n = NZU32!(5);
-        let (_sharing, shares) = dkg::deal_anonymous::<MinPk, N3f1>(&mut rng, Mode::default(), n);
+        let (_sharing, shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
         let share = &shares[0];
         
         let message = b"test message";
-        let dst = b"TEMPO_BRIDGE_BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_";
+        let dst = b"TEMPO_BRIDGE_BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
-        let signature: G2 = sign::<MinPk>(&share.private, dst, message);
+        // MinSig: signature is G1
+        let signature: G1 = sign::<MinSig>(&share.private, dst, message);
 
-        // Get compressed signature (96 bytes)
+        // Get compressed signature (48 bytes)
         let compressed = signature.encode();
-        assert_eq!(compressed.len(), G2_COMPRESSED_LEN);
+        assert_eq!(compressed.len(), G1_COMPRESSED_LEN);
 
-        let compressed_array: [u8; G2_COMPRESSED_LEN] = compressed.as_ref().try_into().unwrap();
+        let compressed_array: [u8; G1_COMPRESSED_LEN] = compressed.as_ref().try_into().unwrap();
 
         // Convert to EIP-2537 format
-        let eip2537 = g2_to_eip2537(&compressed_array).unwrap();
-        assert_eq!(eip2537.len(), G2_UNCOMPRESSED_LEN);
+        let eip2537 = g1_to_eip2537(&compressed_array).unwrap();
+        assert_eq!(eip2537.len(), G1_UNCOMPRESSED_LEN);
 
         // Verify padding structure: each 64-byte element starts with 16 zero bytes
-        for i in 0..4 {
+        for i in 0..2 {
             let offset = i * 64;
             assert_eq!(
                 &eip2537[offset..offset + 16],
@@ -165,45 +166,75 @@ mod tests {
     }
 
     #[test]
-    fn test_g2_to_eip2537_deterministic() {
+    fn test_g1_to_eip2537_deterministic() {
         let mut rng = StdRng::seed_from_u64(123);
         let n = NZU32!(5);
-        let (_sharing, shares) = dkg::deal_anonymous::<MinPk, N3f1>(&mut rng, Mode::default(), n);
+        let (_sharing, shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
         let share = &shares[0];
         
-        let signature: G2 = sign::<MinPk>(
+        let signature: G1 = sign::<MinSig>(
             &share.private,
-            b"TEMPO_BRIDGE_BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_",
+            b"TEMPO_BRIDGE_BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_",
             b"hello",
         );
 
         let compressed = signature.encode();
-        let compressed_array: [u8; G2_COMPRESSED_LEN] = compressed.as_ref().try_into().unwrap();
+        let compressed_array: [u8; G1_COMPRESSED_LEN] = compressed.as_ref().try_into().unwrap();
 
-        let result1 = g2_to_eip2537(&compressed_array).unwrap();
-        let result2 = g2_to_eip2537(&compressed_array).unwrap();
+        let result1 = g1_to_eip2537(&compressed_array).unwrap();
+        let result2 = g1_to_eip2537(&compressed_array).unwrap();
 
         assert_eq!(result1, result2);
     }
 
     #[test]
-    fn test_g2_to_eip2537_different_signatures_produce_different_output() {
+    fn test_g1_to_eip2537_different_signatures_produce_different_output() {
         let mut rng = StdRng::seed_from_u64(456);
         let n = NZU32!(5);
-        let (_sharing, shares) = dkg::deal_anonymous::<MinPk, N3f1>(&mut rng, Mode::default(), n);
+        let (_sharing, shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
         let share = &shares[0];
         
-        let dst = b"TEMPO_BRIDGE_BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_";
+        let dst = b"TEMPO_BRIDGE_BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
-        let sig1: G2 = sign::<MinPk>(&share.private, dst, b"message1");
-        let sig2: G2 = sign::<MinPk>(&share.private, dst, b"message2");
+        let sig1: G1 = sign::<MinSig>(&share.private, dst, b"message1");
+        let sig2: G1 = sign::<MinSig>(&share.private, dst, b"message2");
 
-        let c1: [u8; G2_COMPRESSED_LEN] = sig1.encode().as_ref().try_into().unwrap();
-        let c2: [u8; G2_COMPRESSED_LEN] = sig2.encode().as_ref().try_into().unwrap();
+        let c1: [u8; G1_COMPRESSED_LEN] = sig1.encode().as_ref().try_into().unwrap();
+        let c2: [u8; G1_COMPRESSED_LEN] = sig2.encode().as_ref().try_into().unwrap();
 
-        let eip1 = g2_to_eip2537(&c1).unwrap();
-        let eip2 = g2_to_eip2537(&c2).unwrap();
+        let eip1 = g1_to_eip2537(&c1).unwrap();
+        let eip2 = g1_to_eip2537(&c2).unwrap();
 
         assert_ne!(eip1, eip2);
+    }
+
+    #[test]
+    fn test_g2_public_key_to_eip2537() {
+        // Test that G2 public keys can be converted for on-chain use
+        let mut rng = StdRng::seed_from_u64(789);
+        let n = NZU32!(5);
+        let (sharing, _shares) = dkg::deal_anonymous::<MinSig, N3f1>(&mut rng, Mode::default(), n);
+        
+        // Get the group public key (G2)
+        let public_key = sharing.public();
+        let compressed = public_key.encode();
+        assert_eq!(compressed.len(), G2_COMPRESSED_LEN);
+
+        let compressed_array: [u8; G2_COMPRESSED_LEN] = compressed.as_ref().try_into().unwrap();
+
+        // Convert to EIP-2537 format (256 bytes)
+        let eip2537 = g2_to_eip2537(&compressed_array).unwrap();
+        assert_eq!(eip2537.len(), G2_UNCOMPRESSED_LEN);
+
+        // Verify padding structure
+        for i in 0..4 {
+            let offset = i * 64;
+            assert_eq!(
+                &eip2537[offset..offset + 16],
+                &[0u8; 16],
+                "element {} should have 16-byte zero padding",
+                i
+            );
+        }
     }
 }
