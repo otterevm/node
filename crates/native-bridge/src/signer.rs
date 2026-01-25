@@ -158,7 +158,7 @@ mod tests {
         // Verify the signature against the share's public key (G2)
         let public_key = share.public::<MinSig>();
         let result = verify::<MinSig>(&public_key, BLS_DST, attestation_hash.as_slice(), &g1_sig);
-        assert!(result.is_ok(), "signature should verify: {:?}", result);
+        assert!(result.is_ok(), "signature should verify: {result:?}");
     }
 
     #[test]

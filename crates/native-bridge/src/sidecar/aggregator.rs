@@ -229,15 +229,14 @@ mod tests {
         // Verify the aggregated signature against the threshold public key (G2)
         let threshold_sig = deserialize_g1(&agg_sig.signature).unwrap();
         let result = verify::<MinSig>(
-            &threshold_public,
+            threshold_public,
             BLS_DST,
             attestation_hash.as_slice(),
             &threshold_sig,
         );
         assert!(
             result.is_ok(),
-            "threshold signature should verify: {:?}",
-            result
+            "threshold signature should verify: {result:?}"
         );
     }
 

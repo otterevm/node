@@ -25,7 +25,7 @@ fn expand_message_xmd(message: &[u8], dst: &[u8], len_in_bytes: usize) -> Vec<u8
     assert!(dst.len() <= 255, "DST too long");
     assert!(len_in_bytes <= 255 * 32, "len_in_bytes too large");
 
-    let ell = (len_in_bytes + 31) / 32;
+    let ell = len_in_bytes.div_ceil(32);
     assert!(ell <= 255, "ell too large");
 
     // DST_prime = DST || I2OSP(len(DST), 1)

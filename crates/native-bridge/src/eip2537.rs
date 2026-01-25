@@ -139,8 +139,7 @@ mod tests {
             assert_eq!(
                 &eip2537[offset..offset + 16],
                 &[0u8; 16],
-                "element {} should have 16-byte zero padding",
-                i
+                "element {i} should have 16-byte zero padding"
             );
         }
     }
@@ -212,8 +211,7 @@ mod tests {
             assert_eq!(
                 &eip2537[offset..offset + 16],
                 &[0u8; 16],
-                "element {} should have 16-byte zero padding",
-                i
+                "element {i} should have 16-byte zero padding"
             );
         }
     }
