@@ -188,3 +188,19 @@ Use the following commands to run the node with [sampling](https://github.com/ms
 ```bash
 	samply record --output tempo.samply -- just localnet 50000
 ```
+
+## Tempo vs Reth Comparison
+
+Compare TPS performance between Tempo and Reth nodes:
+
+```bash
+TEMPO_RPC=http://tempo:8545 RETH_RPC=http://reth:8545 ./scripts/tempo-vs-reth-bench.sh
+```
+
+This runs `tempo-bench` against both nodes and generates a markdown report comparing:
+- Actual TPS achieved
+- Transaction success/failure rates
+- Gas throughput
+- Speedup factor
+
+See `scripts/tempo-vs-reth-bench.sh -h` for configuration options.
