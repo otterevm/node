@@ -99,15 +99,18 @@ echo
 echo "═══════════════════════════════════════════════════════════════"
 echo "Phase 1: Benchmark Tempo"
 echo "═══════════════════════════════════════════════════════════════"
-run_bench "Tempo" "$TEMPO_RPC" "$TEMPO_OUT" "--faucet"
+# Use ERC-20 only for fair comparison with Reth (no TIP-20/DEX advantage)
+run_bench "Tempo" "$TEMPO_RPC" "$TEMPO_OUT" "--faucet --erc20-weight 1 --tip20-weight 0"
 
 echo
 echo "═══════════════════════════════════════════════════════════════"
 echo "Phase 2: Benchmark Reth"
 echo "═══════════════════════════════════════════════════════════════"
-# Reth doesn't have Tempo's faucet, so skip --faucet flag
-# Also disable 2D nonces since Reth uses standard nonces
-run_bench "Reth" "$RETH_RPC" "$RETH_OUT" "--disable-2d-nonces"
+# Use --reth-mode which auto-configures for vanilla Ethereum:
+# - Disables 2D nonces
+# - Forces ERC-20 only transactions
+# - Skips Tempo-specific setup
+run_bench "Reth" "$RETH_RPC" "$RETH_OUT" "--reth-mode"
 
 echo
 echo "═══════════════════════════════════════════════════════════════"

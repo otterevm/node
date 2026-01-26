@@ -125,6 +125,15 @@ Options:
       --disable-2d-nonces
           Disable 2D nonces
 
+      --reth-mode
+          Run in Reth-compatible mode (vanilla Ethereum).
+          
+          This mode:
+          - Disables 2D nonces (uses standard Ethereum nonces)
+          - Forces ERC-20 only transactions (no TIP-20, DEX)
+          - Skips Tempo-specific setup (fee manager, DEX)
+          - Requires accounts to be pre-funded (--faucet won't work)
+
   -h, --help
           Print help (see a summary with '-h')
 ```
