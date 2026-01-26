@@ -109,6 +109,11 @@ contract ValidatorConfig is IValidatorConfig {
         // Load old validator info
         Validator memory oldValidator = validators[msg.sender];
 
+        // Public key is immutable - changing it mid-epoch would cause DKG failures
+        if (publicKey != oldValidator.publicKey) {
+            revert PublicKeyImmutable();
+        }
+
         // Check if rotating to a new address
         if (newValidatorAddress != msg.sender) {
             // Check if new address already exists

@@ -93,6 +93,7 @@ crate::sol! {
 
         error NotHostPort(string field, string input, string backtrace);
         error NotIpPort(string field, string input, string backtrace);
+        error PublicKeyImmutable();
     }
 }
 
@@ -131,5 +132,9 @@ impl ValidatorConfigError {
             input,
             backtrace,
         })
+    }
+
+    pub const fn public_key_immutable() -> Self {
+        Self::PublicKeyImmutable(IValidatorConfig::PublicKeyImmutable {})
     }
 }

@@ -32,6 +32,11 @@ interface IValidatorConfig {
     /// @param backtrace Additional error context
     error NotIpPort(string field, string input, string backtrace);
 
+    /// @notice Thrown when trying to change the public key in updateValidator
+    /// @dev Public keys are immutable after creation. Key rotation must be done via
+    ///      owner-managed process (add new validator, deactivate old one).
+    error PublicKeyImmutable();
+
     /// @notice Validator information
     /// @param publicKey The validator's communication public key
     /// @param active Whether the validator is active in consensus
@@ -68,9 +73,11 @@ interface IValidatorConfig {
 
     /// @notice Update validator information (only validator)
     /// @param newValidatorAddress The new address for this validator
-    /// @param publicKey The validator's new communication public key
+    /// @param publicKey The validator's communication public key (must match existing key - immutable)
     /// @param inboundAddress The validator's inbound address `<hostname|ip>:<port>` for incoming connections
     /// @param outboundAddress The validator's outbound IP address `<ip>:<port>` for firewall whitelisting (IP only, no hostnames)
+    /// @dev The public key is immutable after creation. Passing a different public key will revert
+    ///      with PublicKeyImmutable(). Key rotation must be done via owner-managed process.
     function updateValidator(
         address newValidatorAddress,
         bytes32 publicKey,

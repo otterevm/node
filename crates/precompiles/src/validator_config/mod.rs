@@ -187,6 +187,11 @@ impl ValidatorConfig {
     }
 
     /// Update validator information (and optionally rotate to new address)
+    ///
+    /// Note: The public key is immutable and must match the existing key.
+    /// Key rotation must be done via the owner-managed process (add new validator,
+    /// deactivate old one). This prevents DKG failures at epoch boundaries where
+    /// the boundary header contains the original key but the registry has a different one.
     pub fn update_validator(
         &mut self,
         sender: Address,
@@ -204,6 +209,13 @@ impl ValidatorConfig {
 
         // Load the current validator info
         let old_validator = self.validators[sender].read()?;
+
+        // Public key is immutable - changing it mid-epoch would cause DKG failures
+        // at the next epoch boundary when pubkeys_to_addrs() tries to map the original
+        // key from the boundary header to the modified registry
+        if call.publicKey != old_validator.public_key {
+            return Err(ValidatorConfigError::public_key_immutable())?;
+        }
 
         // Check if rotating to a new address
         if call.newValidatorAddress != sender {
@@ -564,14 +576,14 @@ mod tests {
             assert!(validators[4].active);
 
             // Validator1 updates from long to short address (tests update_string slot clearing)
-            let public_key1_new = FixedBytes::<32>::from([0x31; 32]);
+            // Note: public key must remain the same (immutable)
             let short_inbound1 = "10.0.0.1:8000".to_string();
             let short_outbound1 = "10.0.0.1:9000".to_string();
             validator_config.update_validator(
                 validator1,
                 IValidatorConfig::updateValidatorCall {
                     newValidatorAddress: validator1,
-                    publicKey: public_key1_new,
+                    publicKey: public_key1,
                     inboundAddress: short_inbound1.clone(),
                     outboundAddress: short_outbound1,
                 },
@@ -612,11 +624,11 @@ mod tests {
             // Sort by validator address
             validators.sort_by_key(|v| v.validatorAddress);
 
-            // Verify validator1 - updated from long to short address
+            // Verify validator1 - updated from long to short address, publicKey unchanged
             assert_eq!(validators[0].validatorAddress, validator1);
             assert_eq!(
-                validators[0].publicKey, public_key1_new,
-                "PublicKey should be updated"
+                validators[0].publicKey, public_key1,
+                "PublicKey should remain unchanged (immutable)"
             );
             assert_eq!(
                 validators[0].inboundAddress, short_inbound1,
@@ -897,6 +909,76 @@ mod tests {
             assert_eq!(
                 validators[0].publicKey, original_public_key,
                 "Original public key should be preserved"
+            );
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_update_validator_rejects_public_key_change() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let owner = Address::random();
+        let validator = Address::random();
+        StorageCtx::enter(&mut storage, || {
+            let mut validator_config = ValidatorConfig::new();
+            validator_config.initialize(owner)?;
+
+            let original_public_key = FixedBytes::<32>::from([0x44; 32]);
+            validator_config.add_validator(
+                owner,
+                IValidatorConfig::addValidatorCall {
+                    newValidatorAddress: validator,
+                    publicKey: original_public_key,
+                    inboundAddress: "192.168.1.1:8000".to_string(),
+                    active: true,
+                    outboundAddress: "192.168.1.1:9000".to_string(),
+                },
+            )?;
+
+            // Attempt to change public key to a different non-zero value
+            let new_public_key = FixedBytes::<32>::from([0x55; 32]);
+            let result = validator_config.update_validator(
+                validator,
+                IValidatorConfig::updateValidatorCall {
+                    newValidatorAddress: validator,
+                    publicKey: new_public_key,
+                    inboundAddress: "192.168.1.1:8000".to_string(),
+                    outboundAddress: "192.168.1.1:9000".to_string(),
+                },
+            );
+
+            assert_eq!(
+                result,
+                Err(ValidatorConfigError::public_key_immutable().into()),
+                "Should reject public key change"
+            );
+
+            // Verify original public key is preserved
+            let validators = validator_config.get_validators()?;
+            assert_eq!(validators.len(), 1, "Should still have 1 validator");
+            assert_eq!(
+                validators[0].publicKey, original_public_key,
+                "Original public key should be preserved"
+            );
+
+            // Verify that updating with the SAME public key succeeds
+            let result = validator_config.update_validator(
+                validator,
+                IValidatorConfig::updateValidatorCall {
+                    newValidatorAddress: validator,
+                    publicKey: original_public_key,
+                    inboundAddress: "10.0.0.1:8000".to_string(),
+                    outboundAddress: "10.0.0.1:9000".to_string(),
+                },
+            );
+            assert!(result.is_ok(), "Should allow update with same public key");
+
+            // Verify the address was updated
+            let validators = validator_config.get_validators()?;
+            assert_eq!(
+                validators[0].inboundAddress, "10.0.0.1:8000",
+                "Inbound address should be updated"
             );
 
             Ok(())
