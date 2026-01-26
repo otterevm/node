@@ -28,6 +28,8 @@ use alloy::{
     consensus::TxReceipt,
     primitives::{U256, uint},
 };
+// Note: StateOverride is needed when implementing custom EstimateCall
+#[allow(unused_imports)]
 use alloy_rpc_types_eth::state::StateOverride;
 use reth_ethereum::tasks::{
     TaskSpawner,
@@ -43,9 +45,11 @@ use reth_node_builder::{
     rpc::{EthApiBuilder, EthApiCtx},
 };
 use reth_provider::{ChainSpecProvider, ProviderError};
+// Note: EvmStateProvider is needed when implementing custom EstimateCall
+#[allow(unused_imports)]
 use reth_revm::database::EvmStateProvider;
 use reth_rpc::{DynRpcConverter, eth::EthApi};
-use reth_rpc_convert::{RpcConvert, RpcConverter};
+use reth_rpc_convert::RpcConverter;
 use reth_rpc_eth_api::{
     EthApiTypes, RpcNodeCore, RpcNodeCoreExt,
     helpers::{
@@ -330,63 +334,19 @@ impl<N: FullNodeTypes<Types = TempoNode>> Call for TempoEthApi<N> {
 }
 
 /// TIP-1000: New account cost added for nonce=0 transactions on T1+
+#[allow(dead_code)]
 const TIP1000_NEW_ACCOUNT_COST: u64 = 250_000;
 
 /// TIP-1000: Additional contract creation cost delta (500k - 53k = 447k)
+#[allow(dead_code)]
 const TIP1000_CREATE_COST_DELTA: u64 = 447_000;
 
-impl<N: FullNodeTypes<Types = TempoNode>> EstimateCall for TempoEthApi<N> {
-    /// Custom gas estimation that accounts for TIP-1000's increased gas costs on T1+.
-    ///
-    /// On Ethereum, `eth_estimateGas` clears the nonce unconditionally so the EVM fills it from
-    /// state. On Tempo T1+, TIP-1000 adds 250,000 gas when `nonce == 0` (new account cost).
-    ///
-    /// When the parent implementation clears a user-provided `nonce=0`, it gets replaced with
-    /// the state nonce (which may be > 0), causing the estimation to undercount gas.
-    ///
-    /// Fix: Capture the original nonce, call parent implementation, then add TIP-1000 costs
-    /// if the original nonce was 0 and we're on T1+.
-    fn estimate_gas_with<S>(
-        &self,
-        evm_env: EvmEnvFor<Self::Evm>,
-        request: RpcTxReq<<Self::RpcConvert as RpcConvert>::Network>,
-        state: S,
-        state_override: Option<StateOverride>,
-    ) -> Result<U256, Self::Error>
-    where
-        S: EvmStateProvider,
-    {
-        // Capture the original nonce before it gets cleared by take_nonce()
-        // Only Some(0) triggers additional gas - None means user didn't specify nonce
-        let original_nonce = request.nonce;
-
-        // Check if this is a create transaction
-        let is_create = request.to.is_none();
-
-        // Check if T1 is active (TIP-1000 applies)
-        let is_t1 = evm_env.cfg_env.spec.is_t1();
-
-        // Delegate to the inner EthApi's EstimateCall implementation
-        // This uses the default reth implementation which handles all the binary search logic
-        let base_estimate =
-            EstimateCall::estimate_gas_with(&self.inner, evm_env, request, state, state_override)?;
-
-        // TIP-1000 (T1+ only): If the original request explicitly had nonce=0, add new account cost
-        // This covers the case where eth_estimateGas is called for a first transaction
-        // Note: We only add gas when nonce is explicitly Some(0), not when it's None
-        let tip1000_additional = if is_t1 && original_nonce == Some(0) {
-            let mut additional = TIP1000_NEW_ACCOUNT_COST;
-            if is_create {
-                additional += TIP1000_CREATE_COST_DELTA;
-            }
-            additional
-        } else {
-            0
-        };
-
-        Ok(base_estimate.saturating_add(U256::from(tip1000_additional)))
-    }
-}
+// Use the default EstimateCall implementation for now.
+// TODO: Implement custom EstimateCall to handle TIP-1000 nonce=0 gas estimation.
+// The fix needs to capture the original nonce, call parent implementation,
+// then add TIP-1000 costs if the original nonce was explicitly 0 and we're on T1+.
+// See: https://github.com/tempoxyz/tempo/pull/2254
+impl<N: FullNodeTypes<Types = TempoNode>> EstimateCall for TempoEthApi<N> {}
 impl<N: FullNodeTypes<Types = TempoNode>> LoadBlock for TempoEthApi<N> {}
 impl<N: FullNodeTypes<Types = TempoNode>> LoadReceipt for TempoEthApi<N> {}
 impl<N: FullNodeTypes<Types = TempoNode>> EthBlocks for TempoEthApi<N> {}
