@@ -8,9 +8,7 @@ pub use error::{IntoPrecompileResult, Result};
 pub mod storage;
 
 pub mod account_keychain;
-pub mod multisig_signer;
 pub mod nonce;
-pub mod recovery_guardian;
 pub mod stablecoin_dex;
 pub mod tip20;
 pub mod tip20_factory;
@@ -23,9 +21,7 @@ pub mod test_util;
 
 use crate::{
     account_keychain::AccountKeychain,
-    multisig_signer::MultiSigSigner,
     nonce::NonceManager,
-    recovery_guardian::RecoveryGuardian,
     stablecoin_dex::StablecoinDEX,
     storage::StorageCtx,
     tip_fee_manager::TipFeeManager,
@@ -50,9 +46,9 @@ use revm::{
 };
 
 pub use tempo_contracts::precompiles::{
-    ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN, MULTISIG_SIGNER_ADDRESS, NONCE_PRECOMPILE_ADDRESS,
-    PATH_USD_ADDRESS, RECOVERY_GUARDIAN_ADDRESS, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
-    TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
+    ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN, NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS,
+    STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
+    TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
 };
 
 // Re-export storage layout helpers for read-only contexts (e.g., pool validation)
@@ -92,10 +88,6 @@ pub fn extend_tempo_precompiles(precompiles: &mut PrecompilesMap, cfg: &CfgEnv<T
             Some(ValidatorConfigPrecompile::create(chain_id, spec))
         } else if *address == ACCOUNT_KEYCHAIN_ADDRESS {
             Some(AccountKeychainPrecompile::create(chain_id, spec))
-        } else if *address == MULTISIG_SIGNER_ADDRESS {
-            Some(MultiSigSignerPrecompile::create(chain_id, spec))
-        } else if *address == RECOVERY_GUARDIAN_ADDRESS {
-            Some(RecoveryGuardianPrecompile::create(chain_id, spec))
         } else {
             None
         }
@@ -198,24 +190,6 @@ impl ValidatorConfigPrecompile {
     pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
         tempo_precompile!("ValidatorConfig", chain_id, spec, |input| {
             ValidatorConfig::new()
-        })
-    }
-}
-
-pub struct MultiSigSignerPrecompile;
-impl MultiSigSignerPrecompile {
-    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("MultiSigSigner", chain_id, spec, |input| {
-            MultiSigSigner::new()
-        })
-    }
-}
-
-pub struct RecoveryGuardianPrecompile;
-impl RecoveryGuardianPrecompile {
-    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("RecoveryGuardian", chain_id, spec, |input| {
-            RecoveryGuardian::new()
         })
     }
 }
