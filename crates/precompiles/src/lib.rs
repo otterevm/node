@@ -10,7 +10,6 @@ pub mod storage;
 pub mod account_keychain;
 pub mod multisig_signer;
 pub mod nonce;
-pub mod recovery_guardian;
 pub mod stablecoin_dex;
 pub mod tip20;
 pub mod tip20_factory;
@@ -25,7 +24,6 @@ use crate::{
     account_keychain::AccountKeychain,
     multisig_signer::MultiSigSigner,
     nonce::NonceManager,
-    recovery_guardian::RecoveryGuardian,
     stablecoin_dex::StablecoinDEX,
     storage::StorageCtx,
     tip_fee_manager::TipFeeManager,
@@ -51,8 +49,8 @@ use revm::{
 
 pub use tempo_contracts::precompiles::{
     ACCOUNT_KEYCHAIN_ADDRESS, DEFAULT_FEE_TOKEN, MULTISIG_SIGNER_ADDRESS, NONCE_PRECOMPILE_ADDRESS,
-    PATH_USD_ADDRESS, RECOVERY_GUARDIAN_ADDRESS, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS,
-    TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
+    PATH_USD_ADDRESS, STABLECOIN_DEX_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS,
+    TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS,
 };
 
 // Re-export storage layout helpers for read-only contexts (e.g., pool validation)
@@ -94,8 +92,6 @@ pub fn extend_tempo_precompiles(precompiles: &mut PrecompilesMap, cfg: &CfgEnv<T
             Some(AccountKeychainPrecompile::create(chain_id, spec))
         } else if *address == MULTISIG_SIGNER_ADDRESS {
             Some(MultiSigSignerPrecompile::create(chain_id, spec))
-        } else if *address == RECOVERY_GUARDIAN_ADDRESS {
-            Some(RecoveryGuardianPrecompile::create(chain_id, spec))
         } else {
             None
         }
@@ -211,14 +207,7 @@ impl MultiSigSignerPrecompile {
     }
 }
 
-pub struct RecoveryGuardianPrecompile;
-impl RecoveryGuardianPrecompile {
-    pub fn create(chain_id: u64, spec: TempoHardfork) -> DynPrecompile {
-        tempo_precompile!("RecoveryGuardian", chain_id, spec, |input| {
-            RecoveryGuardian::new()
-        })
-    }
-}
+
 
 #[inline]
 fn metadata<T: SolCall>(f: impl FnOnce() -> Result<T::Return>) -> PrecompileResult {
