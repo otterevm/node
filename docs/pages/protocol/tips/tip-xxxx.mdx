@@ -351,12 +351,16 @@ This ensures historical queries always return consistent results.
 
 | Slot | Field | Description |
 |------|-------|-------------|
-| 0 | `owner` | Owner address |
+| 0 (bits 0-159) | `owner` | Owner address (160 bits) |
+| 0 (bit 255) | `initialized` | Whether V2 has been initialized from V1 (1 bit) |
 | 1 | `validatorsArray.length` | Count of validators ever added |
 | keccak256(1) + i | `validatorsArray[i]` | Validator address at index i |
 | keccak256(addr, 2) | `validators[addr]` | Validator struct for address |
 | keccak256(pubkey, 3) | `pubkeyToIndex[pubkey]` | Index for public key lookup |
 | 4 | `nextDkgCeremony` | Next full DKG ceremony epoch |
+
+The `initialized` bit occupies the highest bit of slot 0, which is unused by the
+`owner` address (addresses are 160 bits, leaving 96 bits available).
 
 ## Differences from V1
 
@@ -411,6 +415,9 @@ The following invariants must always hold:
 10. **Owner authorization**: Only the owner can call `addValidator`,
     `deleteValidator`, `changeOwner`, and `setNextFullDkgCeremony`.
 
+11. **Initialized once**: The `initialized` bit (bit 255 of slot 0) can only
+    transition from 0 to 1, never back to 0.
+
 ---
 
 # Migration from V1
@@ -419,14 +426,12 @@ This section describes the migration strategy from ValidatorConfig V1 to V2.
 
 ## Overview
 
-The migration uses a three-pronged approach:
+The migration uses a two-pronged approach:
 
 1. **New hardfork ("Allegro")**: Timestamp-based activation that switches
    consensus from reading V1 to V2
-2. **Genesis initialization for new networks**: New deployments initialize V2 at
-   genesis
-3. **Bootstrap V2 from V1 for existing networks**: At the fork, copy V1 state
-   into V2
+2. **Lazy initialization**: On first read, V2 automatically populates itself
+   from V1 state
 
 ## Hardfork-Based Switching
 
@@ -443,33 +448,79 @@ if chainspec.is_allegro_active_at_timestamp(block.timestamp) {
 
 This ensures all nodes switch deterministically at the same point.
 
-## Bootstrap Migration
+## Lazy Initialization
 
-V2 requires Ed25519 signatures on `addValidator`, but V1 validators don't have
-pre-signed messages. To solve this, V2 includes a one-time privileged bootstrap
-mechanism:
+V2 uses lazy initialization to automatically populate from V1 on first access.
+The `initialized` bit (bit 255 of slot 0) tracks whether initialization has
+occurred.
+
+### Triggering Functions
+
+The following view functions trigger initialization if `initialized == false`:
+
+- `getValidators()`
+- `getActiveValidators()`
+- `validatorCount()`
+- `validatorByIndex(uint256 index)`
+- `validatorByAddress(address validatorAddress)`
+- `validatorByPublicKey(bytes32 publicKey)`
+
+### Initialization Procedure
+
+When any triggering function is called and `initialized == false`:
+
+1. Read all validators from ValidatorConfig V1 at
+   `0xCCCCCCCC00000000000000000000000000000001`
+2. For each V1 validator where `active == true`:
+   - Create a V2 validator entry with:
+     - `publicKey`: copied from V1
+     - `validatorAddress`: copied from V1
+     - `inboundAddress`: copied from V1
+     - `outboundAddress`: copied from V1
+     - `index`: assigned sequentially (0, 1, 2, ...)
+     - `addedAtHeight`: set to `block.number`
+     - `deletedAtHeight`: set to 0 (active)
+   - Add to `validatorsArray`
+   - Populate lookup maps (`validators[addr]`, `pubkeyToIndex[pubkey]`)
+3. Copy `owner` from V1 to V2
+4. Copy `nextDkgCeremony` from V1 to V2
+5. Set `initialized = true` (bit 255 of slot 0)
 
 ```solidity
-/// @notice Bootstrap V2 from V1 state (owner only, one-time)
-/// @dev Can only be called once. After bootstrap, normal signature requirements apply.
-/// @param migrationHeight The block height at which migration occurs
-function bootstrapFromV1(uint64 migrationHeight) external;
+// V1 interface used during initialization
+interface IValidatorConfigV1 {
+    struct Validator {
+        bytes32 publicKey;
+        bool active;
+        uint64 index;
+        address validatorAddress;
+        string inboundAddress;
+        string outboundAddress;
+    }
+
+    function getValidators() external view returns (Validator[] memory);
+    function owner() external view returns (address);
+    function getNextFullDkgCeremony() external view returns (uint64);
+}
 ```
 
-**Properties:**
-- Callable only if `bootstrapped == false`
-- After execution, sets `bootstrapped = true` permanently
-- Internally reads V1 state and copies active validators
-- Sets `addedAtHeight = migrationHeight` for imported validators
-- Inactive V1 validators are not imported
+### Properties
+
+- **One-time**: Initialization executes exactly once; subsequent calls are no-ops
+- **Atomic**: The entire initialization completes in a single transaction
+- **Transparent**: Callers do not need to know whether initialization occurred
+- **No signatures required**: V1 validators are imported without Ed25519 signatures
+  (they were already validated in V1)
+- **Inactive validators skipped**: Only V1 validators with `active == true` are
+  imported
 
 ## Timeline
 
 ```
-Before Fork                    Fork Block                      After Fork
+Before Fork                    First V2 Read                   After Initialization
      │                              │                              │
-     │  DKG reads V1                │  Bootstrap executes          │  DKG reads V2
-     │  V2 may be empty             │  V2 populated from V1        │  V1 ignored
+     │  DKG reads V1                │  Lazy init executes          │  DKG reads V2
+     │  V2 empty, initialized=0     │  V2 populated from V1        │  initialized=1
      │                              │                              │
 ─────┴──────────────────────────────┴──────────────────────────────┴─────────────────►
                                     │
@@ -480,25 +531,24 @@ Before Fork                    Fork Block                      After Fork
 
 ### For Existing Networks (testnet, mainnet)
 
-1. **Release new node software** with Allegro hardfork support and V2 bootstrap
-   method, but set `allegroTime` far in future
+1. **Release new node software** with Allegro hardfork support
 2. **Schedule the fork** by updating chainspec with target `allegroTime`
-3. **At fork activation**: Execute `bootstrapFromV1(migrationHeight)` as a
-   system transaction
+3. **At fork activation**: First V2 read automatically triggers initialization
 4. **Post-fork**: DKG reads V2; future validator changes use V2's `addValidator`
    with signatures
 
 ### For New Networks
 
-1. Initialize V2 at genesis with the initial validator set
+1. Initialize V2 at genesis with the initial validator set (set `initialized = true`)
 2. Optionally populate V1 for backward tooling compatibility
 3. Set `allegroTime = 0` to activate V2 immediately
 
 ## Safety Checks
 
 Nodes should fail fast if:
-- Allegro is active but V2 validator set is empty (bootstrap didn't execute)
-- V2 `bootstrapped` is false after the fork activation block
+- Allegro is active but V2 initialization fails (e.g., V1 read error)
+- V2 validator set is empty after initialization (indicates V1 had no active
+  validators)
 
 ---
 
@@ -545,3 +595,19 @@ The test suite must cover:
     `deletedAtHeight` set
 21. **Filter logic**: Caller can correctly filter by
     `addedAtHeight <= H && (deletedAtHeight == 0 || deletedAtHeight > H)`
+
+### Lazy Initialization
+
+22. **First read triggers init**: Calling `getValidators()` on uninitialized V2
+    populates from V1
+23. **All triggering functions**: Each of `getValidators`, `getActiveValidators`,
+    `validatorCount`, `validatorByIndex`, `validatorByAddress`,
+    `validatorByPublicKey` triggers initialization
+24. **Initialization is idempotent**: Subsequent reads do not re-initialize
+25. **Active validators only**: V1 validators with `active == false` are not
+    imported
+26. **Owner copied**: V2 `owner()` returns the same value as V1 `owner()`
+27. **DKG ceremony copied**: V2 `getNextFullDkgCeremony()` matches V1
+28. **addedAtHeight set correctly**: Imported validators have
+    `addedAtHeight == block.number` at initialization time
+29. **Initialized bit set**: After initialization, bit 255 of slot 0 is set
