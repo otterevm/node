@@ -8,7 +8,7 @@ use alloy_primitives::U256;
 use reth_chainspec::{ChainSpecProvider, EthChainSpec};
 use reth_evm::ConfigureEvm;
 use reth_primitives_traits::{
-    Block, BlockTy, GotExpected, SealedBlock, transaction::error::InvalidTransactionError,
+    BlockTy, GotExpected, SealedBlock, transaction::error::InvalidTransactionError,
 };
 use reth_storage_api::{StateProvider, StateProviderFactory, errors::ProviderError};
 use reth_transaction_pool::{
@@ -934,6 +934,7 @@ mod tests {
     use crate::{test_utils::TxBuilder, transaction::TempoPoolTransactionError};
     use alloy_consensus::{Block, Header, Transaction};
     use alloy_primitives::{Address, B256, U256, address, uint};
+    use reth_evm_ethereum::EthEvmConfig;
     use reth_primitives_traits::SignedTransaction;
     use reth_provider::test_utils::{ExtendedAccount, MockEthProvider};
     use reth_transaction_pool::{
@@ -986,6 +987,7 @@ mod tests {
         tip_timestamp: u64,
     ) -> TempoTransactionValidator<
         MockEthProvider<reth_ethereum_primitives::EthPrimitives, TempoChainSpec>,
+        EthEvmConfig,
     > {
         let provider =
             MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
@@ -1029,7 +1031,7 @@ mod tests {
             ]),
         );
 
-        let inner = EthTransactionValidatorBuilder::new(provider.clone())
+        let inner = EthTransactionValidatorBuilder::new(provider.clone(), EthEvmConfig::mainnet())
             .disable_balance_check()
             .build(InMemoryBlobStore::default());
         let amm_cache =
@@ -1234,7 +1236,7 @@ mod tests {
         );
 
         // Create validator and validate
-        let inner = EthTransactionValidatorBuilder::new(provider.clone())
+        let inner = EthTransactionValidatorBuilder::new(provider.clone(), EthEvmConfig::mainnet())
             .disable_balance_check()
             .build(InMemoryBlobStore::default());
         let validator = TempoTransactionValidator::new(
@@ -1603,6 +1605,7 @@ mod tests {
             authorized_key_slot_value: Option<U256>,
         ) -> TempoTransactionValidator<
             MockEthProvider<reth_ethereum_primitives::EthPrimitives, TempoChainSpec>,
+            EthEvmConfig,
         > {
             let provider =
                 MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
@@ -1624,9 +1627,10 @@ mod tests {
                 );
             }
 
-            let inner = EthTransactionValidatorBuilder::new(provider.clone())
-                .disable_balance_check()
-                .build(InMemoryBlobStore::default());
+            let inner =
+                EthTransactionValidatorBuilder::new(provider.clone(), EthEvmConfig::mainnet())
+                    .disable_balance_check()
+                    .build(InMemoryBlobStore::default());
             let amm_cache =
                 AmmLiquidityCache::new(provider).expect("failed to setup AmmLiquidityCache");
             TempoTransactionValidator::new(inner, 3600, DEFAULT_MAX_TEMPO_AUTHORIZATIONS, amm_cache)
@@ -2117,6 +2121,7 @@ mod tests {
             tip_timestamp: u64,
         ) -> TempoTransactionValidator<
             MockEthProvider<reth_ethereum_primitives::EthPrimitives, TempoChainSpec>,
+            EthEvmConfig,
         > {
             let provider =
                 MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
@@ -2148,9 +2153,10 @@ mod tests {
                 );
             }
 
-            let inner = EthTransactionValidatorBuilder::new(provider.clone())
-                .disable_balance_check()
-                .build(InMemoryBlobStore::default());
+            let inner =
+                EthTransactionValidatorBuilder::new(provider.clone(), EthEvmConfig::mainnet())
+                    .disable_balance_check()
+                    .build(InMemoryBlobStore::default());
             let amm_cache =
                 AmmLiquidityCache::new(provider).expect("failed to setup AmmLiquidityCache");
             let validator = TempoTransactionValidator::new(
@@ -2471,6 +2477,7 @@ mod tests {
             spending_limit: Option<(Address, U256)>, // (token, limit)
         ) -> TempoTransactionValidator<
             MockEthProvider<reth_ethereum_primitives::EthPrimitives, TempoChainSpec>,
+            EthEvmConfig,
         > {
             let provider =
                 MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
@@ -2507,9 +2514,10 @@ mod tests {
                 ExtendedAccount::new(0, U256::ZERO).extend_storage(storage),
             );
 
-            let inner = EthTransactionValidatorBuilder::new(provider.clone())
-                .disable_balance_check()
-                .build(InMemoryBlobStore::default());
+            let inner =
+                EthTransactionValidatorBuilder::new(provider.clone(), EthEvmConfig::mainnet())
+                    .disable_balance_check()
+                    .build(InMemoryBlobStore::default());
             let amm_cache =
                 AmmLiquidityCache::new(provider).expect("failed to setup AmmLiquidityCache");
             TempoTransactionValidator::new(inner, 3600, DEFAULT_MAX_TEMPO_AUTHORIZATIONS, amm_cache)

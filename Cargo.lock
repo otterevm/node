@@ -12152,6 +12152,7 @@ dependencies = [
  "reth-eth-wire-types",
  "reth-ethereum-primitives",
  "reth-evm",
+ "reth-evm-ethereum",
  "reth-metrics",
  "reth-primitives-traits",
  "reth-provider",
