@@ -549,18 +549,14 @@ When any of these functions is called and `initialized == false`:
      - `outboundAddress`: copied from V1
      - `index`: assigned sequentially (0, 1, 2, ...)
      - `addedAtHeight`: set to `block.number`
-     - `deletedAtHeight`: set to 0 (for both active and inactive V1 validators)
-     - `deletedBeforeMigration`: if V1 `active == true`, set to false; if V1 `active == false`, set to true
+     - `deletedAtHeight`: set to 0
+     - `deletedBeforeMigration`: set to true if V1 `active == false`, otherwise false
    - Add to `validatorsArray`
    - Populate lookup maps (`validators[addr]`, `pubkeyToIndex[pubkey]`)
-3. Copy `nextDkgCeremony` from V1 to V2 (if V1 read succeeds)
-4. Set `initialized = true` (bit 255 of slot 0)
-5. Proceed with the original write operation
-
-If the V1 read fails at any point, skip steps 2-3 and proceed directly to step 4.
-
-Note: The `owner` is NOT copied from V1. V2's owner must be set separately
-(typically at genesis or via a privileged initialization call).
+3. Copy `owner` from V1 to V2
+4. Copy `nextDkgCeremony` from V1 to V2
+5. Set `initialized = true` (bit 255 of slot 0)
+6. Proceed with the original write operation
 
 ```solidity
 // V1 interface used during initialization and read delegation
@@ -576,6 +572,7 @@ interface IValidatorConfigV1 {
 
     function getValidators() external view returns (Validator[] memory);
     function getNextFullDkgCeremony() external view returns (uint64);
+    function owner() external view returns (address);
 }
 ```
 
