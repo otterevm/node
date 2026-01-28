@@ -28,17 +28,19 @@ TIP-1000's fixed 250,000 gas pricing overcharges during normal operation while p
 
 ```
 TARGET_RATE = 33_000_000_000 / 31_557_600 = 1045.7 elements/second
-HALF_LIFE = 3600 seconds
+HALF_LIFE = 3_600_000 milliseconds (1 hour)
 PRECISION = 10^18 (fixed-point precision)
 BASE_PRICE = 25_000 gas
 TARGET_PRICE = 250_000 gas
 ```
 
+**Note**: Tempo timestamps have millisecond precision (`timestamp_millis()` = seconds × 1000 + `timestamp_millis_part`).
+
 ## State Variables
 
 ```
 uint256 current_rate_fp;     // elements/second × PRECISION
-uint256 last_update_time;    // timestamp of last update
+uint256 last_update_time_ms; // timestamp in milliseconds
 ```
 
 ## State Element Counting
@@ -52,19 +54,19 @@ Per transaction:
 ## Rate Update (Per Block)
 
 ```
-time_delta = block.timestamp - last_update_time
+time_delta_ms = block.timestamp_millis() - last_update_time_ms
 elements = count_state_elements(previous_block)
 
-// Exponential decay: decay_factor = 2^(-time_delta / HALF_LIFE)
-// Using integer math: decay_factor_fp = 2^((-time_delta × PRECISION) / HALF_LIFE)
-decay_factor_fp = exp2((-time_delta × PRECISION) / HALF_LIFE)
+// Exponential decay: decay_factor = 2^(-time_delta_ms / HALF_LIFE)
+// Using integer math: decay_factor_fp = 2^((-time_delta_ms × PRECISION) / HALF_LIFE)
+decay_factor_fp = exp2((-time_delta_ms × PRECISION) / HALF_LIFE)
 
-// Apply decay and add new rate
+// Apply decay and add new rate (convert ms to seconds: × 1000)
 decayed_rate_fp = (current_rate_fp × decay_factor_fp) / PRECISION
-new_rate_fp = (elements × PRECISION) / time_delta
+new_rate_fp = (elements × PRECISION × 1000) / time_delta_ms
 
 current_rate_fp = decayed_rate_fp + new_rate_fp
-last_update_time = block.timestamp
+last_update_time_ms = block.timestamp_millis()
 ```
 
 ## Price Calculation
@@ -136,5 +138,3 @@ All state creation operations use the dynamic price:
 **vs TIP-1000**: More efficient (82-90% cheaper at normal usage) but adds complexity (EWMA tracking, exponential math)
 
 **vs TIP-YYYY**: Different approach (pricing vs limits); could be combined
-
-**Implementation cost**: ~5-10k gas per block for EWMA update + price calculation per state operation
