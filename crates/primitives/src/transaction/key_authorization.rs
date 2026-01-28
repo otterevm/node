@@ -1,8 +1,11 @@
 use super::SignatureType;
 use crate::transaction::PrimitiveSignature;
 use alloy_consensus::crypto::RecoveryError;
-use alloy_primitives::{Address, B256, U256, keccak256};
+use alloy_primitives::{Address, B256, FixedBytes, U256, keccak256};
 use alloy_rlp::{BufMut, Decodable, Encodable, Header};
+
+/// 4-byte function selector type
+pub type Selector = FixedBytes<4>;
 
 /// Token spending limit for access keys (TIP-1011)
 ///
@@ -194,16 +197,75 @@ impl reth_codecs::Compact for TokenLimit {
     }
 }
 
+/// Call scope for access keys (TIP-1011)
+///
+/// Defines an allowed (address, selector) pair for an access key.
+/// This restricts which contract functions the key can call.
+///
+/// RLP encoding: `[target, selector]`
+#[derive(Clone, Debug, PartialEq, Eq, Hash, alloy_rlp::RlpEncodable, alloy_rlp::RlpDecodable)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+pub struct CallScope {
+    /// Target contract address.
+    /// - `Address::ZERO` = wildcard, matches any address
+    /// - Any other address = only matches that specific address
+    pub target: Address,
+
+    /// Function selector (first 4 bytes of calldata).
+    /// - `Selector::ZERO` = wildcard, matches any selector (including empty calldata/ETH transfers)
+    /// - Any other selector = only matches calls with that selector
+    pub selector: Selector,
+}
+
+impl CallScope {
+    /// Create a call scope that allows any function on a specific address
+    pub fn address_only(target: Address) -> Self {
+        Self {
+            target,
+            selector: Selector::ZERO,
+        }
+    }
+
+    /// Create a call scope that allows a specific function on a specific address
+    pub fn address_and_selector(target: Address, selector: Selector) -> Self {
+        Self { target, selector }
+    }
+
+    /// Create a call scope that allows a specific function on any address
+    pub fn selector_only(selector: Selector) -> Self {
+        Self {
+            target: Address::ZERO,
+            selector,
+        }
+    }
+
+    /// Check if this scope matches the given (destination, selector) pair
+    ///
+    /// For calls with empty calldata (e.g., ETH transfers), pass `Selector::ZERO` as the selector.
+    pub fn matches(&self, destination: Address, call_selector: Selector) -> bool {
+        let target_matches = self.target == Address::ZERO || self.target == destination;
+        let selector_matches = self.selector == Selector::ZERO || self.selector == call_selector;
+        target_matches && selector_matches
+    }
+
+    /// Returns true if this is a wildcard scope (matches everything)
+    pub fn is_wildcard(&self) -> bool {
+        self.target == Address::ZERO && self.selector == Selector::ZERO
+    }
+}
+
 /// Key authorization for provisioning access keys (TIP-1011)
 ///
 /// Used in TempoTransaction to add a new key to the AccountKeychain precompile.
 /// The transaction must be signed by the root key to authorize adding this access key.
 ///
-/// RLP encoding: `[chain_id, key_type, key_id, expiry?, limits?, allowed_destinations?]`
+/// RLP encoding: `[chain_id, key_type, key_id, expiry?, limits?, allowed_calls?]`
 /// - Non-optional fields come first, followed by optional (trailing) fields
 /// - `expiry`: `None` (omitted or 0x80) = key never expires, `Some(timestamp)` = expires at timestamp
 /// - `limits`: `None` (omitted or 0x80) = unlimited spending, `Some([])` = no spending, `Some([...])` = specific limits
-/// - `allowed_destinations`: `None` (omitted or 0x80) = unrestricted, `Some([])` = unrestricted, `Some([...])` = restricted
+/// - `allowed_calls`: `None` (omitted or 0x80) = unrestricted, `Some([])` = unrestricted, `Some([...])` = restricted
 #[derive(Clone, Debug, PartialEq, Eq, Hash, alloy_rlp::RlpEncodable, alloy_rlp::RlpDecodable)]
 #[rlp(trailing)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -232,11 +294,11 @@ pub struct KeyAuthorization {
     /// - `Some([TokenLimit{...}])` = specific limits enforced
     pub limits: Option<Vec<TokenLimit>>,
 
-    /// Allowed destination addresses for this key (TIP-1011).
-    /// - `None` (RLP 0x80) = unrestricted (can call any address)
-    /// - `Some([])` = unrestricted (can call any address)
-    /// - `Some([addr1, addr2, ...])` = restricted to only these addresses
-    pub allowed_destinations: Option<Vec<Address>>,
+    /// Allowed call scopes (address + selector pairs) for this key (TIP-1011).
+    /// - `None` (RLP 0x80) = unrestricted (can call any function on any address)
+    /// - `Some([])` = unrestricted (can call any function on any address)
+    /// - `Some([CallScope{...}])` = restricted to only matching (address, selector) pairs
+    pub allowed_calls: Option<Vec<CallScope>>,
 }
 
 impl KeyAuthorization {
@@ -273,24 +335,35 @@ impl KeyAuthorization {
                 .as_ref()
                 .map_or(0, |limits| limits.capacity() * size_of::<TokenLimit>())
             + self
-                .allowed_destinations
+                .allowed_calls
                 .as_ref()
-                .map_or(0, |dests| dests.capacity() * size_of::<Address>())
+                .map_or(0, |calls| calls.capacity() * size_of::<CallScope>())
     }
 
-    /// Returns whether this key has destination restrictions
-    pub fn has_destination_restrictions(&self) -> bool {
-        self.allowed_destinations
+    /// Returns whether this key has call scope restrictions
+    pub fn has_call_restrictions(&self) -> bool {
+        self.allowed_calls
             .as_ref()
-            .is_some_and(|dests| !dests.is_empty())
+            .is_some_and(|calls| !calls.is_empty())
     }
 
-    /// Check if a destination is allowed for this key
-    pub fn is_destination_allowed(&self, destination: &Address) -> bool {
-        match &self.allowed_destinations {
+    /// Check if a call is allowed for this key
+    ///
+    /// For calls with empty calldata (e.g., ETH transfers), pass `Selector::ZERO` as the selector.
+    pub fn is_call_allowed(&self, destination: &Address, selector: Selector) -> bool {
+        match &self.allowed_calls {
             None => true,
-            Some(dests) if dests.is_empty() => true,
-            Some(dests) => dests.contains(destination),
+            Some(calls) if calls.is_empty() => true,
+            Some(calls) => calls.iter().any(|scope| scope.matches(*destination, selector)),
+        }
+    }
+
+    /// Extract the selector from calldata (first 4 bytes), or Selector::ZERO if calldata is too short
+    pub fn extract_selector(calldata: &[u8]) -> Selector {
+        if calldata.len() >= 4 {
+            Selector::from_slice(&calldata[..4])
+        } else {
+            Selector::ZERO
         }
     }
 }
@@ -362,7 +435,7 @@ impl<'a> arbitrary::Arbitrary<'a> for KeyAuthorization {
             // Ensure that Some(0) is not generated as it's becoming `None` after RLP roundtrip.
             expiry: u.arbitrary::<Option<u64>>()?.filter(|v| *v != 0),
             limits: u.arbitrary()?,
-            allowed_destinations: u.arbitrary()?,
+            allowed_calls: u.arbitrary()?,
         })
     }
 }
@@ -382,7 +455,7 @@ mod tests {
             key_id: Address::random(),
             expiry,
             limits,
-            allowed_destinations: None,
+            allowed_calls: None,
         }
     }
 
@@ -522,9 +595,49 @@ mod tests {
     }
 
     #[test]
-    fn test_destination_restrictions() {
+    fn test_call_scope_matching() {
+        let target = Address::random();
+        let selector = Selector::from([0xaa, 0xbb, 0xcc, 0xdd]);
+        let other_target = Address::random();
+        let other_selector = Selector::from([0x11, 0x22, 0x33, 0x44]);
+
+        // Exact match (target + selector)
+        let scope = CallScope::address_and_selector(target, selector);
+        assert!(scope.matches(target, selector));
+        assert!(!scope.matches(other_target, selector));
+        assert!(!scope.matches(target, other_selector));
+        assert!(!scope.matches(other_target, other_selector));
+
+        // Address-only match (any selector on specific address)
+        let scope = CallScope::address_only(target);
+        assert!(scope.matches(target, selector));
+        assert!(scope.matches(target, other_selector));
+        assert!(scope.matches(target, Selector::ZERO)); // ETH transfer
+        assert!(!scope.matches(other_target, selector));
+
+        // Selector-only match (specific selector on any address)
+        let scope = CallScope::selector_only(selector);
+        assert!(scope.matches(target, selector));
+        assert!(scope.matches(other_target, selector));
+        assert!(!scope.matches(target, other_selector));
+
+        // Wildcard (matches everything)
+        let scope = CallScope {
+            target: Address::ZERO,
+            selector: Selector::ZERO,
+        };
+        assert!(scope.is_wildcard());
+        assert!(scope.matches(target, selector));
+        assert!(scope.matches(other_target, other_selector));
+        assert!(scope.matches(Address::random(), Selector::ZERO));
+    }
+
+    #[test]
+    fn test_call_restrictions() {
         let dest1 = Address::random();
         let dest2 = Address::random();
+        let selector1 = Selector::from([0xaa, 0xbb, 0xcc, 0xdd]);
+        let selector2 = Selector::from([0x11, 0x22, 0x33, 0x44]);
         let other = Address::random();
 
         // No restrictions
@@ -534,44 +647,81 @@ mod tests {
             key_id: Address::random(),
             expiry: None,
             limits: None,
-            allowed_destinations: None,
+            allowed_calls: None,
         };
-        assert!(!auth.has_destination_restrictions());
-        assert!(auth.is_destination_allowed(&dest1));
-        assert!(auth.is_destination_allowed(&other));
+        assert!(!auth.has_call_restrictions());
+        assert!(auth.is_call_allowed(&dest1, selector1));
+        assert!(auth.is_call_allowed(&other, Selector::ZERO));
 
         // Empty list = unrestricted
         let auth = KeyAuthorization {
-            allowed_destinations: Some(vec![]),
+            allowed_calls: Some(vec![]),
             ..auth.clone()
         };
-        assert!(!auth.has_destination_restrictions());
-        assert!(auth.is_destination_allowed(&dest1));
+        assert!(!auth.has_call_restrictions());
+        assert!(auth.is_call_allowed(&dest1, selector1));
 
-        // Restricted to specific destinations
+        // Restricted to specific (address, selector) pairs
         let auth = KeyAuthorization {
             chain_id: 1,
             key_type: SignatureType::Secp256k1,
             key_id: Address::random(),
             expiry: None,
             limits: None,
-            allowed_destinations: Some(vec![dest1, dest2]),
+            allowed_calls: Some(vec![
+                CallScope::address_and_selector(dest1, selector1),
+                CallScope::address_only(dest2), // any function on dest2
+            ]),
         };
-        assert!(auth.has_destination_restrictions());
-        assert!(auth.is_destination_allowed(&dest1));
-        assert!(auth.is_destination_allowed(&dest2));
-        assert!(!auth.is_destination_allowed(&other));
+        assert!(auth.has_call_restrictions());
+        assert!(auth.is_call_allowed(&dest1, selector1));
+        assert!(!auth.is_call_allowed(&dest1, selector2)); // wrong selector
+        assert!(auth.is_call_allowed(&dest2, selector1)); // any selector on dest2
+        assert!(auth.is_call_allowed(&dest2, selector2));
+        assert!(!auth.is_call_allowed(&other, selector1)); // wrong address
     }
 
     #[test]
-    fn test_key_authorization_with_destinations_rlp_roundtrip() {
+    fn test_extract_selector() {
+        // Normal calldata
+        let calldata = [0xaa, 0xbb, 0xcc, 0xdd, 0x01, 0x02, 0x03];
+        assert_eq!(
+            KeyAuthorization::extract_selector(&calldata),
+            Selector::from([0xaa, 0xbb, 0xcc, 0xdd])
+        );
+
+        // Exactly 4 bytes
+        let calldata = [0x11, 0x22, 0x33, 0x44];
+        assert_eq!(
+            KeyAuthorization::extract_selector(&calldata),
+            Selector::from([0x11, 0x22, 0x33, 0x44])
+        );
+
+        // Empty calldata (ETH transfer)
+        assert_eq!(KeyAuthorization::extract_selector(&[]), Selector::ZERO);
+
+        // Short calldata
+        assert_eq!(
+            KeyAuthorization::extract_selector(&[0x01, 0x02]),
+            Selector::ZERO
+        );
+    }
+
+    #[test]
+    fn test_key_authorization_with_call_scopes_rlp_roundtrip() {
         let auth = KeyAuthorization {
             chain_id: 1,
             key_type: SignatureType::Secp256k1,
             key_id: Address::random(),
             expiry: Some(1700000000),
             limits: Some(vec![TokenLimit::one_time(Address::random(), U256::from(100))]),
-            allowed_destinations: Some(vec![Address::random(), Address::random()]),
+            allowed_calls: Some(vec![
+                CallScope::address_and_selector(
+                    Address::random(),
+                    Selector::from([0xaa, 0xbb, 0xcc, 0xdd]),
+                ),
+                CallScope::address_only(Address::random()),
+            ]),
         };
 
         let mut buf = Vec::new();
@@ -579,5 +729,19 @@ mod tests {
 
         let decoded = KeyAuthorization::decode(&mut buf.as_slice()).unwrap();
         assert_eq!(decoded, auth);
+    }
+
+    #[test]
+    fn test_call_scope_rlp_roundtrip() {
+        let original = CallScope::address_and_selector(
+            Address::random(),
+            Selector::from([0x12, 0x34, 0x56, 0x78]),
+        );
+
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let decoded = CallScope::decode(&mut buf.as_slice()).unwrap();
+        assert_eq!(decoded, original);
     }
 }

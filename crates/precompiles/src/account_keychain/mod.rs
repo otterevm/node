@@ -7,11 +7,15 @@ use tempo_contracts::precompiles::{AccountKeychainError, AccountKeychainEvent};
 pub use tempo_contracts::precompiles::{
     IAccountKeychain,
     IAccountKeychain::{
-        KeyInfo, SignatureType, TokenLimit, authorizeKeyCall, getAllowedDestinationsCall,
+        CallScope, KeyInfo, SignatureType, TokenLimit, authorizeKeyCall, getAllowedCallsCall,
         getKeyCall, getRemainingLimitCall, getTransactionKeyCall, revokeKeyCall,
         updateSpendingLimitCall,
     },
 };
+use alloy::primitives::FixedBytes;
+
+/// 4-byte function selector type
+pub type Selector = FixedBytes<4>;
 
 use crate::{
     ACCOUNT_KEYCHAIN_ADDRESS,
@@ -110,11 +114,13 @@ pub struct AccountKeychain {
     // spending_limit_period_end[(account, keyId)][token] -> current period end timestamp
     spending_limit_period_end: Mapping<B256, Mapping<Address, u64>>,
 
-    // TIP-1011: Destination scoping storage
-    // allowed_destinations_len[(account, keyId)] -> number of allowed destinations (0 = unrestricted)
-    allowed_destinations_len: Mapping<B256, u64>,
-    // allowed_destinations[(account, keyId)][index] -> allowed destination address
-    allowed_destinations: Mapping<B256, Mapping<u64, Address>>,
+    // TIP-1011: Call scoping storage
+    // allowed_calls_len[(account, keyId)] -> number of allowed call scopes (0 = unrestricted)
+    allowed_calls_len: Mapping<B256, u64>,
+    // allowed_calls_target[(account, keyId)][index] -> allowed target address
+    allowed_calls_target: Mapping<B256, Mapping<u64, Address>>,
+    // allowed_calls_selector[(account, keyId)][index] -> allowed function selector
+    allowed_calls_selector: Mapping<B256, Mapping<u64, Selector>>,
 
     // WARNING(rusowsky): transient storage slots must always be placed at the very end until the `contract`
     // macro is refactored and has 2 independent layouts (persistent and transient).
@@ -336,12 +342,9 @@ impl AccountKeychain {
         self.spending_limits[limit_key][call.token].read()
     }
 
-    /// TIP-1011: Get allowed destinations for a key (Solidity interface wrapper)
-    pub fn get_allowed_destinations_sol(
-        &self,
-        call: getAllowedDestinationsCall,
-    ) -> Result<Vec<Address>> {
-        self.get_allowed_destinations(call.account, call.keyId)
+    /// TIP-1011: Get allowed call scopes for a key (Solidity interface wrapper)
+    pub fn get_allowed_calls_sol(&self, call: getAllowedCallsCall) -> Result<Vec<CallScope>> {
+        self.get_allowed_calls(call.account, call.keyId)
     }
 
     /// Get the transaction key used in the current transaction
@@ -525,72 +528,106 @@ impl AccountKeychain {
     /// # Arguments
     /// * `account` - The account owning the key
     /// * `key_id` - The key identifier
-    /// * `destinations` - Array of allowed destination addresses (empty = unrestricted)
-    pub fn set_allowed_destinations(
+    /// * `calls` - Array of allowed call scopes (target, selector) pairs
+    pub fn set_allowed_calls(
         &mut self,
         account: Address,
         key_id: Address,
-        destinations: &[Address],
+        calls: &[(Address, Selector)],
     ) -> Result<()> {
         let limit_key = Self::spending_limit_key(account, key_id);
 
         // Store the count
-        self.allowed_destinations_len[limit_key].write(destinations.len() as u64)?;
+        self.allowed_calls_len[limit_key].write(calls.len() as u64)?;
 
-        // Store each destination
-        for (i, dest) in destinations.iter().enumerate() {
-            self.allowed_destinations[limit_key][i as u64].write(*dest)?;
+        // Store each call scope (target + selector)
+        for (i, (target, selector)) in calls.iter().enumerate() {
+            self.allowed_calls_target[limit_key][i as u64].write(*target)?;
+            self.allowed_calls_selector[limit_key][i as u64].write(*selector)?;
         }
 
         Ok(())
     }
 
-    /// TIP-1011: Get allowed destinations for a key
+    /// TIP-1011: Get allowed call scopes for a key
     ///
-    /// Returns the list of allowed destination addresses for a key.
-    /// Empty array means unrestricted (can call any address).
-    pub fn get_allowed_destinations(&self, account: Address, key_id: Address) -> Result<Vec<Address>> {
+    /// Returns the list of allowed call scopes for a key.
+    /// Empty array means unrestricted (can call any function on any address).
+    pub fn get_allowed_calls(
+        &self,
+        account: Address,
+        key_id: Address,
+    ) -> Result<Vec<CallScope>> {
         let limit_key = Self::spending_limit_key(account, key_id);
-        let len = self.allowed_destinations_len[limit_key].read()?;
+        let len = self.allowed_calls_len[limit_key].read()?;
 
-        let mut destinations = Vec::with_capacity(len as usize);
+        let mut calls = Vec::with_capacity(len as usize);
         for i in 0..len {
-            let dest = self.allowed_destinations[limit_key][i].read()?;
-            destinations.push(dest);
+            let target = self.allowed_calls_target[limit_key][i].read()?;
+            let selector = self.allowed_calls_selector[limit_key][i].read()?;
+            calls.push(CallScope {
+                target,
+                selector: selector.0.into(),
+            });
         }
 
-        Ok(destinations)
+        Ok(calls)
     }
 
-    /// TIP-1011: Check if a destination is allowed for the current transaction key
+    /// TIP-1011: Check if a call is allowed for the current transaction key
     ///
     /// Called by the handler before transaction execution.
-    /// Returns Ok(()) if destination is allowed, Err(DestinationNotAllowed) otherwise.
-    pub fn validate_destination(&self, account: Address, destination: Address) -> Result<()> {
+    /// Returns Ok(()) if call is allowed, Err(CallNotAllowed) otherwise.
+    ///
+    /// # Arguments
+    /// * `account` - The account owning the key
+    /// * `destination` - The target contract address
+    /// * `calldata` - The call data (selector is extracted from first 4 bytes)
+    pub fn validate_call(
+        &self,
+        account: Address,
+        destination: Address,
+        calldata: &[u8],
+    ) -> Result<()> {
         let transaction_key = self.transaction_key.t_read()?;
 
-        // Main key (Address::ZERO) has no destination restrictions
+        // Main key (Address::ZERO) has no call restrictions
         if transaction_key == Address::ZERO {
             return Ok(());
         }
 
         let limit_key = Self::spending_limit_key(account, transaction_key);
-        let len = self.allowed_destinations_len[limit_key].read()?;
+        let len = self.allowed_calls_len[limit_key].read()?;
 
         // Empty allowed list = unrestricted
         if len == 0 {
             return Ok(());
         }
 
-        // Check if destination is in the allowed list
+        // Extract selector from calldata (first 4 bytes), or ZERO if calldata is too short
+        let selector = if calldata.len() >= 4 {
+            Selector::from_slice(&calldata[..4])
+        } else {
+            Selector::ZERO
+        };
+
+        // Check if (destination, selector) matches any allowed scope
         for i in 0..len {
-            let allowed = self.allowed_destinations[limit_key][i].read()?;
-            if allowed == destination {
+            let allowed_target = self.allowed_calls_target[limit_key][i].read()?;
+            let allowed_selector = self.allowed_calls_selector[limit_key][i].read()?;
+
+            // Check target match (Address::ZERO = wildcard)
+            let target_matches = allowed_target == Address::ZERO || allowed_target == destination;
+
+            // Check selector match (Selector::ZERO = wildcard)
+            let selector_matches = allowed_selector == Selector::ZERO || allowed_selector == selector;
+
+            if target_matches && selector_matches {
                 return Ok(());
             }
         }
 
-        Err(AccountKeychainError::destination_not_allowed(destination).into())
+        Err(AccountKeychainError::call_not_allowed(destination, selector.0.into()).into())
     }
 
     /// TIP-1011: Get remaining limit with period info
@@ -1439,14 +1476,15 @@ mod tests {
     }
 
     #[test]
-    fn test_destination_scoping_allow_and_deny() -> eyre::Result<()> {
+    fn test_call_scoping_address_and_selector() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
 
         let account = Address::random();
         let key_id = Address::random();
-        let allowed_dest1 = Address::random();
-        let allowed_dest2 = Address::random();
-        let disallowed_dest = Address::random();
+        let allowed_target = Address::random();
+        let allowed_selector = Selector::from([0xaa, 0xbb, 0xcc, 0xdd]);
+        let disallowed_target = Address::random();
+        let disallowed_selector = Selector::from([0x11, 0x22, 0x33, 0x44]);
 
         StorageCtx::enter(&mut storage, || {
             let mut keychain = AccountKeychain::new();
@@ -1464,28 +1502,34 @@ mod tests {
             };
             keychain.authorize_key(account, auth_call)?;
 
-            // Set allowed destinations
-            keychain.set_allowed_destinations(account, key_id, &[allowed_dest1, allowed_dest2])?;
+            // Set allowed call scopes: (allowed_target, allowed_selector)
+            keychain.set_allowed_calls(account, key_id, &[(allowed_target, allowed_selector)])?;
 
             // Switch to using the access key
             keychain.set_transaction_key(key_id)?;
 
-            // Test 1: Allowed destinations should pass
-            let result1 = keychain.validate_destination(account, allowed_dest1);
-            assert!(result1.is_ok(), "Should allow dest1");
+            // Build calldata with the allowed selector
+            let mut calldata = allowed_selector.to_vec();
+            calldata.extend_from_slice(&[0x01, 0x02, 0x03]); // extra data
 
-            let result2 = keychain.validate_destination(account, allowed_dest2);
-            assert!(result2.is_ok(), "Should allow dest2");
+            // Test 1: Allowed (target, selector) should pass
+            let result1 = keychain.validate_call(account, allowed_target, &calldata);
+            assert!(result1.is_ok(), "Should allow matching call scope");
 
-            // Test 2: Disallowed destination should fail
-            let result3 = keychain.validate_destination(account, disallowed_dest);
-            assert!(result3.is_err(), "Should deny disallowed destination");
+            // Test 2: Wrong target should fail
+            let result2 = keychain.validate_call(account, disallowed_target, &calldata);
+            assert!(result2.is_err(), "Should deny wrong target");
+
+            // Test 3: Wrong selector should fail
+            let wrong_calldata = disallowed_selector.to_vec();
+            let result3 = keychain.validate_call(account, allowed_target, &wrong_calldata);
+            assert!(result3.is_err(), "Should deny wrong selector");
 
             match result3.unwrap_err() {
-                TempoPrecompileError::AccountKeychainError(
-                    AccountKeychainError::DestinationNotAllowed(_),
-                ) => {}
-                e => panic!("Expected DestinationNotAllowed error, got: {e:?}"),
+                TempoPrecompileError::AccountKeychainError(AccountKeychainError::CallNotAllowed(
+                    _,
+                )) => {}
+                e => panic!("Expected CallNotAllowed error, got: {e:?}"),
             }
 
             Ok(())
@@ -1493,7 +1537,51 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_destinations_allows_any() -> eyre::Result<()> {
+    fn test_call_scoping_address_only_wildcard() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+
+        let account = Address::random();
+        let key_id = Address::random();
+        let allowed_target = Address::random();
+
+        StorageCtx::enter(&mut storage, || {
+            let mut keychain = AccountKeychain::new();
+            keychain.initialize()?;
+
+            keychain.set_transaction_key(Address::ZERO)?;
+
+            let auth_call = authorizeKeyCall {
+                keyId: key_id,
+                signatureType: SignatureType::Secp256k1,
+                expiry: u64::MAX,
+                enforceLimits: false,
+                limits: vec![],
+            };
+            keychain.authorize_key(account, auth_call)?;
+
+            // Set allowed call scope: (allowed_target, any selector) - Selector::ZERO is wildcard
+            keychain.set_allowed_calls(account, key_id, &[(allowed_target, Selector::ZERO)])?;
+
+            keychain.set_transaction_key(key_id)?;
+
+            // Any selector on allowed target should pass
+            let selector1 = [0xaau8, 0xbb, 0xcc, 0xdd];
+            let selector2 = [0x11u8, 0x22, 0x33, 0x44];
+
+            assert!(keychain.validate_call(account, allowed_target, &selector1).is_ok());
+            assert!(keychain.validate_call(account, allowed_target, &selector2).is_ok());
+            assert!(keychain.validate_call(account, allowed_target, &[]).is_ok()); // ETH transfer
+
+            // Different target should fail
+            let other_target = Address::random();
+            assert!(keychain.validate_call(account, other_target, &selector1).is_err());
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_empty_allowed_calls_is_unrestricted() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
 
         let account = Address::random();
@@ -1515,27 +1603,29 @@ mod tests {
             };
             keychain.authorize_key(account, auth_call)?;
 
-            // Don't set any destinations (empty = unrestricted)
-            // Alternatively: keychain.set_allowed_destinations(account, key_id, &[])?;
+            // Don't set any call scopes (empty = unrestricted)
 
             keychain.set_transaction_key(key_id)?;
 
-            // Should allow any destination
-            let result = keychain.validate_destination(account, any_dest);
-            assert!(result.is_ok(), "Empty destinations should allow any address");
+            // Should allow any call
+            let calldata = [0xaa, 0xbb, 0xcc, 0xdd];
+            let result = keychain.validate_call(account, any_dest, &calldata);
+            assert!(result.is_ok(), "Empty allowed calls should allow any call");
 
             Ok(())
         })
     }
 
     #[test]
-    fn test_get_allowed_destinations() -> eyre::Result<()> {
+    fn test_get_allowed_calls() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
 
         let account = Address::random();
         let key_id = Address::random();
-        let dest1 = Address::random();
-        let dest2 = Address::random();
+        let target1 = Address::random();
+        let target2 = Address::random();
+        let selector1 = Selector::from([0xaa, 0xbb, 0xcc, 0xdd]);
+        let selector2 = Selector::from([0x11, 0x22, 0x33, 0x44]);
 
         StorageCtx::enter(&mut storage, || {
             let mut keychain = AccountKeychain::new();
@@ -1552,14 +1642,20 @@ mod tests {
             };
             keychain.authorize_key(account, auth_call)?;
 
-            // Set destinations
-            keychain.set_allowed_destinations(account, key_id, &[dest1, dest2])?;
+            // Set call scopes
+            keychain.set_allowed_calls(
+                account,
+                key_id,
+                &[(target1, selector1), (target2, selector2)],
+            )?;
 
-            // Get destinations
-            let destinations = keychain.get_allowed_destinations(account, key_id)?;
-            assert_eq!(destinations.len(), 2);
-            assert!(destinations.contains(&dest1));
-            assert!(destinations.contains(&dest2));
+            // Get call scopes
+            let calls = keychain.get_allowed_calls(account, key_id)?;
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0].target, target1);
+            assert_eq!(calls[0].selector.0, selector1.0);
+            assert_eq!(calls[1].target, target2);
+            assert_eq!(calls[1].selector.0, selector2.0);
 
             Ok(())
         })
@@ -1621,7 +1717,7 @@ mod tests {
     }
 
     #[test]
-    fn test_main_key_bypasses_destination_restrictions() -> eyre::Result<()> {
+    fn test_main_key_bypasses_call_restrictions() -> eyre::Result<()> {
         let mut storage = HashMapStorageProvider::new(1);
 
         let account = Address::random();
@@ -1643,17 +1739,16 @@ mod tests {
             };
             keychain.authorize_key(account, auth_call)?;
 
-            // Set restricted destinations for the access key
+            // Set restricted call scopes for the access key
             let allowed = Address::random();
-            keychain.set_allowed_destinations(account, key_id, &[allowed])?;
+            let selector = Selector::from([0xaa, 0xbb, 0xcc, 0xdd]);
+            keychain.set_allowed_calls(account, key_id, &[(allowed, selector)])?;
 
-            // Main key (Address::ZERO) should bypass destination restrictions
+            // Main key (Address::ZERO) should bypass call restrictions
             // (transaction_key is still Address::ZERO from setup)
-            let result = keychain.validate_destination(account, any_dest);
-            assert!(
-                result.is_ok(),
-                "Main key should bypass destination restrictions"
-            );
+            let calldata = [0x11, 0x22, 0x33, 0x44]; // Different selector
+            let result = keychain.validate_call(account, any_dest, &calldata);
+            assert!(result.is_ok(), "Main key should bypass call restrictions");
 
             Ok(())
         })

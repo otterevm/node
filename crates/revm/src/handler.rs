@@ -47,7 +47,7 @@ use tempo_primitives::transaction::{
 use crate::{
     TempoBatchCallEnv, TempoEvm, TempoInvalidTransaction,
     common::TempoStateAccess,
-    error::{FeePaymentError, TempoHaltReason},
+    error::{FeePaymentError, TempoHaltReason, extract_selector},
     evm::TempoContext,
     gas_params::TempoGasParams,
 };
@@ -880,13 +880,18 @@ where
                     }
                 }
 
-                // TIP-1011: Store allowed destinations if specified
-                if let Some(destinations) = &key_auth.allowed_destinations {
-                    if !destinations.is_empty() {
-                        if let Err(err) = keychain.set_allowed_destinations(
+                // TIP-1011: Store allowed call scopes if specified
+                if let Some(calls) = &key_auth.allowed_calls {
+                    if !calls.is_empty() {
+                        // Convert CallScope to (Address, Selector) tuples for precompile storage
+                        let call_tuples: Vec<_> = calls
+                            .iter()
+                            .map(|c| (c.target, c.selector))
+                            .collect();
+                        if let Err(err) = keychain.set_allowed_calls(
                             *root_account,
                             access_key_addr,
-                            destinations,
+                            &call_tuples,
                         ) {
                             return handle_precompile_err(err);
                         }
@@ -982,28 +987,35 @@ where
                             reason: e.to_string(),
                         })?;
 
-                    // TIP-1011: Validate destinations for all calls in the transaction
-                    // Skip if authorizing this key in the same tx (destinations not stored yet)
+                    // TIP-1011: Validate call scopes (address + selector) for all calls
+                    // Skip if authorizing this key in the same tx (call scopes not stored yet)
                     if !is_authorizing_this_key {
                         let caller = tx.caller();
 
-                        // For AA transactions with batch calls, validate each call's destination
+                        // For AA transactions with batch calls, validate each call
                         if let Some(tempo_env) = tx.tempo_tx_env.as_ref() {
                             for call in &tempo_env.aa_calls {
                                 if let alloy_primitives::TxKind::Call(to) = call.to {
-                                    keychain.validate_destination(caller, to).map_err(|_| {
-                                        TempoInvalidTransaction::DestinationNotAllowed {
-                                            destination: to,
-                                        }
-                                    })?;
+                                    keychain
+                                        .validate_call(caller, to, call.input.as_ref())
+                                        .map_err(|_| {
+                                            TempoInvalidTransaction::CallNotAllowed {
+                                                destination: to,
+                                                selector: extract_selector(call.input.as_ref()),
+                                            }
+                                        })?;
                                 }
                             }
                         }
 
-                        // For single-call transactions, validate the main destination
+                        // For single-call transactions, validate the main call
                         if let alloy_primitives::TxKind::Call(to) = tx.kind() {
-                            keychain.validate_destination(caller, to).map_err(|_| {
-                                TempoInvalidTransaction::DestinationNotAllowed { destination: to }
+                            let input = tx.input();
+                            keychain.validate_call(caller, to, input).map_err(|_| {
+                                TempoInvalidTransaction::CallNotAllowed {
+                                    destination: to,
+                                    selector: extract_selector(input),
+                                }
                             })?;
                         }
                     }

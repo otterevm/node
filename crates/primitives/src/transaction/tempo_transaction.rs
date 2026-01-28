@@ -1627,7 +1627,7 @@ mod tests {
                 U256::from(10000),
             )]),
             key_id: address!("0000000000000000000000000000000000000004"),
-            allowed_destinations: None,
+            allowed_calls: None,
         }
         .into_signed(PrimitiveSignature::Secp256k1(Signature::test_signature()));
 

@@ -42,6 +42,12 @@ interface IAccountKeychain {
         uint64 periodEnd;        // Timestamp when current period expires
     }
 
+    /// @notice Call scope for restricting allowed (address, selector) pairs (TIP-1011)
+    struct CallScope {
+        address target;   // Target address (address(0) = wildcard for any address)
+        bytes4 selector;  // Function selector (bytes4(0) = wildcard for any selector)
+    }
+
     /// @notice Key information structure
     struct KeyInfo {
         SignatureType signatureType; // Signature type of the key
@@ -82,8 +88,8 @@ interface IAccountKeychain {
     error ZeroPublicKey();
     error ExpiryInPast();
     error UnauthorizedCaller();
-    /// @notice Destination not in allowed list (TIP-1011)
-    error DestinationNotAllowed(address destination);
+    /// @notice Call not in allowed list (TIP-1011)
+    error CallNotAllowed(address destination, bytes4 selector);
 
     /*//////////////////////////////////////////////////////////////
                         MANAGEMENT FUNCTIONS
@@ -158,14 +164,14 @@ interface IAccountKeychain {
     function getTransactionKey() external view returns (address);
 
     /**
-     * @notice Get allowed destinations for a key (TIP-1011)
+     * @notice Get allowed call scopes for a key (TIP-1011)
      * @param account The account address
      * @param keyId The key ID
-     * @return destinations Array of allowed destination addresses (empty = unrestricted)
+     * @return calls Array of allowed call scopes (empty = unrestricted)
      */
-    function getAllowedDestinations(address account, address keyId)
+    function getAllowedCalls(address account, address keyId)
         external
         view
-        returns (address[] memory destinations);
+        returns (CallScope[] memory calls);
 
 }
