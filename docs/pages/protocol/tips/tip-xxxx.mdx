@@ -536,7 +536,8 @@ The following write functions trigger initialization if `initialized == false`:
 - `rotateValidator(...)`
 - `initialize()` (explicit initialization)
 
-When any of these functions is called and `initialized == false`:
+When any of these functions is called and `initialized == false`, the
+following **Initialization Procedure** executes:
 
 1. Read all validators from ValidatorConfig V1 at
    `0xCCCCCCCC00000000000000000000000000000000`
@@ -586,8 +587,6 @@ interface IValidatorConfigV1 {
   (they were already validated in V1)
 - **All validators imported**: Both active and inactive V1 validators are
     imported; inactive ones have `deletedBeforeMigration = true`
-- **No genesis setup required**: No need to set `validatorsArray` at genesis;
-    reads proxy through V1 until first write
 
 ## Timeline
 
@@ -618,12 +617,6 @@ Before Fork           Post-Fork (reads)         First V2 Write           After I
 1. Initialize V2 at genesis with the initial validator set (set `initialized = true`)
 2. Optionally populate V1 for backward tooling compatibility
 3. Set `allegroTime = 0` to activate V2 immediately
-
-## Safety Checks
-
-Nodes should fail fast if:
-- V2 validator set is empty after initialization AND V1 had active validators
-  (indicates a bug in the initialization logic)
 
 ---
 
