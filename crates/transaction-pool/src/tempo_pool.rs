@@ -11,7 +11,6 @@ use alloy_primitives::{Address, B256, TxHash, map::HashMap};
 use parking_lot::RwLock;
 use reth_chainspec::ChainSpecProvider;
 use reth_eth_wire_types::HandleMempoolData;
-
 use reth_provider::{ChangedAccount, StateProviderFactory};
 use reth_transaction_pool::{
     AddedTransactionOutcome, AllPoolTransactions, BestTransactions, BestTransactionsAttributes,
