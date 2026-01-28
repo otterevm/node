@@ -528,19 +528,6 @@ modifying V2 state:
 - `validatorByPublicKey(pubkey)`: Filters `v1.getValidators()` by public key
 - `getNextFullDkgCeremony()`: Calls `v1.getNextFullDkgCeremony()`
 
-**Conversion from V1 to V2 format** (for reads only, no state changes):
-
-| V1 Field | V2 Field |
-|----------|----------|
-| `publicKey` | `publicKey` |
-| `validatorAddress` | `validatorAddress` |
-| `inboundAddress` | `inboundAddress` |
-| `outboundAddress` | `outboundAddress` |
-| `index` | `index` |
-| N/A | `addedAtHeight = 0` (unknown for V1 validators) |
-| `active == true` | `deletedAtHeight = 0`, `deletedBeforeMigration = false` |
-| `active == false` | `deletedAtHeight = 0`, `deletedBeforeMigration = true` |
-
 ### Write Behavior (Triggers Initialization)
 
 The following write functions trigger initialization if `initialized == false`:
