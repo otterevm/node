@@ -9,7 +9,7 @@ import { Vm } from "forge-std/Vm.sol";
 
 /// @title StablecoinDEX Invariant Tests
 /// @notice Fuzz-based invariant tests for the StablecoinDEX orderbook exchange
-/// @dev Tests invariants TEMPO-DEX1 through TEMPO-DEX9 as documented in README.md
+/// @dev Tests invariants TEMPO-DEX1 through TEMPO-DEX19 as documented in README.md
 contract StablecoinDEXInvariantTest is InvariantBaseTest {
 
     /// @dev Mapping of actor address to their placed order IDs
