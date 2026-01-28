@@ -84,7 +84,7 @@ pragma solidity ^0.8.13;
 ///      during node recovery. Validators are immutable after creation and can only be deleted once.
 ///
 ///      Key differences from V1:
-///      - `active` bool replaced by `addedAtHeight` and `deletedAtHeight`
+///      - `active` bool replaced by `addedAtHeight`, `deletedAtHeight`, and `deletedBeforeMigration`
 ///      - No `updateValidator` - validators are immutable after creation
 ///      - Requires Ed25519 signature on `addValidator` to prove key ownership
 ///      - Both address and public key must be unique across all validators (including deleted)
@@ -240,8 +240,7 @@ interface IValidatorConfigV2 {
 
     /// @notice Initialize V2 from V1 state (callable by anyone)
     /// @dev If already initialized, this is a no-op. Reads validators from V1 and
-    ///      populates V2 storage. If V1 read fails, sets initialized = true without
-    ///      importing any validators.
+    ///      populates V2 storage. Copies owner, validators, and nextDkgCeremony from V1.
     function initialize() external;
 }
 ```
@@ -622,10 +621,6 @@ Before Fork           Post-Fork (reads)         First V2 Write           After I
 
 ## Safety Checks
 
-If V1 read fails during initialization (e.g., V1 contract not deployed, call
-reverts), the initialization procedure skips importing validators and sets
-`initialized = true`. This allows V2 to start fresh without V1 data.
-
 Nodes should fail fast if:
 - V2 validator set is empty after initialization AND V1 had active validators
   (indicates a bug in the initialization logic)
@@ -648,7 +643,7 @@ The test suite must cover:
 
 6. **getValidators**: Returns all validators including deleted with correct
    `addedAtHeight` and `deletedAtHeight`
-7. **getActiveValidators**: Returns only validators with `deletedAtHeight == 0`
+7. **getActiveValidators**: Returns only validators with `deletedAtHeight == 0 && deletedBeforeMigration == false`
 8. **validatorByPublicKey**: Returns validator by public key lookup
 9. **validatorCount**: Returns total count including deleted
 
@@ -695,7 +690,6 @@ The test suite must cover:
 31. **DKG ceremony copied on init**: V2 `getNextFullDkgCeremony()` matches V1 after init
 32. **addedAtHeight set correctly**: Imported validators have
     `addedAtHeight == block.number` at initialization time
-33. **V1 read failure**: If V1 read fails, initialization sets bit without
-    importing validators
+33. **Owner copied on init**: V2 `owner()` matches V1 after initialization
 34. **V1 to V2 format conversion**: Reads before init correctly convert V1 format
     (`active` bool) to V2 format (`deletedBeforeMigration`)
