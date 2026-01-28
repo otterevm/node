@@ -43,7 +43,15 @@ Becomes a packed 72-bit value:
 uint256 internal _transferPolicyPacked;
 ```
 
-For backward compatibility, the `transferPolicyId()` view function continues to return just the policy ID.
+For backward compatibility, an explicit `transferPolicyId()` view function is added to return just the policy ID:
+
+```solidity
+/// @notice Returns the current transfer policy ID
+/// @return The policy ID (without the cached type)
+function transferPolicyId() external view returns (uint64) {
+    return uint64(_transferPolicyPacked);
+}
+```
 
 ## Interface Changes
 
@@ -129,6 +137,8 @@ modifier transferAuthorized(address from, address to) {
 | Transfer (2 calls) | ~8,400 gas | ~4,200 gas | ~4,200 gas |
 
 The savings come from eliminating the `_policyData[policyId]` SLOAD in each `isAuthorized` call.
+
+*Note: Gas costs assume cold SLOADs. If storage slots were accessed earlier in the same transaction, warm SLOADs cost only ~100 gas. For example, if `_policyData[policyId]` is already warm, the savings per call would be ~100 gas instead of ~2,100 gas. However, in the typical transfer flow, these are cold reads.*
 
 ---
 

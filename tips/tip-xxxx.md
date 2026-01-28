@@ -63,17 +63,18 @@ mapping(address => uint256) public accountPolicies;
 
 The `accountPolicies` mapping packs policy IDs and their types into a single 256-bit storage slot:
 
-| Bits | Field | Description |
-|------|-------|-------------|
-| 0–63 | `sendPolicyId` | Policy checked when this account is the sender (counterparty filter) |
-| 64–71 | `sendPolicyType` | Type of send policy (0 = whitelist, 1 = blacklist) |
-| 72–135 | `receivePolicyId` | Policy checked when this account is the receiver (counterparty filter) |
-| 136–143 | `receivePolicyType` | Type of receive policy (0 = whitelist, 1 = blacklist) |
-| 144–207 | `tokenReceivePolicyId` | Policy checked on tokens being received (token filter) |
-| 208–215 | `tokenReceivePolicyType` | Type of token receive policy (0 = whitelist, 1 = blacklist) |
-| 216–255 | Reserved | For future use (must be 0) |
+| Bits (inclusive) | Size | Field | Description |
+|------------------|------|-------|-------------|
+| 0–63 | 64 bits | `sendPolicyId` | Policy checked when this account is the sender (counterparty filter) |
+| 64–71 | 8 bits | `sendPolicyType` | Type of send policy (0 = whitelist, 1 = blacklist) |
+| 72–135 | 64 bits | `receivePolicyId` | Policy checked when this account is the receiver (counterparty filter) |
+| 136–143 | 8 bits | `receivePolicyType` | Type of receive policy (0 = whitelist, 1 = blacklist) |
+| 144–207 | 64 bits | `tokenReceivePolicyId` | Policy checked on tokens being received (token filter) |
+| 208–215 | 8 bits | `tokenReceivePolicyType` | Type of token receive policy (0 = whitelist, 1 = blacklist) |
+| 216–255 | 40 bits | Reserved | For future use (must be 0) |
 
-A policy ID of `0` means "no policy" (always authorized). This differs from token-level TIP-403 semantics where policy ID 0 is "always-reject"; for account-level policies, ID 0 means "no account policy set" (defer to token policy only).
+
+A policy ID of `0` means "no policy" (always authorized). This differs from token-level TIP-403 semantics where policy ID 0 is "always-reject"; for account-level policies, ID 0 means "no account policy set" (defer to token policy only). We use 8 bits for `policyType` even though there are currently only 2 policy types (whitelist and blacklist) for possible future expansions. 
 
 ### Why Embed Policy Type?
 
@@ -164,6 +165,15 @@ function getAccountPolicies(address account)
 ///      - to's receivePolicy is 0 OR from is authorized under to's receivePolicy
 ///      - to's tokenReceivePolicy is 0 OR token is authorized under to's tokenReceivePolicy
 function isTransferAuthorized(address from, address to, address token) external view returns (bool);
+
+/// @notice Checks if a mint is authorized under the receiver's token receive policy
+/// @param to The receiver address
+/// @param token The token contract address being minted
+/// @return True if the mint is authorized under the receiver's token receive policy
+/// @dev Returns true if to's tokenReceivePolicy is 0 OR token is authorized under it.
+///      This function does NOT check address-based receive policies, only the token filter.
+///      Used by TIP-20 mint operations.
+function isTokenReceiveAuthorized(address to, address token) external view returns (bool);
 ```
 
 ### Events
@@ -314,6 +324,35 @@ function isTransferAuthorized(address from, address to, address token) external 
 }
 ```
 
+### isTokenReceiveAuthorized
+
+This function checks only the token receive policy for mint operations.
+
+```solidity
+function isTokenReceiveAuthorized(address to, address token) external view returns (bool) {
+    // Decode receiver's policies (includes cached policy type)
+    (
+        ,
+        ,
+        ,
+        ,
+        uint64 toTokenReceivePolicy,
+        PolicyType toTokenReceiveType
+    ) = decodeAccountPolicies(accountPolicies[to]);
+    
+    // Check receiver's token receive policy: "which tokens can I receive?"
+    if (toTokenReceivePolicy != 0) {
+        bool inSet = policySet[toTokenReceivePolicy][token];
+        bool authorized = (toTokenReceiveType == PolicyType.WHITELIST) ? inSet : !inSet;
+        if (!authorized) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+```
+
 ## Integration with TIP-20
 
 The `transferAuthorized` modifier in TIP-20 is updated to check both token-level and account-level policies:
@@ -346,12 +385,7 @@ The following TIP-20 functions use the `transferAuthorized` modifier and will no
 
 ### Mint Behavior
 
-Minting checks both the token-level policy AND the recipient's account-level policies (receive policy and token receive policy). This is important because TIP-20 creation is permissionless — anyone can create a token and attempt to mint to any address. A regulated entity can block:
-
-1. **Unauthorized issuers** via receive policy (counterparty filter)
-2. **Unwanted tokens** via token receive policy (token filter)
-
-For account-level policy purposes, the **issuer** (msg.sender calling mint) is treated as the "from" address.
+Minting checks both the token-level policy AND the recipient's **token receive policy** (but not the address-based receive policy). This is important because TIP-20 creation is permissionless — anyone can create a token and attempt to mint to any address. A regulated entity can block **unwanted tokens** via token receive policy (token filter).
 
 ```solidity
 function _mint(address to, uint256 amount) internal {
@@ -360,9 +394,8 @@ function _mint(address to, uint256 amount) internal {
         revert PolicyForbids();
     }
     
-    // Account-level policy check (new)
-    // Treat issuer (msg.sender) as "from", address(this) as the token
-    if (!TIP403_REGISTRY.isTransferAuthorized(msg.sender, to, address(this))) {
+    // Account-level token receive policy check (new)
+    if (!TIP403_REGISTRY.isTokenReceiveAuthorized(to, address(this))) {
         revert PolicyForbids();
     }
     
@@ -370,11 +403,14 @@ function _mint(address to, uint256 amount) internal {
 }
 ```
 
-**Rationale:** A regulated entity (e.g., bank) may only want to:
-- Receive tokens from approved issuers (receive policy)
-- Hold approved tokens like USDC/EURC (token receive policy)
+**Rationale:** A regulated entity (e.g., bank) may only want to hold approved tokens like USDC/EURC (token receive policy). Without this check, anyone could spam regulated accounts with unwanted tokens from malicious TIP-20 contracts.
 
-Without these checks, anyone could spam regulated accounts with unwanted tokens from malicious TIP-20 contracts.
+**Why not check receive policy (counterparty filter) on mint?** The receive policy is designed to filter counterparties in transfers — it answers "who can send to me?" For minting, the "sender" is conceptually the token issuer, but:
+- Issuers are already permissioned via `ISSUER_ROLE` at the token level
+- Blocking mints based on issuer address would require regulated entities to maintain issuer allowlists, which is redundant with token-level controls
+- The primary concern for regulated entities is *which tokens* they hold, not *who minted* them
+
+The token receive policy alone provides sufficient protection against unwanted token spam.
 
 ### Burn Behavior
 
@@ -409,6 +445,8 @@ Fee transfers via `transferFeePreTx` and `transferFeePostTx` are unchanged since
 
 The baseline ~4,200 gas is incurred on ALL transfers, even when no accounts have policies set. This is the cost of reading the two `accountPolicies` slots to check if policies exist. Token receive policy adds no baseline cost (packed in same slot).
 
+*Note: Gas costs above assume cold SLOADs. If storage slots were accessed earlier in the same transaction, warm SLOADs cost only ~100 gas. For example, if `accountPolicies[from]` is warm, the baseline overhead drops to ~2,200 gas (one cold + one warm SLOAD).*
+
 ### State Creation Costs
 
 | Operation | Gas Cost |
@@ -423,9 +461,6 @@ The baseline ~4,200 gas is incurred on ALL transfers, even when no accounts have
 An account can reference **any existing TIP-403 policy**, including policies administered by other accounts. This enables shared compliance lists, with the same tradeoffs as multiple TIP-20s sharing a policy. 
 
 
-
----
-
 # Invariants
 
 The following invariants must always hold:
@@ -436,14 +471,19 @@ The following invariants must always hold:
 
 3. **Zero Policy Semantics**: A policy ID of `0` in `accountPolicies` MUST be interpreted as "no account-level policy" (always authorized at the account level). This differs from the token-level semantics where policy ID 0 is "always-reject".
 
-4. **Composable Authorization**: A transfer is authorized if and only if ALL of the following are true:
+4. **Composable Authorization (Transfers)**: A transfer is authorized if and only if ALL of the following are true:
    - Token-level policy authorizes `from`: `isAuthorized(token.transferPolicyId, from)`
    - Token-level policy authorizes `to`: `isAuthorized(token.transferPolicyId, to)`
    - Account-level send policy authorizes `to`: `from.sendPolicyId == 0 OR isAuthorized(from.sendPolicyId, to)`
    - Account-level receive policy authorizes `from`: `to.receivePolicyId == 0 OR isAuthorized(to.receivePolicyId, from)`
    - Account-level token receive policy authorizes `token`: `to.tokenReceivePolicyId == 0 OR isAuthorized(to.tokenReceivePolicyId, token)`
 
-5. **Mint Policy Check**: Minting operations MUST check the recipient's account-level receive policy (with issuer as "from") AND token receive policy (with the minted token). This protects regulated accounts from spam tokens and unauthorized issuers.
+4a. **Composable Authorization (Mints)**: A mint is authorized if and only if ALL of the following are true:
+   - Token-level policy authorizes `to`: `isAuthorized(token.transferPolicyId, to)`
+   - Account-level token receive policy authorizes `token`: `to.tokenReceivePolicyId == 0 OR isAuthorized(to.tokenReceivePolicyId, token)`
+   - Note: Address-based receive policy is NOT checked for mints.
+
+5. **Mint Policy Check**: Minting operations MUST check the recipient's account-level **token receive policy** only (not the address-based receive policy). This protects regulated accounts from unwanted tokens while avoiding redundant issuer filtering.
 
 6. **Burn Exemption**: Burn operations MUST NOT check account-level policies.
 
