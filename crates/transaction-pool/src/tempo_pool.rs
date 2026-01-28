@@ -58,6 +58,7 @@ impl<Client, Evm> TempoTransactionPool<Client, Evm> {
 impl<Client, Evm> TempoTransactionPool<Client, Evm>
 where
     Client: StateProviderFactory + ChainSpecProvider<ChainSpec = TempoChainSpec> + 'static,
+    Evm: reth_evm::ConfigureEvm + 'static,
 {
     /// Obtains a clone of the shared [`AmmLiquidityCache`].
     pub fn amm_liquidity_cache(&self) -> AmmLiquidityCache {

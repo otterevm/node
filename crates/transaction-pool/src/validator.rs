@@ -79,6 +79,7 @@ pub struct TempoTransactionValidator<Client, Evm> {
 impl<Client, Evm> TempoTransactionValidator<Client, Evm>
 where
     Client: ChainSpecProvider<ChainSpec = TempoChainSpec> + StateProviderFactory,
+    Evm: ConfigureEvm,
 {
     pub fn new(
         inner: EthTransactionValidator<Client, TempoPooledTransaction, Evm>,
