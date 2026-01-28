@@ -506,26 +506,46 @@ This ensures all nodes switch deterministically at the same point.
 
 ## Lazy Initialization
 
-V2 uses lazy initialization to automatically populate from V1 on first access.
+V2 uses lazy initialization to automatically populate from V1 on first write.
 The `initialized` bit (bit 255 of slot 0) tracks whether initialization has
 occurred.
 
-### Triggering Functions
+### Read Behavior (Before Initialization)
 
-The following functions trigger initialization if `initialized == false`:
+When `initialized == false`, read functions delegate entirely to V1 without
+modifying V2 state:
 
-- `getValidators()`
-- `getActiveValidators()`
-- `validatorCount()`
-- `validatorByIndex(uint256 index)`
-- `validatorByAddress(address validatorAddress)`
-- `validatorByPublicKey(bytes32 publicKey)`
+- `getValidators()`: Calls `v1.getValidators()` and converts to V2 format
+- `getActiveValidators()`: Calls `v1.getValidators()` and filters by `active == true`
+- `validatorCount()`: Returns `v1.getValidators().length`
+- `validatorByIndex(index)`: Returns `v1.getValidators()[index]` converted to V2 format
+- `validatorByAddress(addr)`: Filters `v1.getValidators()` by address
+- `validatorByPublicKey(pubkey)`: Filters `v1.getValidators()` by public key
+- `getNextFullDkgCeremony()`: Calls `v1.getNextFullDkgCeremony()`
+
+**Conversion from V1 to V2 format** (for reads only, no state changes):
+
+| V1 Field | V2 Field |
+|----------|----------|
+| `publicKey` | `publicKey` |
+| `validatorAddress` | `validatorAddress` |
+| `inboundAddress` | `inboundAddress` |
+| `outboundAddress` | `outboundAddress` |
+| `index` | `index` |
+| N/A | `addedAtHeight = 0` (unknown for V1 validators) |
+| `active == true` | `deletedAtHeight = 0` |
+| `active == false` | `deletedAtHeight = 1` (indicates deleted, exact height unknown) |
+
+### Write Behavior (Triggers Initialization)
+
+The following write functions trigger initialization if `initialized == false`:
+
 - `addValidator(...)`
-- `initialize()`
+- `deleteValidator(...)`
+- `rotateValidator(...)`
+- `initialize()` (explicit initialization)
 
-### Initialization Procedure
-
-When any triggering function is called and `initialized == false`:
+When any of these functions is called and `initialized == false`:
 
 1. Read all validators from ValidatorConfig V1 at
    `0xCCCCCCCC00000000000000000000000000000000`
@@ -542,6 +562,7 @@ When any triggering function is called and `initialized == false`:
    - Populate lookup maps (`validators[addr]`, `pubkeyToIndex[pubkey]`)
 3. Copy `nextDkgCeremony` from V1 to V2 (if V1 read succeeds)
 4. Set `initialized = true` (bit 255 of slot 0)
+5. Proceed with the original write operation
 
 If the V1 read fails at any point, skip steps 2-3 and proceed directly to step 4.
 
@@ -549,7 +570,7 @@ Note: The `owner` is NOT copied from V1. V2's owner must be set separately
 (typically at genesis or via a privileged initialization call).
 
 ```solidity
-// V1 interface used during initialization
+// V1 interface used during initialization and read delegation
 interface IValidatorConfigV1 {
     struct Validator {
         bytes32 publicKey;
@@ -567,25 +588,29 @@ interface IValidatorConfigV1 {
 
 ### Properties
 
-- **One-time**: Initialization executes exactly once; subsequent calls are no-ops
-- **Atomic**: The entire initialization completes in a single transaction
+- **Read-through before init**: Reads delegate to V1 with no state changes
+- **Write-triggered init**: First write copies V1 state to V2, then executes
+- **One-time**: Initialization executes exactly once; subsequent writes skip it
+- **Atomic**: The entire initialization + write completes in a single transaction
 - **Transparent**: Callers do not need to know whether initialization occurred
 - **No signatures required**: V1 validators are imported without Ed25519 signatures
   (they were already validated in V1)
 - **All validators imported**: Both active and inactive V1 validators are
     imported; inactive ones have `deletedAtHeight = block.number`
+- **No genesis setup required**: No need to set `validatorsArray` at genesis;
+    reads proxy through V1 until first write
 
 ## Timeline
 
 ```
-Before Fork                    First V2 Read                   After Initialization
-     │                              │                              │
-     │  DKG reads V1                │  Lazy init executes          │  DKG reads V2
-     │  V2 empty, initialized=0     │  V2 populated from V1        │  initialized=1
-     │                              │                              │
-─────┴──────────────────────────────┴──────────────────────────────┴─────────────────►
-                                    │
-                              allegroTime
+Before Fork           Post-Fork (reads)         First V2 Write           After Initialization
+     │                      │                          │                          │
+     │  DKG reads V1        │  V2 reads proxy to V1    │  Init + write executes   │  V2 reads from V2
+     │                      │  (no state change)       │  V2 populated from V1    │  initialized=1
+     │                      │                          │                          │
+─────┴──────────────────────┴──────────────────────────┴──────────────────────────┴───────────────►
+                            │                          │
+                      allegroTime               addValidator/etc
 ```
 
 ## Migration Steps
@@ -594,9 +619,10 @@ Before Fork                    First V2 Read                   After Initializat
 
 1. **Release new node software** with Allegro hardfork support
 2. **Schedule the fork** by updating chainspec with target `allegroTime`
-3. **At fork activation**: First V2 read automatically triggers initialization
-4. **Post-fork**: DKG reads V2; future validator changes use V2's `addValidator`
-   with signatures
+3. **At fork activation**: V2 reads proxy through to V1 (no state changes needed)
+4. **On first write** (e.g., `addValidator`, `deleteValidator`): V2 automatically
+   copies V1 state, sets `initialized = true`, then executes the write
+5. **Post-init**: All reads/writes use V2 state directly
 
 ### For New Networks
 
@@ -668,14 +694,18 @@ The test suite must cover:
 
 ### Lazy Initialization
 
-22. **Triggering functions**: `getValidators`, `getActiveValidators`,
-    `validatorCount`, `validatorByIndex`, `validatorByAddress`,
-    `validatorByPublicKey`, `addValidator`, `initialize` all trigger
-    initialization on first access; subsequent accesses are no-ops
-23. **All validators imported**: Both V1 active and inactive validators are
+28. **Read delegation before init**: When `initialized == false`, `getValidators`,
+    `getActiveValidators`, `validatorCount`, `validatorByIndex`, `validatorByAddress`,
+    `validatorByPublicKey`, `getNextFullDkgCeremony` all delegate to V1 without
+    modifying V2 state
+29. **Write triggers init**: `addValidator`, `deleteValidator`, `rotateValidator`,
+    `initialize` trigger initialization on first call; subsequent calls skip init
+30. **All validators imported on init**: Both V1 active and inactive validators are
     imported; inactive ones have `deletedAtHeight = block.number`
-24. **DKG ceremony copied**: V2 `getNextFullDkgCeremony()` matches V1
-25. **addedAtHeight set correctly**: Imported validators have
+31. **DKG ceremony copied on init**: V2 `getNextFullDkgCeremony()` matches V1 after init
+32. **addedAtHeight set correctly**: Imported validators have
     `addedAtHeight == block.number` at initialization time
-26. **V1 read failure**: If V1 read fails, initialization sets bit without
+33. **V1 read failure**: If V1 read fails, initialization sets bit without
     importing validators
+34. **V1 to V2 format conversion**: Reads before init correctly convert V1 format
+    (`active` bool) to V2 format (`deletedAtHeight`)
