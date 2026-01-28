@@ -50,30 +50,54 @@ The TIP-403 Registry is extended with a new mapping that allows any account to s
 ### New Storage
 
 ```solidity
-mapping(address => uint128) public accountPolicies;
+mapping(address => uint256) public accountPolicies;
 ```
 
-The `accountPolicies` mapping packs two `uint64` policy IDs into a single storage slot:
+The `accountPolicies` mapping packs policy IDs and their types into a single 256-bit storage slot:
 
-- **Bits 0–63**: `sendPolicyId` — policy checked when this account is the sender
-- **Bits 64–127**: `receivePolicyId` — policy checked when this account is the receiver
+| Bits | Field | Description |
+|------|-------|-------------|
+| 0–63 | `sendPolicyId` | Policy checked when this account is the sender |
+| 64–71 | `sendPolicyType` | Type of send policy (0 = whitelist, 1 = blacklist) |
+| 72–135 | `receivePolicyId` | Policy checked when this account is the receiver |
+| 136–143 | `receivePolicyType` | Type of receive policy (0 = whitelist, 1 = blacklist) |
+| 144–255 | Reserved | For future use (must be 0) |
 
-A policy ID of `0` means "no policy" (always authorized). This matches the existing TIP-403 semantics where policy ID 0 is the "always-reject" policy, but for account-level policies we repurpose ID 0 as "no account policy set" (i.e., defer to token policy only).
+A policy ID of `0` means "no policy" (always authorized). This differs from token-level TIP-403 semantics where policy ID 0 is "always-reject"; for account-level policies, ID 0 means "no account policy set" (defer to token policy only).
+
+### Why Embed Policy Type?
+
+TIP-403 policy types are **immutable** — set at creation and never changed. By embedding the policy type in the account storage, we avoid an SLOAD to `policyData[policyId]` on every authorization check, saving ~2,100 gas per check.
+
+When `setAccountPolicies` is called, the policy type is read from the registry once and cached in the account's storage. Since policy types cannot change, this cached value remains valid forever.
 
 ### Encoding
 
 ```solidity
-function encodeAccountPolicies(uint64 sendPolicyId, uint64 receivePolicyId) 
-    internal pure returns (uint128) 
-{
-    return uint128(sendPolicyId) | (uint128(receivePolicyId) << 64);
+function encodeAccountPolicies(
+    uint64 sendPolicyId, 
+    PolicyType sendPolicyType,
+    uint64 receivePolicyId, 
+    PolicyType receivePolicyType
+) internal pure returns (uint256) {
+    return uint256(sendPolicyId) 
+        | (uint256(uint8(sendPolicyType)) << 64)
+        | (uint256(receivePolicyId) << 72)
+        | (uint256(uint8(receivePolicyType)) << 136);
 }
 
-function decodeAccountPolicies(uint128 packed) 
-    internal pure returns (uint64 sendPolicyId, uint64 receivePolicyId) 
+function decodeAccountPolicies(uint256 packed) 
+    internal pure returns (
+        uint64 sendPolicyId, 
+        PolicyType sendPolicyType,
+        uint64 receivePolicyId, 
+        PolicyType receivePolicyType
+    ) 
 {
     sendPolicyId = uint64(packed);
-    receivePolicyId = uint64(packed >> 64);
+    sendPolicyType = PolicyType(uint8(packed >> 64));
+    receivePolicyId = uint64(packed >> 72);
+    receivePolicyType = PolicyType(uint8(packed >> 136));
 }
 ```
 
@@ -86,14 +110,22 @@ The following functions are added to the TIP-403 Registry:
 /// @param sendPolicyId Policy to check when caller sends (0 = no policy)
 /// @param receivePolicyId Policy to check when caller receives (0 = no policy)
 /// @dev Both policies must exist (or be 0). Caller can only set their own policies.
+/// @dev Policy types are cached from the registry at set time (immutable, so always valid).
 function setAccountPolicies(uint64 sendPolicyId, uint64 receivePolicyId) external;
 
 /// @notice Returns the send and receive policies for an account
 /// @param account The account to query
 /// @return sendPolicyId The policy checked when account sends (0 = no policy)
+/// @return sendPolicyType The type of the send policy
 /// @return receivePolicyId The policy checked when account receives (0 = no policy)
+/// @return receivePolicyType The type of the receive policy
 function getAccountPolicies(address account) 
-    external view returns (uint64 sendPolicyId, uint64 receivePolicyId);
+    external view returns (
+        uint64 sendPolicyId, 
+        PolicyType sendPolicyType,
+        uint64 receivePolicyId, 
+        PolicyType receivePolicyType
+    );
 
 /// @notice Checks if a transfer is authorized under account-level policies
 /// @param from The sender address
@@ -132,15 +164,32 @@ error PolicyNotFound();
 
 ```solidity
 function setAccountPolicies(uint64 sendPolicyId, uint64 receivePolicyId) external {
-    // Validate policies exist (0 is always valid as "no policy")
-    if (sendPolicyId != 0 && !policyExists(sendPolicyId)) {
-        revert PolicyNotFound();
-    }
-    if (receivePolicyId != 0 && !policyExists(receivePolicyId)) {
-        revert PolicyNotFound();
+    PolicyType sendPolicyType;
+    PolicyType receivePolicyType;
+    
+    // Validate and cache send policy type
+    if (sendPolicyId != 0) {
+        if (!policyExists(sendPolicyId)) {
+            revert PolicyNotFound();
+        }
+        (sendPolicyType, ) = policyData(sendPolicyId);
     }
     
-    accountPolicies[msg.sender] = encodeAccountPolicies(sendPolicyId, receivePolicyId);
+    // Validate and cache receive policy type
+    if (receivePolicyId != 0) {
+        if (!policyExists(receivePolicyId)) {
+            revert PolicyNotFound();
+        }
+        (receivePolicyType, ) = policyData(receivePolicyId);
+    }
+    
+    // Store packed policy data (IDs + types)
+    accountPolicies[msg.sender] = encodeAccountPolicies(
+        sendPolicyId, 
+        sendPolicyType,
+        receivePolicyId, 
+        receivePolicyType
+    );
     
     emit AccountPoliciesUpdated(msg.sender, sendPolicyId, receivePolicyId);
 }
@@ -150,7 +199,12 @@ function setAccountPolicies(uint64 sendPolicyId, uint64 receivePolicyId) externa
 
 ```solidity
 function getAccountPolicies(address account) 
-    external view returns (uint64 sendPolicyId, uint64 receivePolicyId) 
+    external view returns (
+        uint64 sendPolicyId, 
+        PolicyType sendPolicyType,
+        uint64 receivePolicyId, 
+        PolicyType receivePolicyType
+    ) 
 {
     return decodeAccountPolicies(accountPolicies[account]);
 }
@@ -158,26 +212,39 @@ function getAccountPolicies(address account)
 
 ### isTransferAuthorized
 
+This function checks account-level policies **without** reading `policyData` — the policy type is embedded in the account storage.
+
 ```solidity
 function isTransferAuthorized(address from, address to) external view returns (bool) {
-    // Decode sender's policies
-    (uint64 fromSendPolicy, ) = decodeAccountPolicies(accountPolicies[from]);
+    // Decode sender's policies (includes cached policy type)
+    (
+        uint64 fromSendPolicy, 
+        PolicyType fromSendType,
+        ,
+    ) = decodeAccountPolicies(accountPolicies[from]);
     
     // Check sender's send policy: "who can I send to?"
-    // If sendPolicy is 0, no restriction. Otherwise, `to` must be authorized.
     if (fromSendPolicy != 0) {
-        if (!isAuthorized(fromSendPolicy, to)) {
+        bool inSet = policySet[fromSendPolicy][to];
+        bool authorized = (fromSendType == PolicyType.WHITELIST) ? inSet : !inSet;
+        if (!authorized) {
             return false;
         }
     }
     
-    // Decode receiver's policies
-    (, uint64 toReceivePolicy) = decodeAccountPolicies(accountPolicies[to]);
+    // Decode receiver's policies (includes cached policy type)
+    (
+        ,
+        ,
+        uint64 toReceivePolicy, 
+        PolicyType toReceiveType
+    ) = decodeAccountPolicies(accountPolicies[to]);
     
     // Check receiver's receive policy: "who can send to me?"
-    // If receivePolicy is 0, no restriction. Otherwise, `from` must be authorized.
     if (toReceivePolicy != 0) {
-        if (!isAuthorized(toReceivePolicy, from)) {
+        bool inSet = policySet[toReceivePolicy][from];
+        bool authorized = (toReceiveType == PolicyType.WHITELIST) ? inSet : !inSet;
+        if (!authorized) {
             return false;
         }
     }
@@ -246,22 +313,20 @@ Fee transfers via `transferFeePreTx` and `transferFeePostTx` do NOT check accoun
 | Scenario | Additional Gas |
 |----------|----------------|
 | Neither account has policies set | ~4,200 gas (2 SLOADs for accountPolicies) |
-| Sender has send policy | ~6,300 gas (+1 isAuthorized call) |
-| Receiver has receive policy | ~6,300 gas (+1 isAuthorized call) |
-| Both have policies | ~8,400 gas (+2 isAuthorized calls) |
+| Sender has send policy | ~6,300 gas (+1 policySet SLOAD) |
+| Receiver has receive policy | ~6,300 gas (+1 policySet SLOAD) |
+| Both have policies | ~8,400 gas (+2 policySet SLOADs) |
 
 ### Breakdown
 
 1. `accountPolicies[from]` SLOAD: ~2,100 gas
 2. `accountPolicies[to]` SLOAD: ~2,100 gas
-3. `isAuthorized(sendPolicy, to)` if sendPolicy != 0:
-   - `policyData[policyId]` SLOAD: ~2,100 gas (to get policy type)
-   - `policySet[policyId][to]` SLOAD: ~2,100 gas
-4. `isAuthorized(receivePolicy, from)` if receivePolicy != 0:
-   - `policyData[policyId]` SLOAD: ~2,100 gas
-   - `policySet[policyId][from]` SLOAD: ~2,100 gas
+3. If `fromSendPolicy != 0`: `policySet[fromSendPolicy][to]` SLOAD: ~2,100 gas
+4. If `toReceivePolicy != 0`: `policySet[toReceivePolicy][from]` SLOAD: ~2,100 gas
 
-Note: The baseline ~4,200 gas is incurred on ALL transfers, even when no accounts have policies set. This is the cost of reading the two `accountPolicies` slots to check if policies exist.
+**Note on optimization**: Because we embed the policy type in `accountPolicies`, we do NOT need to read `policyData[policyId]` during authorization. This saves ~2,100 gas per policy check compared to a naive implementation.
+
+The baseline ~4,200 gas is incurred on ALL transfers, even when no accounts have policies set. This is the cost of reading the two `accountPolicies` slots to check if policies exist.
 
 ### State Creation Costs
 
@@ -271,6 +336,29 @@ Note: The baseline ~4,200 gas is incurred on ALL transfers, even when no account
 | Subsequent updates to account policies | 5,000 gas |
 | Adding address to policy membership | 250,000 gas (first time) |
 | Updating address in policy membership | 5,000 gas |
+
+## Shared Policy Semantics
+
+An account can reference **any existing TIP-403 policy**, including policies administered by other accounts. This enables shared compliance lists:
+
+```solidity
+// Consortium admin creates a shared "approved counterparties" policy
+uint64 sharedPolicy = TIP403_REGISTRY.createPolicy(consortiumAdmin, PolicyType.WHITELIST);
+
+// Multiple banks use the same policy
+bankA.setAccountPolicies(0, sharedPolicy);  // Bank A receives only from approved
+bankB.setAccountPolicies(0, sharedPolicy);  // Bank B uses same list
+bankC.setAccountPolicies(sharedPolicy, 0);  // Bank C sends only to approved
+```
+
+**Important considerations:**
+
+1. **Admin controls membership**: The policy admin can add/remove addresses from the policy. All accounts using that policy are affected.
+2. **No notification on changes**: Accounts using a shared policy are not notified when membership changes.
+3. **Policy type is cached**: The policy type (whitelist/blacklist) is cached when `setAccountPolicies` is called. Since policy types are immutable, this is always correct.
+4. **Self-administered policies**: For full control, accounts can create their own policies and serve as the admin.
+
+This design is intentional: shared policies reduce state duplication for entities with common compliance requirements (e.g., banks in the same regulatory jurisdiction).
 
 ## Example Usage
 
@@ -353,9 +441,11 @@ The following invariants must always hold:
 
 7. **Fee Transfer Exemption**: Fee transfers (`transferFeePreTx`, `transferFeePostTx`) MUST NOT check account-level policies.
 
-8. **Storage Efficiency**: Account policies MUST be stored in a single storage slot per account (packed as two uint64 values).
+8. **Storage Efficiency**: Account policies MUST be stored in a single storage slot per account (packed policy IDs and types into 256 bits).
 
 9. **Gas Consistency**: Reading `accountPolicies[address]` for a non-existent entry MUST return 0 (interpreted as no policies set), incurring only the cold SLOAD cost (~2,100 gas).
+
+10. **Cached Policy Type Validity**: The policy type cached in `accountPolicies` MUST always match the policy type in `policyData[policyId]`. This is guaranteed because TIP-403 policy types are immutable after creation.
 
 ## Critical Test Cases
 
@@ -377,5 +467,8 @@ The following invariants must always hold:
 16. **Blacklist receive policy**: Account with blacklist receive policy cannot receive from blacklisted addresses
 17. **Cross-account policies**: A sends to B where A has send policy and B has receive policy; both must authorize
 18. **Bidirectional transfer**: A and B both have policies; transfer A→B checks A's send + B's receive; transfer B→A checks B's send + A's receive
-19. **Storage packing**: Verify sendPolicyId and receivePolicyId are correctly packed/unpacked
+19. **Storage packing**: Verify sendPolicyId, sendPolicyType, receivePolicyId, receivePolicyType are correctly packed/unpacked
 20. **Gas measurement**: Verify gas costs match expected values for each scenario
+21. **Cached policy type**: Verify cached policy type matches registry policy type
+22. **Shared policy**: Multiple accounts using same policy all see membership changes
+23. **Self-administered policy**: Account creates own policy and uses it (full control)
