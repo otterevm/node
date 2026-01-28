@@ -2507,17 +2507,21 @@ mod tests {
             enforce_limits: bool,
             spending_limit: Option<(Address, U256)>, // (token, limit)
         ) -> TempoTransactionValidator<
-            MockEthProvider<reth_ethereum_primitives::EthPrimitives, TempoChainSpec>,
+            MockEthProvider<tempo_primitives::TempoPrimitives, TempoChainSpec>,
+            TempoEvmConfig,
         > {
-            let provider =
-                MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
+            let provider = MockEthProvider::<
+                tempo_primitives::TempoPrimitives,
+                reth_chainspec::ChainSpec,
+            >::new()
+            .with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
 
             // Add sender account
             provider.add_account(
                 transaction.sender(),
                 ExtendedAccount::new(transaction.nonce(), U256::ZERO),
             );
-            provider.add_block(B256::random(), Default::default());
+            provider.add_block(B256::random(), tempo_primitives::Block::default());
 
             // Setup AccountKeychain storage with AuthorizedKey
             let slot_value = AuthorizedKey {
@@ -2544,7 +2548,8 @@ mod tests {
                 ExtendedAccount::new(0, U256::ZERO).extend_storage(storage),
             );
 
-            let inner = EthTransactionValidatorBuilder::new(provider.clone())
+            let evm_config = TempoEvmConfig::new_with_default_factory(MODERATO.clone());
+            let inner = EthTransactionValidatorBuilder::new(provider.clone(), evm_config)
                 .disable_balance_check()
                 .build(InMemoryBlobStore::default());
             let amm_cache =
