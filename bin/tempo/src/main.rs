@@ -54,17 +54,7 @@ struct TempoArgs {
     #[arg(long, value_name = "URL", default_missing_value = "auto", num_args(0..=1))]
     pub follow: Option<String>,
 
-    /// Unified telemetry URL that expands to configure logs, metrics, and consensus telemetry.
-    ///
-    /// When provided, this URL is expanded and overwrites set values for:
-    ///
-    ///  - `--logs-otlp=<url>/opentelemetry/v1/logs`
-    ///
-    ///  - `--logs-otlp.filter=debug`
-    ///
-    ///  - `--metrics.prometheus.push.url=<url>/api/v1/import/prometheus`
-    ///
-    ///  - `--consensus.metrics-otlp=<url>/opentelemetry/v1/metrics`
+    /// Unified telemetry URL that configures logs, metrics, and consensus telemetry.
     ///
     /// The URL must include credentials: `https://user:pass@metrics.example.com`
     #[arg(long, value_name = "URL")]
@@ -126,15 +116,39 @@ fn main() -> eyre::Result<()> {
     tempo_node::init_version_metadata();
     defaults::init_defaults();
 
-    // Expand --telemetry-url into the equivalent telemetry arguments
-    let args = defaults::expand_telemetry_args(std::env::args().collect())?;
-
-    let cli = Cli::<
+    let mut cli = Cli::<
         TempoChainSpecParser,
         TempoArgs,
         DefaultRpcModuleValidator,
         tempo_cmd::TempoSubcommand,
-    >::parse_from(args);
+    >::parse();
+
+    // Apply telemetry URL expansion to CLI config
+    if let Commands::Node(ref mut node_cmd) = cli.command {
+        if let Some(ref telemetry_url) = node_cmd.ext.telemetry_url {
+            let config = defaults::parse_telemetry_config(telemetry_url)?;
+
+            // Set logs OTLP if not already set
+            if cli.traces.logs_otlp.is_none() {
+                cli.traces.logs_otlp = Some(config.logs_otlp_url);
+                cli.traces.logs_otlp_filter = config
+                    .logs_otlp_filter
+                    .parse()
+                    .expect("invalid default logs filter");
+            }
+
+            // Set prometheus push URL if not already set
+            if node_cmd.metrics.push_gateway_url.is_none() {
+                node_cmd.metrics.push_gateway_url = Some(config.prometheus_push_url);
+            }
+
+            // Set consensus metrics OTLP if not already set
+            if node_cmd.ext.consensus.metrics_otlp_url.is_none() {
+                node_cmd.ext.consensus.metrics_otlp_url = Some(config.consensus_metrics_otlp_url);
+            }
+        }
+    }
+
     let is_node = matches!(cli.command, Commands::Node(_));
 
     let (args_and_node_handle_tx, args_and_node_handle_rx) =
