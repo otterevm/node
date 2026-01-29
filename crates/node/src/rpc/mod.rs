@@ -26,7 +26,7 @@ pub use token::{TempoToken, TempoTokenApiServer};
 use crate::{node::TempoNode, rpc::error::TempoEthApiError};
 use alloy::{
     consensus::TxReceipt,
-    primitives::{U256, uint},
+    primitives::U256,
 };
 use reth_ethereum::tasks::{
     TaskSpawner,
@@ -63,11 +63,6 @@ use tempo_primitives::{
     subblock::PartialValidatorKey,
 };
 use tokio::sync::{Mutex, broadcast};
-
-/// Placeholder constant for `eth_getBalance` calls because the native token balance is N/A on
-/// Tempo.
-pub const NATIVE_BALANCE_PLACEHOLDER: U256 =
-    uint!(4242424242424242424242424242424242424242424242424242424242424242424242424242_U256);
 
 /// Capacity of the subblock transactions broadcast channel.
 ///
@@ -243,7 +238,7 @@ impl<N: FullNodeTypes<Types = TempoNode>> EthState for TempoEthApi<N> {
         _address: alloy_primitives::Address,
         _block_id: Option<alloy_eips::BlockId>,
     ) -> Result<U256, Self::Error> {
-        Ok(NATIVE_BALANCE_PLACEHOLDER)
+        Err(error::TempoEthApiError::NativeBalanceNotSupported)
     }
 
     #[inline]

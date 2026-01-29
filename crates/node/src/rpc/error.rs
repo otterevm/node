@@ -6,21 +6,33 @@ use reth_evm::revm::context::result::EVMError;
 use reth_node_core::rpc::result::rpc_err;
 use reth_rpc_eth_api::AsEthApiError;
 use reth_rpc_eth_types::{
-    EthApiError,
     error::api::{FromEvmHalt, FromRevert},
+    EthApiError,
 };
 use tempo_evm::TempoHaltReason;
+
+/// Error code for Tempo-specific RPC errors.
+pub const TEMPO_RPC_ERROR_CODE: i32 = -32000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TempoEthApiError {
     #[error(transparent)]
     EthApiError(EthApiError),
+    #[error("Native balance not used. See docs.tempo.xyz/quickstart/wallet-developers for balance queries.")]
+    NativeBalanceNotSupported,
 }
 
 impl From<TempoEthApiError> for jsonrpsee::types::error::ErrorObject<'static> {
     fn from(error: TempoEthApiError) -> Self {
         match error {
             TempoEthApiError::EthApiError(err) => err.into(),
+            TempoEthApiError::NativeBalanceNotSupported => {
+                jsonrpsee::types::error::ErrorObject::owned(
+                    TEMPO_RPC_ERROR_CODE,
+                    error.to_string(),
+                    None::<()>,
+                )
+            }
         }
     }
 }
@@ -34,6 +46,7 @@ impl AsEthApiError for TempoEthApiError {
     fn as_err(&self) -> Option<&EthApiError> {
         match self {
             Self::EthApiError(err) => Some(err),
+            Self::NativeBalanceNotSupported => None,
         }
     }
 }
