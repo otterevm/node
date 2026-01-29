@@ -262,7 +262,7 @@ function burnBlocked(address from, uint256 amount) external {
 
 ### Cancel Stale Order
 
-The `cancelStaleOrder` function checks sender authorization since the maker escrowed (sent) the token:
+The `cancelStaleOrder` function checks sender authorization on the token escrowed by the maker, since if the order is filled, the maker will have to send that token:
 
 ```solidity
 function cancelStaleOrder(uint128 orderId) external {
@@ -281,15 +281,10 @@ function cancelStaleOrder(uint128 orderId) external {
 
 ## Immutability
 
-Compound policies are immutable once created. There is no `modifyCompoundPolicy` function. To change policy behavior, token issuers must:
+Compound policies are immutable once created. To change policy behavior, token issuers must:
 
 1. Create a new compound policy with the desired configuration
 2. Update the token's `transferPolicyId` to the new policy
-
-This design:
-- Simplifies implementation and reduces attack surface
-- Allows future extensions without breaking existing policies
-- Enables clear auditability of policy changes via on-chain events
 
 ## Backward Compatibility
 
@@ -330,5 +325,3 @@ This TIP is fully backward compatible:
 6. **TIP-20 mint**: Verify that mints only check recipient authorization.
 
 7. **TIP-20 burnBlocked**: Verify that burnBlocked checks sender authorization (and allows burning from blocked senders).
-
-8. **Immutability**: Verify that there is no way to modify a compound policy after creation.
