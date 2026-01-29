@@ -59,6 +59,106 @@ impl<'a> EvmPrecompileStorageProvider<'a> {
             cfg.gas_params.clone(),
         )
     }
+
+    /// T1+ sstore: Deducts gas BEFORE mutating state.
+    ///
+    /// We first load the slot to get the cold/warm status and current values,
+    /// then calculate and deduct gas upfront, then perform the actual write.
+    #[inline]
+    fn sstore_t1(
+        &mut self,
+        address: Address,
+        key: U256,
+        value: U256,
+    ) -> Result<(), TempoPrecompileError> {
+        // Step 1: Load the slot to get values and cold status
+        // This marks the slot as warm, but we capture the original is_cold status
+        let (original_value, present_value, is_cold) = {
+            let mut account = self.internals.load_account_mut(address)?;
+            let slot = account.sload(key, false)?;
+            (
+                slot.data.original_value(),
+                slot.data.present_value(),
+                slot.is_cold,
+            )
+        };
+
+        // Step 2: Deduct static gas first
+        self.deduct_gas(self.gas_params.sstore_static_gas())?;
+
+        // Step 3: Calculate and deduct dynamic gas using the original cold status
+        // Note: We use the is_cold captured from sload, which reflects whether
+        // the slot was cold before this sstore operation
+        let sstore_result = revm::interpreter::SStoreResult {
+            original_value,
+            present_value,
+            new_value: value,
+        };
+
+        // Also add cold storage cost if this was a cold slot access
+        // (the sload already warmed it, but we need to charge for the original cold access)
+        if is_cold {
+            self.deduct_gas(self.gas_params.cold_storage_additional_cost())?;
+        }
+
+        // Deduct the sstore dynamic gas (passing is_cold=false since we handle cold cost separately)
+        self.deduct_gas(
+            self.gas_params
+                .sstore_dynamic_gas(true, &sstore_result, false),
+        )?;
+
+        // Step 4: Only now perform the actual storage write (all gas has been deducted)
+        let result = self
+            .internals
+            .load_account_mut(address)?
+            .sstore(key, value, false)?;
+
+        // Step 5: Apply gas refund based on the actual result
+        self.refund_gas(self.gas_params.sstore_refund(true, &result.data));
+
+        Ok(())
+    }
+
+    /// Pre-T1 legacy sstore: Mutates state before deducting gas.
+    ///
+    /// Required for consensus compatibility with existing blocks.
+    #[inline]
+    fn sstore_legacy(
+        &mut self,
+        address: Address,
+        key: U256,
+        value: U256,
+    ) -> Result<(), TempoPrecompileError> {
+        let result = self
+            .internals
+            .load_account_mut(address)?
+            .sstore(key, value, false)?;
+
+        self.deduct_gas(self.gas_params.sstore_static_gas())?;
+
+        self.deduct_gas(
+            self.gas_params
+                .sstore_dynamic_gas(true, &result.data, result.is_cold),
+        )?;
+
+        self.refund_gas(self.gas_params.sstore_refund(true, &result.data));
+
+        Ok(())
+    }
+
+    #[inline]
+    fn deduct_gas(&mut self, gas: u64) -> Result<(), TempoPrecompileError> {
+        self.gas_remaining = self
+            .gas_remaining
+            .checked_sub(gas)
+            .ok_or(TempoPrecompileError::OutOfGas)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn refund_gas(&mut self, gas: i64) {
+        self.gas_refunded = self.gas_refunded.saturating_add(gas);
+    }
 }
 
 impl<'a> PrecompileStorageProvider for EvmPrecompileStorageProvider<'a> {
@@ -118,24 +218,13 @@ impl<'a> PrecompileStorageProvider for EvmPrecompileStorageProvider<'a> {
         key: U256,
         value: U256,
     ) -> Result<(), TempoPrecompileError> {
-        let result = self
-            .internals
-            .load_account_mut(address)?
-            .sstore(key, value, false)?;
-
-        // TODO(rakita) can be moved to the beginning of the function. Requires fork.
-        self.deduct_gas(self.gas_params.sstore_static_gas())?;
-
-        // dynamic gas
-        self.deduct_gas(
-            self.gas_params
-                .sstore_dynamic_gas(true, &result.data, result.is_cold),
-        )?;
-
-        // refund gas.
-        self.refund_gas(self.gas_params.sstore_refund(true, &result.data));
-
-        Ok(())
+        // T1+: Deduct gas BEFORE mutating state to prevent partial state commits on OOG.
+        // Pre-T1: Use legacy behavior for consensus compatibility with existing blocks.
+        if self.spec.is_t1() {
+            self.sstore_t1(address, key, value)
+        } else {
+            self.sstore_legacy(address, key, value)
+        }
     }
 
     #[inline]
@@ -176,10 +265,10 @@ impl<'a> PrecompileStorageProvider for EvmPrecompileStorageProvider<'a> {
         let is_cold;
         {
             let mut account = self.internals.load_account_mut(address)?;
-            let val = account.sload(key, false)?;
+            let slot = account.sload(key, false)?;
 
-            value = val.present_value;
-            is_cold = val.is_cold;
+            value = slot.data.present_value();
+            is_cold = slot.is_cold;
         };
 
         // TODO(rakita) can be moved to the beginning of the function. Requires fork.
@@ -254,10 +343,20 @@ mod tests {
     use alloy::primitives::{address, b256, bytes};
     use alloy_evm::{EvmEnv, EvmFactory, EvmInternals, revm::context::Host};
     use revm::{
+        context::CfgEnv,
         database::{CacheDB, EmptyDB},
         interpreter::StateLoad,
     };
-    use tempo_evm::TempoEvmFactory;
+    use tempo_chainspec::hardfork::TempoHardfork;
+    use tempo_evm::{TempoBlockEnv, TempoEvmFactory};
+    use tempo_revm::gas_params::tempo_gas_params;
+
+    fn evm_env_with_spec(spec: TempoHardfork) -> EvmEnv<TempoHardfork, TempoBlockEnv> {
+        EvmEnv::<TempoHardfork, TempoBlockEnv>::new(
+            CfgEnv::new_with_spec_and_gas_params(spec, tempo_gas_params(spec)),
+            TempoBlockEnv::default(),
+        )
+    }
 
     #[test]
     fn test_sstore_sload() -> eyre::Result<()> {
@@ -535,6 +634,147 @@ mod tests {
         // Verify they are independent
         assert_eq!(provider.sload(address, key)?, persistent_value);
         assert_eq!(provider.tload(address, key)?, transient_value);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sstore_t1_deducts_gas_before_state_mutation() -> eyre::Result<()> {
+        let db = CacheDB::new(EmptyDB::new());
+        let mut evm =
+            TempoEvmFactory::default().create_evm(db, evm_env_with_spec(TempoHardfork::T1));
+
+        let address = address!("c000000000000000000000000000000000000001");
+        let key = U256::from(42);
+        let value = U256::from(12345);
+
+        {
+            let ctx = evm.ctx_mut();
+            let evm_internals =
+                EvmInternals::new(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx);
+
+            let gas_limit = 100;
+            let mut provider = EvmPrecompileStorageProvider::new(
+                evm_internals,
+                gas_limit,
+                TempoHardfork::T1,
+                false,
+                ctx.cfg.gas_params.clone(),
+            );
+
+            let result = provider.sstore(address, key, value);
+            assert!(
+                matches!(result, Err(TempoPrecompileError::OutOfGas)),
+                "Expected OutOfGas error with insufficient gas"
+            );
+        }
+
+        let ctx = evm.ctx_mut();
+        let evm_internals =
+            EvmInternals::new(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx);
+        let mut provider = EvmPrecompileStorageProvider::new_max_gas(evm_internals, &ctx.cfg);
+
+        let loaded_value = provider.sload(address, key)?;
+        assert_eq!(
+            loaded_value,
+            U256::ZERO,
+            "T1+: State should NOT be mutated when OOG occurs (gas deducted before mutation)"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sstore_pre_t1_mutates_state_before_gas_deduction() -> eyre::Result<()> {
+        let db = CacheDB::new(EmptyDB::new());
+        let mut evm =
+            TempoEvmFactory::default().create_evm(db, evm_env_with_spec(TempoHardfork::T0));
+
+        let address = address!("d000000000000000000000000000000000000001");
+        let key = U256::from(42);
+        let value = U256::from(12345);
+
+        {
+            let ctx = evm.ctx_mut();
+            let evm_internals =
+                EvmInternals::new(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx);
+
+            let gas_limit = 100;
+            let mut provider = EvmPrecompileStorageProvider::new(
+                evm_internals,
+                gas_limit,
+                TempoHardfork::T0,
+                false,
+                ctx.cfg.gas_params.clone(),
+            );
+
+            let result = provider.sstore(address, key, value);
+            assert!(
+                matches!(result, Err(TempoPrecompileError::OutOfGas)),
+                "Expected OutOfGas error with insufficient gas"
+            );
+        }
+
+        let ctx = evm.ctx_mut();
+        let evm_internals =
+            EvmInternals::new(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx);
+        let mut provider = EvmPrecompileStorageProvider::new_max_gas(evm_internals, &ctx.cfg);
+
+        let loaded_value = provider.sload(address, key)?;
+        assert_eq!(
+            loaded_value, value,
+            "Pre-T1: State SHOULD be mutated even when OOG occurs (legacy behavior for consensus)"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sstore_t1_succeeds_with_sufficient_gas() -> eyre::Result<()> {
+        let db = CacheDB::new(EmptyDB::new());
+        let mut evm =
+            TempoEvmFactory::default().create_evm(db, evm_env_with_spec(TempoHardfork::T1));
+        let ctx = evm.ctx_mut();
+        let evm_internals =
+            EvmInternals::new(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx);
+        let mut provider = EvmPrecompileStorageProvider::new_max_gas(evm_internals, &ctx.cfg);
+
+        let address = address!("e000000000000000000000000000000000000001");
+        let key = U256::from(42);
+        let value = U256::from(12345);
+
+        provider.sstore(address, key, value)?;
+
+        let loaded_value = provider.sload(address, key)?;
+        assert_eq!(
+            loaded_value, value,
+            "T1: sstore should work with sufficient gas"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sstore_pre_t1_succeeds_with_sufficient_gas() -> eyre::Result<()> {
+        let db = CacheDB::new(EmptyDB::new());
+        let mut evm =
+            TempoEvmFactory::default().create_evm(db, evm_env_with_spec(TempoHardfork::T0));
+        let ctx = evm.ctx_mut();
+        let evm_internals =
+            EvmInternals::new(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx);
+        let mut provider = EvmPrecompileStorageProvider::new_max_gas(evm_internals, &ctx.cfg);
+
+        let address = address!("f000000000000000000000000000000000000001");
+        let key = U256::from(42);
+        let value = U256::from(12345);
+
+        provider.sstore(address, key, value)?;
+
+        let loaded_value = provider.sload(address, key)?;
+        assert_eq!(
+            loaded_value, value,
+            "Pre-T1: sstore should work with sufficient gas"
+        );
 
         Ok(())
     }
