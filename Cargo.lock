@@ -11647,6 +11647,7 @@ dependencies = [
  "tempo-revm",
  "test-case",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
