@@ -786,6 +786,12 @@ where
                 .into());
             }
 
+            let keychain_checkpoint = if spec.is_t1() {
+                Some(journal.checkpoint())
+            } else {
+                None
+            };
+
             let internals = EvmInternals::new(journal, block, cfg, tx);
             let mut provider = EvmPrecompileStorageProvider::new_with_gas_limit(
                 internals,
@@ -860,16 +866,21 @@ where
                 }
             })?;
 
-            if spec.is_t1() {
+            let gas_used = provider.gas_used();
+            drop(provider);
+
+            // activated only on T1 fork.
+            if let Some(keychain_checkpoint) = keychain_checkpoint {
                 // Add additional gas that was spent by the precompile
                 if out_of_gas {
-                    evm.initial_gas = u64::MAX
+                    evm.initial_gas = u64::MAX;
+                    // Revert all changes to the keychain state.
+                    journal.checkpoint_revert(keychain_checkpoint);
                 } else {
-                    evm.initial_gas += provider.gas_used()
+                    evm.initial_gas += gas_used;
+                    journal.checkpoint_commit();
                 };
             }
-
-            drop(provider);
         }
 
         // For Keychain signatures, validate that the keychain is authorized in the precompile
