@@ -290,17 +290,10 @@ impl TempoTransaction {
         // Validate calls list structure using the shared function
         validate_calls(&self.calls, !self.tempo_authorization_list.is_empty())?;
 
-        // Validate expiring nonce transaction constraints
-        if self.is_expiring_nonce_tx() {
-            // Expiring nonce txs must have nonce == 0
-            if self.nonce != 0 {
-                return Err("expiring nonce transactions must have nonce == 0");
-            }
-            // Expiring nonce txs must have valid_before set
-            if self.valid_before.is_none() {
-                return Err("expiring nonce transactions must have valid_before set");
-            }
-        }
+        // Note: Expiring nonce validation (nonce == 0, valid_before set) is intentionally
+        // not done here since this is called during RLP decode without hardfork context.
+        // Expiring nonces are a T1 feature, so validation is done in the transaction pool
+        // validator where hardfork context is available.
 
         // validBefore must be greater than validAfter if both are set
         if let Some(valid_after) = self.valid_after
