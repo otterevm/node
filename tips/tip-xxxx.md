@@ -74,7 +74,7 @@ The `accountPolicies` mapping packs policy IDs and their types into a single 256
 | 216–255 | 40 bits | Reserved | For future use (must be 0) |
 
 
-A policy ID of `0` means "no policy" (always authorized). This differs from token-level TIP-403 semantics where policy ID 0 is "always-reject"; for account-level policies, ID 0 means "no account policy set" (defer to token policy only). We use 8 bits for `policyType` even though there are currently only 2 policy types (whitelist and blacklist) for possible future expansions. 
+A policy ID of `0` means "no policy" (always authorized). This differs from token-level TIP-403 semantics where policy ID 0 is "always-reject"; for account-level policies, ID 0 means "no account policy set" (defer to token policy only). When `policyId` is 0, the corresponding `policyType` field is ignored and SHOULD be set to 0. We use 8 bits for `policyType` even though there are currently only 2 policy types (whitelist and blacklist) for possible future expansions. 
 
 ### Why Embed Policy Type?
 
@@ -273,6 +273,7 @@ function getAccountPolicies(address account)
 This function checks account-level policies **without** reading `policyData` — the policy type is embedded in the `accountPolicy`.
 
 ```solidity
+// Pseudocode — tuple destructuring syntax simplified for clarity
 function isTransferAuthorized(address from, address to, address token) external view returns (bool) {
     // Decode sender's policies (includes cached policy type)
     (
@@ -329,6 +330,7 @@ function isTransferAuthorized(address from, address to, address token) external 
 This function checks only the token receive policy for mint operations.
 
 ```solidity
+// Pseudocode — tuple destructuring syntax simplified for clarity
 function isTokenReceiveAuthorized(address to, address token) external view returns (bool) {
     // Decode receiver's policies (includes cached policy type)
     (
@@ -416,9 +418,13 @@ The token receive policy alone provides sufficient protection against unwanted t
 
 Burning does not involve a counterparty, so account-level policies are not applicable. The existing behavior is unchanged.
 
+### Self-Transfers
+
+Self-transfers (`from == to`) are treated as normal transfers and are subject to both send and receive policy checks. If an account sets a whitelist receive policy, it SHOULD include itself if self-transfers are needed. Note that for self-transfers, the second `accountPolicies` SLOAD is warm (~100 gas instead of ~2,100 gas).
+
 ### Fee Transfers
 
-Fee transfers via `transferFeePreTx` and `transferFeePostTx` are unchanged since they are system operations. 
+Fee transfers via `transferFeePreTx` and `transferFeePostTx` bypass account-level policy checks since they are system operations. Similarly, any system-initiated transfers that do not go through the `transferAuthorized` modifier are exempt. 
 
 ## Gas Cost Analysis
 
@@ -449,12 +455,14 @@ The baseline ~4,200 gas is incurred on ALL transfers, even when no accounts have
 
 ### State Creation Costs
 
+Per TIP-1000, Tempo charges 250,000 gas for new state element creation (SSTORE zero→non-zero).
+
 | Operation | Gas Cost |
 |-----------|----------|
-| First call to `setAccountPolicies` (creates slot) | 250,000 gas |
-| Subsequent updates to account policies | 5,000 gas |
-| Adding address to policy membership | 250,000 gas (first time) |
-| Updating address in policy membership | 5,000 gas |
+| First call to `setAccountPolicies` (creates slot) | ~250,000 gas |
+| Subsequent updates to account policies | ~5,000 gas |
+| Adding address to policy membership | ~250,000 gas (first time) |
+| Updating address in policy membership | ~5,000 gas |
 
 ## Shared Policy Semantics
 
@@ -494,4 +502,10 @@ The following invariants must always hold:
 9. **Gas Consistency**: Reading `accountPolicies[address]` for a non-existent entry MUST return 0 (interpreted as no policies set), incurring only the cold SLOAD cost (~2,100 gas).
 
 10. **Cached Policy Type Validity**: The policy type cached in `accountPolicies` MUST always match the policy type in `policyData[policyId]`. This is guaranteed because TIP-403 policy types are immutable after creation.
+
+11. **Policy Immutability Assumption**: This TIP assumes TIP-403 policies are never deleted and policy types are immutable. If policies could be deleted or have their types changed, cached types would become invalid. Any future TIP that allows policy deletion or type modification MUST address cache invalidation.
+
+12. **Self-Transfer Behavior**: Self-transfers (`from == to`) are subject to both the sender's send policy (checking self as recipient) and the receiver's receive policy (checking self as sender). Accounts using whitelist policies SHOULD include themselves if self-transfers are required.
+
+13. **Ignored Policy Type**: When `policyId` is 0, the corresponding `policyType` field MUST be ignored during authorization checks. The authorization result is always "authorized" regardless of the policyType value.
 
