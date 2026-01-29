@@ -581,6 +581,7 @@ fn initialize_tip20_factory(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre::Resul
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || TIP20Factory::new().initialize(),
     )?;
     Ok(())
@@ -600,6 +601,7 @@ fn create_path_usd_token(
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || {
             TIP20Factory::new().create_token_reserved_address(
                 PATH_USD_ADDRESS,
@@ -657,6 +659,7 @@ fn create_and_mint_token(
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || {
             let mut factory = TIP20Factory::new();
             assert!(
@@ -745,6 +748,7 @@ fn initialize_fee_manager(
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || {
             let mut fee_manager = TipFeeManager::new();
             fee_manager
@@ -788,6 +792,7 @@ fn initialize_registry(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre::Result<()>
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || TIP403Registry::new().initialize(),
     )?;
 
@@ -801,6 +806,7 @@ fn initialize_stablecoin_dex(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre::Resu
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || StablecoinDEX::new().initialize(),
     )?;
 
@@ -814,6 +820,7 @@ fn initialize_nonce_manager(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre::Resul
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || NonceManager::new().initialize(),
     )?;
 
@@ -828,6 +835,7 @@ fn initialize_account_keychain(evm: &mut TempoEvm<CacheDB<EmptyDB>>) -> eyre::Re
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || AccountKeychain::new().initialize(),
     )?;
 
@@ -851,6 +859,7 @@ fn initialize_validator_config(
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || {
             let mut validator_config = ValidatorConfig::new();
             validator_config
@@ -975,6 +984,7 @@ fn mint_pairwise_liquidity(
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || {
             let mut fee_manager = TipFeeManager::new();
 

@@ -616,7 +616,7 @@ where
 
         // Set tx.origin in the keychain's transient storage for spending limit checks.
         // This must be done for ALL transactions so precompiles can access it.
-        StorageCtx::enter_evm(journal, block, cfg, tx, || {
+        StorageCtx::enter_evm(journal, block, cfg, tx, None, || {
             let mut keychain = AccountKeychain::new();
             keychain.set_tx_origin(tx.caller())
         })
@@ -677,7 +677,7 @@ where
                 .valid_before
                 .ok_or(TempoInvalidTransaction::ExpiringNonceMissingValidBefore)?;
 
-            StorageCtx::enter_evm(journal, block, cfg, tx, || {
+            StorageCtx::enter_evm(journal, block, cfg, tx, None, || {
                 let mut nonce_manager = NonceManager::new();
 
                 nonce_manager
@@ -691,7 +691,7 @@ where
             })?;
         } else if !nonce_key.is_zero() {
             // 2D nonce transaction
-            StorageCtx::enter_evm(journal, block, cfg, tx, || {
+            StorageCtx::enter_evm(journal, block, cfg, tx, None, || {
                 let mut nonce_manager = NonceManager::new();
 
                 if !cfg.is_nonce_check_disabled() {
@@ -986,7 +986,7 @@ where
 
         let checkpoint = journal.checkpoint();
 
-        let result = StorageCtx::enter_evm(journal, &block, cfg, tx, || {
+        let result = StorageCtx::enter_evm(journal, &block, cfg, tx, None, || {
             TipFeeManager::new().collect_fee_pre_tx(
                 self.fee_payer,
                 self.fee_token,
@@ -1065,7 +1065,7 @@ where
         let (journal, block, tx) = (&mut context.journaled_state, &context.block, &context.tx);
         let beneficiary = context.block.beneficiary();
 
-        StorageCtx::enter_evm(&mut *journal, block, &context.cfg, tx, || {
+        StorageCtx::enter_evm(&mut *journal, block, &context.cfg, tx, None, || {
             let mut fee_manager = TipFeeManager::new();
 
             if !actual_spending.is_zero() || !refund_amount.is_zero() {

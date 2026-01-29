@@ -133,29 +133,36 @@ impl Builder {
 
         {
             let cx = evm.ctx_mut();
-            StorageCtx::enter_evm(&mut cx.journaled_state, &cx.block, &cx.cfg, &cx.tx, || {
-                // TODO(janis): figure out the owner of the test-genesis.json
-                let mut validator_config = ValidatorConfig::new();
-                validator_config
-                    .initialize(admin())
-                    .wrap_err("Failed to initialize validator config")
-                    .unwrap();
-
-                for (peer, (net_addr, chain_addr)) in validators.iter_pairs() {
+            StorageCtx::enter_evm(
+                &mut cx.journaled_state,
+                &cx.block,
+                &cx.cfg,
+                &cx.tx,
+                None,
+                || {
+                    // TODO(janis): figure out the owner of the test-genesis.json
+                    let mut validator_config = ValidatorConfig::new();
                     validator_config
-                        .add_validator(
-                            admin(),
-                            IValidatorConfig::addValidatorCall {
-                                newValidatorAddress: *chain_addr,
-                                publicKey: peer.encode().as_ref().try_into().unwrap(),
-                                active: true,
-                                inboundAddress: net_addr.to_string(),
-                                outboundAddress: net_addr.to_string(),
-                            },
-                        )
+                        .initialize(admin())
+                        .wrap_err("Failed to initialize validator config")
                         .unwrap();
-                }
-            })
+
+                    for (peer, (net_addr, chain_addr)) in validators.iter_pairs() {
+                        validator_config
+                            .add_validator(
+                                admin(),
+                                IValidatorConfig::addValidatorCall {
+                                    newValidatorAddress: *chain_addr,
+                                    publicKey: peer.encode().as_ref().try_into().unwrap(),
+                                    active: true,
+                                    inboundAddress: net_addr.to_string(),
+                                    outboundAddress: net_addr.to_string(),
+                                },
+                            )
+                            .unwrap();
+                    }
+                },
+            )
         }
 
         let evm_state = evm.ctx_mut().journaled_state.evm_state();

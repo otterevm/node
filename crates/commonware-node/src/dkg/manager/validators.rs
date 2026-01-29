@@ -75,6 +75,7 @@ fn read_validator_config_at_height<T>(
         &ctx.block,
         &ctx.cfg,
         &ctx.tx,
+        None,
         || read_fn(&ValidatorConfig::new()),
     )
 }

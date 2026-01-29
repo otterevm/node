@@ -175,18 +175,25 @@ impl StorageCtx {
 impl<'evm> StorageCtx {
     /// Generic entry point for EVM-like environments.
     /// Sets up the storage provider and executes a closure within that context.
+    ///
+    /// If `gas_limit` is `Some`, that exact limit is used (TIP-1000 gas metering for T1).
+    /// If `gas_limit` is `None`, unlimited gas (`u64::MAX`) is used for backward compatibility.
     pub fn enter_evm<J, R>(
         journal: &'evm mut J,
         block_env: &'evm dyn Block,
         cfg: &CfgEnv<TempoHardfork>,
         tx_env: &'evm impl Transaction,
+        gas_limit: Option<u64>,
         f: impl FnOnce() -> R,
     ) -> R
     where
         J: JournalTr<Database: Database> + Debug,
     {
         let internals = EvmInternals::new(journal, block_env, cfg, tx_env);
-        let mut provider = EvmPrecompileStorageProvider::new_max_gas(internals, cfg);
+        let mut provider = match gas_limit {
+            Some(limit) => EvmPrecompileStorageProvider::new_with_gas_limit(internals, cfg, limit),
+            None => EvmPrecompileStorageProvider::new_max_gas(internals, cfg),
+        };
 
         // The core logic of setting up thread-local storage is here.
         Self::enter(&mut provider, f)
@@ -206,7 +213,7 @@ impl<'evm> StorageCtx {
     {
         // Delegate all the setup logic to `enter_evm`.
         // We just need to provide a closure that `enter_evm` expects.
-        Self::enter_evm(journal, block_env, cfg, tx_env, || f(P::default()))
+        Self::enter_evm(journal, block_env, cfg, tx_env, None, || f(P::default()))
     }
 }
 
