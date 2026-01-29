@@ -24,10 +24,7 @@ use tempo_precompiles::{NONCE_PRECOMPILE_ADDRESS, nonce::NonceManager};
 pub use token::{TempoToken, TempoTokenApiServer};
 
 use crate::{node::TempoNode, rpc::error::TempoEthApiError};
-use alloy::{
-    consensus::TxReceipt,
-    primitives::U256,
-};
+use alloy::{consensus::TxReceipt, primitives::U256};
 use reth_ethereum::tasks::{
     TaskSpawner,
     pool::{BlockingTaskGuard, BlockingTaskPool},

@@ -6,8 +6,8 @@ use reth_evm::revm::context::result::EVMError;
 use reth_node_core::rpc::result::rpc_err;
 use reth_rpc_eth_api::AsEthApiError;
 use reth_rpc_eth_types::{
-    error::api::{FromEvmHalt, FromRevert},
     EthApiError,
+    error::api::{FromEvmHalt, FromRevert},
 };
 use tempo_evm::TempoHaltReason;
 
@@ -18,7 +18,9 @@ pub const TEMPO_RPC_ERROR_CODE: i32 = -32000;
 pub enum TempoEthApiError {
     #[error(transparent)]
     EthApiError(EthApiError),
-    #[error("Native balance not used. See docs.tempo.xyz/quickstart/wallet-developers for balance queries.")]
+    #[error(
+        "Native balance not used. See docs.tempo.xyz/quickstart/wallet-developers for balance queries."
+    )]
     NativeBalanceNotSupported,
 }
 
