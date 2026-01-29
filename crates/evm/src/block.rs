@@ -514,7 +514,7 @@ where
 mod tests {
     use super::*;
     use crate::test_utils::{TestExecutorBuilder, test_chainspec, test_evm};
-    use alloy_consensus::{Signed, TxLegacy, transaction::Recovered};
+    use alloy_consensus::{Signed, TxLegacy};
     use alloy_evm::{block::BlockExecutor, eth::receipt_builder::ReceiptBuilder};
     use alloy_primitives::{Bytes, Log, Signature, TxKind, bytes::BytesMut};
     use alloy_rlp::Encodable;
@@ -1059,12 +1059,27 @@ mod tests {
         // Apply pre-execution changes first
         executor.apply_pre_execution_changes().unwrap();
 
-        // Create a transaction and execute it
+        // Create a mock execution result (testing commit logic in isolation)
+        let result = ResultAndState {
+            result: revm::context::result::ExecutionResult::Success {
+                reason: revm::context::result::SuccessReason::Return,
+                gas_used: 21000,
+                gas_refunded: 0,
+                logs: vec![],
+                output: revm::context::result::Output::Call(Bytes::new()),
+            },
+            state: Default::default(),
+        };
+
         let tx = create_legacy_tx();
-        let recovered_tx = Recovered::new_unchecked(tx, Address::ZERO);
-        let output = executor
-            .execute_transaction_without_commit(&recovered_tx)
-            .unwrap();
+        let output = TempoTxResult {
+            inner: EthTxResult {
+                result,
+                blob_gas_used: 0,
+                tx_type: tx.tx_type(),
+            },
+            tx: tx.clone(),
+        };
         let gas_used = executor.commit_transaction(output).unwrap();
 
         assert_eq!(gas_used, 21000);
