@@ -20,7 +20,7 @@ pub struct PrometheusMetricsConfig {
     pub endpoint: String,
     /// The interval at which to push metrics.
     pub interval: SignedDuration,
-    /// Optional Authorization header value (e.g., "Basic <base64>").
+    /// Optional Authorization header value
     pub auth_header: Option<String>,
 }
 
@@ -48,7 +48,7 @@ pub fn install_prometheus_metrics(
         let labels: Vec<String> = config
             .extra_labels
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
+            .map(|(k, v)| format!("{k}={v}"))
             .collect();
         format!("?extra_label={}", labels.join("&extra_label="))
     };
@@ -67,7 +67,7 @@ pub fn install_prometheus_metrics(
             // Collect metrics from both sources
             let consensus_metrics = context.encode();
             let reth_metrics = reth_recorder.handle().render();
-            let body = format!("{}\n{}", consensus_metrics, reth_metrics);
+            let body = format!("{consensus_metrics}\n{reth_metrics}");
 
             // Push to Victoria Metrics
             let mut request = client

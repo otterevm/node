@@ -38,7 +38,7 @@ pub(crate) struct TelemetryConfig {
     pub metrics_prometheus_url: String,
     /// The interval at which to push Prometheus metrics.
     pub metrics_prometheus_interval: SignedDuration,
-    /// Authorization header for metrics push (e.g., "Basic <base64>").
+    /// Authorization header for metrics push
     pub metrics_auth_header: Option<String>,
 }
 
