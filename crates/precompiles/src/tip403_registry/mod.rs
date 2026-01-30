@@ -15,6 +15,16 @@ pub struct TIP403Registry {
     policy_id_counter: u64,
     policy_data: Mapping<u64, PolicyData>,
     policy_set: Mapping<u64, Mapping<Address, bool>>,
+    // TIP-1011: Compound policy data (sender, recipient, mintRecipient policy IDs)
+    compound_policy_data: Mapping<u64, CompoundPolicyData>,
+}
+
+/// Data for compound policies (TIP-1011)
+#[derive(Debug, Clone, Storable)]
+pub struct CompoundPolicyData {
+    pub sender_policy_id: u64,
+    pub recipient_policy_id: u64,
+    pub mint_recipient_policy_id: u64,
 }
 
 #[derive(Debug, Clone, Storable)]
@@ -98,6 +108,50 @@ impl TIP403Registry {
 
     pub fn is_authorized(&self, call: ITIP403Registry::isAuthorizedCall) -> Result<bool> {
         self.is_authorized_internal(call.policyId, call.user)
+    }
+
+    /// Checks if a user is authorized as a sender under the given policy (TIP-1011)
+    pub fn is_authorized_sender(
+        &self,
+        call: ITIP403Registry::isAuthorizedSenderCall,
+    ) -> Result<bool> {
+        self.is_authorized_sender_internal(call.policyId, call.user)
+    }
+
+    /// Checks if a user is authorized as a recipient under the given policy (TIP-1011)
+    pub fn is_authorized_recipient(
+        &self,
+        call: ITIP403Registry::isAuthorizedRecipientCall,
+    ) -> Result<bool> {
+        self.is_authorized_recipient_internal(call.policyId, call.user)
+    }
+
+    /// Checks if a user is authorized as a mint recipient under the given policy (TIP-1011)
+    pub fn is_authorized_mint_recipient(
+        &self,
+        call: ITIP403Registry::isAuthorizedMintRecipientCall,
+    ) -> Result<bool> {
+        self.is_authorized_mint_recipient_internal(call.policyId, call.user)
+    }
+
+    /// Returns the compound policy data for a compound policy (TIP-1011)
+    pub fn compound_policy_data(
+        &self,
+        call: ITIP403Registry::compoundPolicyDataCall,
+    ) -> Result<ITIP403Registry::compoundPolicyDataReturn> {
+        let data = self.get_policy_data(call.policyId)?;
+
+        // Only compound policies have compound data
+        if data.policy_type != ITIP403Registry::PolicyType::COMPOUND as u8 {
+            return Err(TIP403RegistryError::incompatible_policy_type().into());
+        }
+
+        let compound = self.compound_policy_data[call.policyId].read()?;
+        Ok(ITIP403Registry::compoundPolicyDataReturn {
+            senderPolicyId: compound.sender_policy_id,
+            recipientPolicyId: compound.recipient_policy_id,
+            mintRecipientPolicyId: compound.mint_recipient_policy_id,
+        })
     }
 
     // State-changing functions
@@ -190,7 +244,8 @@ impl TIP403Registry {
                         },
                     ))?;
                 }
-                ITIP403Registry::PolicyType::__Invalid => {
+                ITIP403Registry::PolicyType::COMPOUND | ITIP403Registry::PolicyType::__Invalid => {
+                    // COMPOUND policies are created via createCompoundPolicy, not createPolicyWithAccounts
                     return Err(TIP403RegistryError::incompatible_policy_type().into());
                 }
             }
@@ -304,6 +359,53 @@ impl TIP403Registry {
         ))
     }
 
+    /// Creates a new compound policy that references three simple policies (TIP-1011)
+    pub fn create_compound_policy(
+        &mut self,
+        msg_sender: Address,
+        call: ITIP403Registry::createCompoundPolicyCall,
+    ) -> Result<u64> {
+        // Validate all referenced policies exist and are simple (not compound)
+        self.validate_simple_policy(call.senderPolicyId)?;
+        self.validate_simple_policy(call.recipientPolicyId)?;
+        self.validate_simple_policy(call.mintRecipientPolicyId)?;
+
+        let new_policy_id = self.policy_id_counter()?;
+
+        // Increment counter
+        self.policy_id_counter.write(
+            new_policy_id
+                .checked_add(1)
+                .ok_or(TempoPrecompileError::under_overflow())?,
+        )?;
+
+        // Store policy data with COMPOUND type and no admin (immutable)
+        self.policy_data[new_policy_id].write(PolicyData {
+            policy_type: ITIP403Registry::PolicyType::COMPOUND as u8,
+            admin: Address::ZERO,
+        })?;
+
+        // Store compound policy data
+        self.compound_policy_data[new_policy_id].write(CompoundPolicyData {
+            sender_policy_id: call.senderPolicyId,
+            recipient_policy_id: call.recipientPolicyId,
+            mint_recipient_policy_id: call.mintRecipientPolicyId,
+        })?;
+
+        // Emit event
+        self.emit_event(TIP403RegistryEvent::CompoundPolicyCreated(
+            ITIP403Registry::CompoundPolicyCreated {
+                policyId: new_policy_id,
+                creator: msg_sender,
+                senderPolicyId: call.senderPolicyId,
+                recipientPolicyId: call.recipientPolicyId,
+                mintRecipientPolicyId: call.mintRecipientPolicyId,
+            },
+        ))?;
+
+        Ok(new_policy_id)
+    }
+
     // Internal helper functions
     fn get_policy_data(&self, policy_id: u64) -> Result<PolicyData> {
         self.policy_data[policy_id].read()
@@ -335,10 +437,111 @@ impl TIP403Registry {
         {
             ITIP403Registry::PolicyType::WHITELIST => is_in_set,
             ITIP403Registry::PolicyType::BLACKLIST => !is_in_set,
+            ITIP403Registry::PolicyType::COMPOUND => {
+                // For compound policies, isAuthorized = isAuthorizedSender && isAuthorizedRecipient
+                self.is_authorized_sender_internal(policy_id, user)?
+                    && self.is_authorized_recipient_internal(policy_id, user)?
+            }
             ITIP403Registry::PolicyType::__Invalid => false,
         };
 
         Ok(auth)
+    }
+
+    /// Checks sender authorization (TIP-1011)
+    fn is_authorized_sender_internal(&self, policy_id: u64, user: Address) -> Result<bool> {
+        // Special case for always-allow and always-reject policies
+        if policy_id < 2 {
+            return Ok(policy_id == 1);
+        }
+
+        let data = self.get_policy_data(policy_id)?;
+
+        // For compound policies, delegate to the sender policy
+        if data.policy_type == ITIP403Registry::PolicyType::COMPOUND as u8 {
+            let compound = self.compound_policy_data[policy_id].read()?;
+            return self.is_authorized_internal(compound.sender_policy_id, user);
+        }
+
+        // For simple policies, sender authorization equals general authorization
+        self.is_authorized_simple(policy_id, user, &data)
+    }
+
+    /// Checks recipient authorization (TIP-1011)
+    fn is_authorized_recipient_internal(&self, policy_id: u64, user: Address) -> Result<bool> {
+        // Special case for always-allow and always-reject policies
+        if policy_id < 2 {
+            return Ok(policy_id == 1);
+        }
+
+        let data = self.get_policy_data(policy_id)?;
+
+        // For compound policies, delegate to the recipient policy
+        if data.policy_type == ITIP403Registry::PolicyType::COMPOUND as u8 {
+            let compound = self.compound_policy_data[policy_id].read()?;
+            return self.is_authorized_internal(compound.recipient_policy_id, user);
+        }
+
+        // For simple policies, recipient authorization equals general authorization
+        self.is_authorized_simple(policy_id, user, &data)
+    }
+
+    /// Checks mint recipient authorization (TIP-1011)
+    fn is_authorized_mint_recipient_internal(&self, policy_id: u64, user: Address) -> Result<bool> {
+        // Special case for always-allow and always-reject policies
+        if policy_id < 2 {
+            return Ok(policy_id == 1);
+        }
+
+        let data = self.get_policy_data(policy_id)?;
+
+        // For compound policies, delegate to the mint recipient policy
+        if data.policy_type == ITIP403Registry::PolicyType::COMPOUND as u8 {
+            let compound = self.compound_policy_data[policy_id].read()?;
+            return self.is_authorized_internal(compound.mint_recipient_policy_id, user);
+        }
+
+        // For simple policies, mint recipient authorization equals general authorization
+        self.is_authorized_simple(policy_id, user, &data)
+    }
+
+    /// Authorization check for simple (non-compound) policies
+    fn is_authorized_simple(&self, policy_id: u64, user: Address, data: &PolicyData) -> Result<bool> {
+        let is_in_set = self.policy_set[policy_id][user].read()?;
+
+        let auth = match data
+            .policy_type
+            .try_into()
+            .map_err(|_| TempoPrecompileError::under_overflow())?
+        {
+            ITIP403Registry::PolicyType::WHITELIST => is_in_set,
+            ITIP403Registry::PolicyType::BLACKLIST => !is_in_set,
+            ITIP403Registry::PolicyType::COMPOUND | ITIP403Registry::PolicyType::__Invalid => false,
+        };
+
+        Ok(auth)
+    }
+
+    /// Validates that a policy ID references an existing simple policy (not compound)
+    fn validate_simple_policy(&self, policy_id: u64) -> Result<()> {
+        // Special policies 0 and 1 are always valid simple policies
+        if policy_id < 2 {
+            return Ok(());
+        }
+
+        // Check if policy exists
+        let counter = self.policy_id_counter()?;
+        if policy_id >= counter {
+            return Err(TIP403RegistryError::policy_does_not_exist().into());
+        }
+
+        // Check if policy is simple (not compound)
+        let data = self.get_policy_data(policy_id)?;
+        if data.policy_type == ITIP403Registry::PolicyType::COMPOUND as u8 {
+            return Err(TIP403RegistryError::policy_not_simple().into());
+        }
+
+        Ok(())
     }
 }
 

@@ -22,6 +22,18 @@ impl Precompile for TIP403Registry {
                 ITIP403RegistryCalls::policyExists(call) => view(call, |c| self.policy_exists(c)),
                 ITIP403RegistryCalls::policyData(call) => view(call, |c| self.policy_data(c)),
                 ITIP403RegistryCalls::isAuthorized(call) => view(call, |c| self.is_authorized(c)),
+                ITIP403RegistryCalls::isAuthorizedSender(call) => {
+                    view(call, |c| self.is_authorized_sender(c))
+                }
+                ITIP403RegistryCalls::isAuthorizedRecipient(call) => {
+                    view(call, |c| self.is_authorized_recipient(c))
+                }
+                ITIP403RegistryCalls::isAuthorizedMintRecipient(call) => {
+                    view(call, |c| self.is_authorized_mint_recipient(c))
+                }
+                ITIP403RegistryCalls::compoundPolicyData(call) => {
+                    view(call, |c| self.compound_policy_data(c))
+                }
                 ITIP403RegistryCalls::createPolicy(call) => {
                     mutate(call, msg_sender, |s, c| self.create_policy(s, c))
                 }
@@ -38,6 +50,9 @@ impl Precompile for TIP403Registry {
                 }
                 ITIP403RegistryCalls::modifyPolicyBlacklist(call) => {
                     mutate_void(call, msg_sender, |s, c| self.modify_policy_blacklist(s, c))
+                }
+                ITIP403RegistryCalls::createCompoundPolicy(call) => {
+                    mutate(call, msg_sender, |s, c| self.create_compound_policy(s, c))
                 }
             },
         )

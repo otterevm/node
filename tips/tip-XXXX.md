@@ -5,7 +5,7 @@ description: Extends TIP-403 with compound policies that specify different autho
 authors: Dan Robinson @danrobinson
 status: Draft
 related: TIP-403, TIP-20
-protocolVersion: T2
+protocolVersion: T1
 ---
 
 # TIP-XXXX: Compound Transfer Policies
