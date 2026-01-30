@@ -249,13 +249,12 @@ pub trait TempoStateAccess<M = ()> {
             let policy_id = TIP20Token::from_address(fee_token)?
                 .transfer_policy_id
                 .read()?;
-            let registry = TIP403Registry::new();
             let role = if spec.is_t1() {
                 AuthRole::Sender
             } else {
                 AuthRole::Transfer
             };
-            registry.is_authorized_as(policy_id, fee_payer, role)
+            TIP403Registry::new().is_authorized_as(policy_id, fee_payer, role)
         })
     }
 
