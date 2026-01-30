@@ -2066,6 +2066,7 @@ mod tests {
             key_id,
             expiry: Some(expiry),
             limits: Some(limits.clone()),
+            contract_salt: None,
         }
         .signature_hash();
 
@@ -2076,6 +2077,7 @@ mod tests {
             key_id,
             expiry: Some(expiry),
             limits: Some(limits.clone()),
+            contract_salt: None,
         }
         .signature_hash();
 
@@ -2088,6 +2090,7 @@ mod tests {
             key_id,
             expiry: Some(expiry),
             limits: Some(limits),
+            contract_salt: None,
         }
         .signature_hash();
         assert_ne!(
@@ -2199,6 +2202,7 @@ mod tests {
                     key_id: Address::random(),
                     expiry: None,
                     limits,
+                    contract_salt: None,
                 },
                 signature: PrimitiveSignature::Secp256k1(
                     alloy_primitives::Signature::test_signature(),
@@ -2274,6 +2278,7 @@ mod tests {
                         limit: U256::from(2000),
                     },
                 ]),
+                contract_salt: None,
             },
             signature: PrimitiveSignature::Secp256k1(alloy_primitives::Signature::test_signature()),
         };
@@ -2962,6 +2967,7 @@ mod tests {
                         key_id: Address::ZERO,
                         expiry: None,
                         limits,
+                        contract_salt: None,
                     },
                     signature: PrimitiveSignature::Secp256k1(alloy_primitives::Signature::test_signature()),
                 }
@@ -3016,6 +3022,7 @@ mod tests {
                             limit: U256::from(1000),
                         }).collect())
                     },
+                    contract_salt: None,
                 },
                 signature,
             };
