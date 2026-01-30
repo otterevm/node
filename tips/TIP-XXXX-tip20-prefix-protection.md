@@ -30,7 +30,7 @@ function isTIP20(address token) internal view returns (bool) {
 
 Currently, there is no explicit protection preventing a contract from being deployed at an address that happens to have this prefix. With sufficient computing power, an attacker could find a `CREATE2` salt that produces an address with the TIP-20 prefix, allowing arbitrary code to be deployed at an address that passes `isTIP20` checks.
 
-One of the core invariants of the TIP-20 system is that `isTIP20` reliably identifies tokens deployed through the official factory. This proposal enforces that invariant at the protocol level.
+One of the core invariants relied on by the Tempo precompiles is that `isTIP20` reliably identifies tokens deployed through the official factory. This proposal enforces that invariant at the protocol level.
 
 ---
 
