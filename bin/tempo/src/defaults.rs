@@ -14,15 +14,15 @@ const DEFAULT_LOGS_OTLP_FILTER: &str = "debug";
 /// CLI arguments for telemetry configuration.
 #[derive(Debug, Clone, PartialEq, Eq, clap::Args)]
 pub(crate) struct TelemetryArgs {
-    /// Enables OTLP export for all telemetry (logs & metrics).
+    /// Enables telemetry export (OTLP logs & Prometheus metrics push).
     ///
     /// The URL must include credentials: `https://user:pass@metrics.example.com`
     #[arg(long, value_name = "URL")]
-    pub telemetry_otlp: Option<String>,
+    pub telemetry_url: Option<String>,
 
-    /// The interval at which to push metrics via OTLP.
+    /// The interval at which to push Prometheus metrics.
     #[arg(long, default_value = "10s")]
-    pub telemetry_otlp_interval: SignedDuration,
+    pub telemetry_metrics_interval: SignedDuration,
 }
 
 /// Telemetry configuration derived from a unified telemetry URL.
@@ -32,11 +32,11 @@ pub(crate) struct TelemetryConfig {
     pub logs_otlp_url: Url,
     /// OTLP logs filter level.
     pub logs_otlp_filter: String,
-    /// Unified metrics OTLP endpoint (without credentials).
+    /// Prometheus metrics push endpoint (without credentials).
     /// Used for both consensus and execution metrics.
-    pub metrics_otlp_url: String,
-    /// The interval at which to push metrics via OTLP.
-    pub metrics_otlp_interval: SignedDuration,
+    pub metrics_prometheus_url: String,
+    /// The interval at which to push Prometheus metrics.
+    pub metrics_prometheus_interval: SignedDuration,
 }
 
 fn init_download_urls() {
@@ -95,21 +95,22 @@ pub(crate) fn init_defaults() {
 /// Parses the telemetry args into a [`TelemetryConfig`].
 ///
 /// Returns `None` if telemetry is not enabled (no URL provided).
-pub(crate) fn parse_telemetry_config(args: &TelemetryArgs) -> eyre::Result<Option<TelemetryConfig>> {
-    let Some(ref telemetry_otlp) = args.telemetry_otlp else {
+pub(crate) fn parse_telemetry_config(
+    args: &TelemetryArgs,
+) -> eyre::Result<Option<TelemetryConfig>> {
+    let Some(ref telemetry_url) = args.telemetry_url else {
         return Ok(None);
     };
-    // Parse the URL
-    let mut url = Url::parse(telemetry_otlp)
-        .map_err(|e| eyre::eyre!("--telemetry-otlp: invalid URL: {e}"))?;
+
+    let mut url =
+        Url::parse(telemetry_url).map_err(|e| eyre::eyre!("--telemetry-url: invalid URL: {e}"))?;
 
     // Extract credentials - both username and password are required
     let username = url.username();
     let password = url.password();
-
     if username.is_empty() || password.is_none() {
         return Err(eyre::eyre!(
-            "--telemetry-otlp must include credentials (username and password).\n\
+            "--telemetry-url must include credentials (username and password).\n\
              Format: https://user:pass@metrics.example.com"
         ));
     }
@@ -134,13 +135,13 @@ pub(crate) fn parse_telemetry_config(args: &TelemetryArgs) -> eyre::Result<Optio
     let logs_otlp_url = Url::parse(&format!("{base_url_no_creds}/v1/logs"))
         .map_err(|e| eyre::eyre!("failed to construct logs OTLP URL: {e}"))?;
 
-    // Build unified metrics OTLP URL (standard OTLP HTTP path)
-    let metrics_otlp_url = format!("{base_url_no_creds}/v1/metrics");
+    // Build Victoria Metrics Prometheus import URL
+    let metrics_prometheus_url = format!("{base_url_no_creds}/api/v1/import/prometheus");
 
     Ok(Some(TelemetryConfig {
         logs_otlp_url,
         logs_otlp_filter: DEFAULT_LOGS_OTLP_FILTER.to_string(),
-        metrics_otlp_url,
-        metrics_otlp_interval: args.telemetry_otlp_interval,
+        metrics_prometheus_url,
+        metrics_prometheus_interval: args.telemetry_metrics_interval,
     }))
 }

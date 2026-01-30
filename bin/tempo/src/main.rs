@@ -42,7 +42,7 @@ use tempo_node::{
     TempoFullNode, TempoNodeArgs,
     node::TempoNode,
     rpc::consensus::{TempoConsensusApiServer, TempoConsensusRpc},
-    telemetry::{OtlpMetricsConfig, install_otlp_metrics},
+    telemetry::{PrometheusMetricsConfig, install_prometheus_metrics},
 };
 use tokio::sync::oneshot;
 use tracing::{info, info_span};
@@ -126,7 +126,7 @@ fn main() -> eyre::Result<()> {
         if let Some(config) = defaults::parse_telemetry_config(&node_cmd.ext.telemetry)? {
             if cli.traces.logs_otlp.is_some() {
                 return Err(eyre::eyre!(
-                    "--telemetry-otlp and --logs.otlp cannot both be specified"
+                    "--telemetry-url and --logs.otlp cannot both be specified"
                 ));
             }
 
@@ -212,14 +212,14 @@ fn main() -> eyre::Result<()> {
                         labels.insert("consensus_id".to_string(), public_key.to_string());
                     }
 
-                    let otlp_config = OtlpMetricsConfig {
-                        endpoint: config.metrics_otlp_url,
-                        interval: config.metrics_otlp_interval,
+                    let prometheus_config = PrometheusMetricsConfig {
+                        endpoint: config.metrics_prometheus_url,
+                        interval: config.metrics_prometheus_interval,
                         labels,
                     };
 
-                    install_otlp_metrics(ctx.with_label("metrics_otlp"), otlp_config)
-                        .wrap_err("failed to start OTLP metrics exporter")?;
+                    install_prometheus_metrics(ctx.with_label("metrics_otlp"), prometheus_config)
+                        .wrap_err("failed to start Prometheus metrics exporter")?;
                 }
 
                 let consensus_stack =

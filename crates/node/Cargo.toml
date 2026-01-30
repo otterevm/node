@@ -53,10 +53,7 @@ commonware-runtime = { workspace = true, features = ["external"] }
 eyre.workspace = true
 futures.workspace = true
 jiff = { workspace = true, features = ["std"] }
-opentelemetry.workspace = true
-opentelemetry_sdk.workspace = true
-opentelemetry-otlp.workspace = true
-parking_lot.workspace = true
+reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true
 jsonrpsee.workspace = true
