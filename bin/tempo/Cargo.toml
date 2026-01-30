@@ -51,6 +51,7 @@ reth-node-builder.workspace = true
 reth-rpc-server-types.workspace = true
 clap.workspace = true
 eyre.workspace = true
+jiff.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

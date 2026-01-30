@@ -55,11 +55,8 @@ struct TempoArgs {
     #[arg(long, value_name = "URL", default_missing_value = "auto", num_args(0..=1))]
     pub follow: Option<String>,
 
-    /// Unified telemetry URL that configures logs, metrics, and consensus telemetry.
-    ///
-    /// The URL must include credentials: `https://user:pass@metrics.example.com`
-    #[arg(long, value_name = "URL")]
-    pub telemetry_url: Option<String>,
+    #[command(flatten)]
+    pub telemetry: defaults::TelemetryArgs,
 
     #[command(flatten)]
     pub consensus: tempo_commonware_node::Args,
@@ -124,24 +121,22 @@ fn main() -> eyre::Result<()> {
         tempo_cmd::TempoSubcommand,
     >::parse();
 
-    // Apply telemetry URL expansion to CLI config
+    // If telemetry is enabled, set related flags and check for conflicts.
     if let Commands::Node(ref mut node_cmd) = cli.command {
-        if let Some(ref telemetry_url) = node_cmd.ext.telemetry_url {
-            let config = defaults::parse_telemetry_config(telemetry_url)?;
-
-            // Set logs OTLP if not already set
-            if cli.traces.logs_otlp.is_none() {
-                cli.traces.logs_otlp = Some(config.logs_otlp_url);
-                cli.traces.logs_otlp_filter = config
-                    .logs_otlp_filter
-                    .parse()
-                    .expect("invalid default logs filter");
+        if let Some(config) = defaults::parse_telemetry_config(&node_cmd.ext.telemetry)? {
+            // Check for conflicting OTLP options
+            if cli.traces.logs_otlp.is_some() {
+                return Err(eyre::eyre!(
+                    "--telemetry-otlp and --logs.otlp cannot both be specified"
+                ));
             }
 
-            // Set unified metrics OTLP endpoint (handles both reth and consensus metrics)
-            if node_cmd.ext.consensus.metrics_otlp_url.is_none() {
-                node_cmd.ext.consensus.metrics_otlp_url = Some(config.metrics_otlp_url);
-            }
+            // Set Reth logs OTLP. Consensus logs are exported as well via the same tracing system.
+            cli.traces.logs_otlp = Some(config.logs_otlp_url);
+            cli.traces.logs_otlp_filter = config
+                .logs_otlp_filter
+                .parse()
+                .expect("invalid default logs filter");
         }
     }
 
@@ -210,26 +205,22 @@ fn main() -> eyre::Result<()> {
                 .fuse();
 
                 // Start the unified OTLP metrics exporter if configured
-                let _metrics_otlp = args
-                    .consensus
-                    .metrics_otlp_url
-                    .clone()
-                    .map(|endpoint| {
-                        // Build labels for identifying this node in metrics
+                let _metrics_otlp = defaults::parse_telemetry_config(&args.telemetry)?
+                    .map(|config| {
                         let mut labels = std::collections::HashMap::new();
 
                         // Add consensus public key as node identifier
                         if let Ok(Some(public_key)) = args.consensus.public_key() {
-                            labels.insert("consensus_pubkey".to_string(), public_key.to_string());
+                            labels.insert("consensus_id".to_string(), public_key.to_string());
                         }
 
-                        let config = OtlpMetricsConfig {
-                            endpoint,
-                            interval: args.consensus.metrics_otlp_interval,
+                        let otlp_config = OtlpMetricsConfig {
+                            endpoint: config.metrics_otlp_url,
+                            interval: config.metrics_otlp_interval,
                             labels,
                         };
 
-                        install_otlp_metrics(ctx.with_label("metrics_otlp"), config)
+                        install_otlp_metrics(ctx.with_label("metrics_otlp"), otlp_config)
                     })
                     .transpose()?;
 

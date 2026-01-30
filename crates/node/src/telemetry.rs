@@ -24,7 +24,7 @@ pub struct OtlpMetricsConfig {
     pub endpoint: String,
     /// The interval at which to export metrics.
     pub interval: SignedDuration,
-    /// Labels to add to all metrics as resource attributes (e.g., consensus_pubkey).
+    /// Labels to add to all metrics as resource attributes
     pub labels: HashMap<String, String>,
 }
 
@@ -94,9 +94,6 @@ pub fn install_otlp_metrics(
     let gauges: Arc<Mutex<HashMap<String, opentelemetry::metrics::Gauge<f64>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    // Get handle to reth's prometheus recorder
-    let reth_recorder = install_prometheus_recorder();
-
     // Poll at half the export interval to ensure fresh data for each export
     let poll_interval = interval / 2;
     let task = context.spawn(move |context| async move {
@@ -104,6 +101,9 @@ pub fn install_otlp_metrics(
 
         // Track last counter values to compute deltas (OTLP counters expect deltas, not absolutes)
         let mut last_counter_values: HashMap<(String, Vec<(String, String)>), f64> = HashMap::new();
+
+        // Get handle to reth's prometheus recorder
+        let reth_recorder = install_prometheus_recorder();
 
         loop {
             context.sleep(poll_interval).await;

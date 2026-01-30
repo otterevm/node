@@ -1,4 +1,5 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
+use jiff::SignedDuration;
 use reth_cli_commands::download::DownloadDefaults;
 use reth_ethereum::node::core::args::{DefaultPayloadBuilderValues, DefaultTxPoolValues};
 use std::{borrow::Cow, time::Duration};
@@ -10,6 +11,20 @@ pub(crate) const DEFAULT_DOWNLOAD_URL: &str = "https://snapshots.tempoxyz.dev/42
 /// Default OTLP logs filter level for telemetry.
 const DEFAULT_LOGS_OTLP_FILTER: &str = "debug";
 
+/// CLI arguments for telemetry configuration.
+#[derive(Debug, Clone, PartialEq, Eq, clap::Args)]
+pub(crate) struct TelemetryArgs {
+    /// Enables OTLP export for all telemetry (logs & metrics).
+    ///
+    /// The URL must include credentials: `https://user:pass@metrics.example.com`
+    #[arg(long, value_name = "URL")]
+    pub telemetry_otlp: Option<String>,
+
+    /// The interval at which to push metrics via OTLP.
+    #[arg(long, default_value = "10s")]
+    pub telemetry_otlp_interval: SignedDuration,
+}
+
 /// Telemetry configuration derived from a unified telemetry URL.
 #[derive(Debug, Clone)]
 pub(crate) struct TelemetryConfig {
@@ -20,6 +35,8 @@ pub(crate) struct TelemetryConfig {
     /// Unified metrics OTLP endpoint (without credentials).
     /// Used for both consensus and execution metrics.
     pub metrics_otlp_url: String,
+    /// The interval at which to push metrics via OTLP.
+    pub metrics_otlp_interval: SignedDuration,
 }
 
 fn init_download_urls() {
@@ -75,11 +92,16 @@ pub(crate) fn init_defaults() {
     init_txpool_defaults();
 }
 
-/// Parses the telemetry URL into a [`TelemetryConfig`].
-pub(crate) fn parse_telemetry_config(telemetry_url: &str) -> eyre::Result<TelemetryConfig> {
+/// Parses the telemetry args into a [`TelemetryConfig`].
+///
+/// Returns `None` if telemetry is not enabled (no URL provided).
+pub(crate) fn parse_telemetry_config(args: &TelemetryArgs) -> eyre::Result<Option<TelemetryConfig>> {
+    let Some(ref telemetry_otlp) = args.telemetry_otlp else {
+        return Ok(None);
+    };
     // Parse the URL
-    let mut url =
-        Url::parse(telemetry_url).map_err(|e| eyre::eyre!("--telemetry-url: invalid URL: {e}"))?;
+    let mut url = Url::parse(telemetry_otlp)
+        .map_err(|e| eyre::eyre!("--telemetry-otlp: invalid URL: {e}"))?;
 
     // Extract credentials - both username and password are required
     let username = url.username();
@@ -87,7 +109,7 @@ pub(crate) fn parse_telemetry_config(telemetry_url: &str) -> eyre::Result<Teleme
 
     if username.is_empty() || password.is_none() {
         return Err(eyre::eyre!(
-            "--telemetry-url must include credentials (username and password).\n\
+            "--telemetry-otlp must include credentials (username and password).\n\
              Format: https://user:pass@metrics.example.com"
         ));
     }
@@ -115,9 +137,10 @@ pub(crate) fn parse_telemetry_config(telemetry_url: &str) -> eyre::Result<Teleme
     // Build unified metrics OTLP URL (standard OTLP HTTP path)
     let metrics_otlp_url = format!("{base_url_no_creds}/v1/metrics");
 
-    Ok(TelemetryConfig {
+    Ok(Some(TelemetryConfig {
         logs_otlp_url,
         logs_otlp_filter: DEFAULT_LOGS_OTLP_FILTER.to_string(),
         metrics_otlp_url,
-    })
+        metrics_otlp_interval: args.telemetry_otlp_interval,
+    }))
 }
