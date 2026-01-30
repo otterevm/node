@@ -202,6 +202,14 @@ impl TIP403Registry {
         msg_sender: Address,
         call: ITIP403Registry::createPolicyCall,
     ) -> Result<u64> {
+        // Only allow WHITELIST or BLACKLIST - use createCompoundPolicy for COMPOUND
+        if !matches!(
+            call.policyType,
+            ITIP403Registry::PolicyType::WHITELIST | ITIP403Registry::PolicyType::BLACKLIST
+        ) {
+            return Err(TIP403RegistryError::incompatible_policy_type().into());
+        }
+
         let new_policy_id = self.policy_id_counter()?;
 
         // Increment counter
@@ -243,6 +251,15 @@ impl TIP403Registry {
         call: ITIP403Registry::createPolicyWithAccountsCall,
     ) -> Result<u64> {
         let (admin, policy_type) = (call.admin, call.policyType);
+
+        // Only allow WHITELIST or BLACKLIST - use createCompoundPolicy for COMPOUND
+        if !matches!(
+            policy_type,
+            ITIP403Registry::PolicyType::WHITELIST | ITIP403Registry::PolicyType::BLACKLIST
+        ) {
+            return Err(TIP403RegistryError::incompatible_policy_type().into());
+        }
+
         let new_policy_id = self.policy_id_counter()?;
 
         // Increment counter
@@ -286,9 +303,9 @@ impl TIP403Registry {
                         },
                     ))?;
                 }
+                // Already validated above, but match must be exhaustive
                 ITIP403Registry::PolicyType::COMPOUND | ITIP403Registry::PolicyType::__Invalid => {
-                    // COMPOUND policies are created via createCompoundPolicy, not createPolicyWithAccounts
-                    return Err(TIP403RegistryError::incompatible_policy_type().into());
+                    unreachable!()
                 }
             }
         }
@@ -761,6 +778,68 @@ mod tests {
     // =========================================================================
     //                      TIP-1015: Compound Policy Tests
     // =========================================================================
+
+    #[test]
+    fn test_create_policy_rejects_compound_type() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        StorageCtx::enter(&mut storage, || {
+            let mut registry = TIP403Registry::new();
+
+            // Attempting to create a COMPOUND policy via createPolicy should fail
+            let result = registry.create_policy(
+                admin,
+                ITIP403Registry::createPolicyCall {
+                    admin,
+                    policyType: ITIP403Registry::PolicyType::COMPOUND,
+                },
+            );
+            assert!(result.is_err());
+
+            // Verify the error is IncompatiblePolicyType
+            let err = result.unwrap_err();
+            assert!(matches!(
+                err,
+                crate::error::TempoPrecompileError::TIP403RegistryError(
+                    TIP403RegistryError::IncompatiblePolicyType(_)
+                )
+            ));
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_create_policy_with_accounts_rejects_compound_type() -> eyre::Result<()> {
+        let mut storage = HashMapStorageProvider::new(1);
+        let admin = Address::random();
+        let user = Address::random();
+        StorageCtx::enter(&mut storage, || {
+            let mut registry = TIP403Registry::new();
+
+            // Attempting to create a COMPOUND policy via createPolicyWithAccounts should fail
+            let result = registry.create_policy_with_accounts(
+                admin,
+                ITIP403Registry::createPolicyWithAccountsCall {
+                    admin,
+                    policyType: ITIP403Registry::PolicyType::COMPOUND,
+                    accounts: vec![user],
+                },
+            );
+            assert!(result.is_err());
+
+            // Verify the error is IncompatiblePolicyType
+            let err = result.unwrap_err();
+            assert!(matches!(
+                err,
+                crate::error::TempoPrecompileError::TIP403RegistryError(
+                    TIP403RegistryError::IncompatiblePolicyType(_)
+                )
+            ));
+
+            Ok(())
+        })
+    }
 
     #[test]
     fn test_create_compound_policy() -> eyre::Result<()> {
