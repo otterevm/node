@@ -40,10 +40,10 @@ start_validator() {
   docker rm -f "$container_name" >/dev/null 2>&1 || true
 
   # Start the validator container
-  # Build extra args for metrics OTLP if TELEMETRY_URL is set
+  # Build extra args for metrics OTLP if TELEMETRY_OTLP is set
   local metrics_args=""
-  if [[ -n "${TELEMETRY_URL:-}" ]]; then
-    metrics_args="--telemetry-url $TELEMETRY_URL"
+  if [[ -n "${TELEMETRY_OTLP:-}" ]]; then
+    metrics_args="--telemetry-otlp $TELEMETRY_OTLP"
   fi
 
   docker run -d \

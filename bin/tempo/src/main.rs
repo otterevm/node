@@ -121,10 +121,9 @@ fn main() -> eyre::Result<()> {
         tempo_cmd::TempoSubcommand,
     >::parse();
 
-    // If telemetry is enabled, set related flags and check for conflicts.
-    if let Commands::Node(ref mut node_cmd) = cli.command {
+    // If telemetry is enabled, set logs OTLP and check for conflicts
+    if let Commands::Node(ref node_cmd) = cli.command {
         if let Some(config) = defaults::parse_telemetry_config(&node_cmd.ext.telemetry)? {
-            // Check for conflicting OTLP options
             if cli.traces.logs_otlp.is_some() {
                 return Err(eyre::eyre!(
                     "--telemetry-otlp and --logs.otlp cannot both be specified"
@@ -205,24 +204,23 @@ fn main() -> eyre::Result<()> {
                 .fuse();
 
                 // Start the unified OTLP metrics exporter if configured
-                let _metrics_otlp = defaults::parse_telemetry_config(&args.telemetry)?
-                    .map(|config| {
-                        let mut labels = std::collections::HashMap::new();
+                if let Some(config) = defaults::parse_telemetry_config(&args.telemetry)? {
+                    let mut labels = std::collections::HashMap::new();
 
-                        // Add consensus public key as node identifier
-                        if let Ok(Some(public_key)) = args.consensus.public_key() {
-                            labels.insert("consensus_id".to_string(), public_key.to_string());
-                        }
+                    // Add consensus public key as node identifier
+                    if let Ok(Some(public_key)) = args.consensus.public_key() {
+                        labels.insert("consensus_id".to_string(), public_key.to_string());
+                    }
 
-                        let otlp_config = OtlpMetricsConfig {
-                            endpoint: config.metrics_otlp_url,
-                            interval: config.metrics_otlp_interval,
-                            labels,
-                        };
+                    let otlp_config = OtlpMetricsConfig {
+                        endpoint: config.metrics_otlp_url,
+                        interval: config.metrics_otlp_interval,
+                        labels,
+                    };
 
-                        install_otlp_metrics(ctx.with_label("metrics_otlp"), otlp_config)
-                    })
-                    .transpose()?;
+                    install_otlp_metrics(ctx.with_label("metrics_otlp"), otlp_config)
+                        .wrap_err("failed to start OTLP metrics exporter")?;
+                }
 
                 let consensus_stack =
                     run_consensus_stack(&ctx, args.consensus, node, cl_feed_state_clone);

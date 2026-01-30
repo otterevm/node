@@ -4,9 +4,9 @@
 //! - Commonware's runtime context (`context.encode()`)
 //! - Reth's prometheus recorder (`handle.render()`)
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use commonware_runtime::{Handle, Metrics as _, Spawner as _, tokio::Context};
+use commonware_runtime::{Metrics as _, Spawner as _, tokio::Context};
 use eyre::WrapErr as _;
 use jiff::SignedDuration;
 use opentelemetry::{KeyValue, metrics::MeterProvider as _};
@@ -24,28 +24,22 @@ pub struct OtlpMetricsConfig {
     pub endpoint: String,
     /// The interval at which to export metrics.
     pub interval: SignedDuration,
-    /// Labels to add to all metrics as resource attributes
+    /// Labels to add to all metrics as resource attributes.
     pub labels: HashMap<String, String>,
 }
 
-/// Handle to the OTLP metrics exporter that must be held for the lifetime of the export.
-pub struct OtlpMetricsHandle {
-    _meter_provider: SdkMeterProvider,
-    _task: Handle<()>,
-}
-
-/// Installs a unified OTLP metrics exporter that periodically pushes both consensus and
-/// execution metrics.
+/// Spawns a task that periodically pushes both consensus and execution metrics via OTLP.
 ///
 /// This bridges Prometheus-format metrics to OTLP by polling:
 /// - `context.encode()` for commonware/consensus metrics
 /// - `install_prometheus_recorder().handle().render()` for reth/execution metrics
 ///
-/// Returns an `OtlpMetricsHandle` that must be held for the lifetime of the export.
-pub fn install_otlp_metrics(
-    context: Context,
-    config: OtlpMetricsConfig,
-) -> eyre::Result<OtlpMetricsHandle> {
+/// The task runs for the lifetime of the consensus runtime. The meter provider is owned
+/// by the task, so no handle needs to be held by the caller.
+///
+/// Configuration errors are returned immediately; the task is only spawned on success.
+pub fn install_otlp_metrics(context: Context, config: OtlpMetricsConfig) -> eyre::Result<()> {
+    // Build resource attributes for OTLP
     let resource_attributes: Vec<KeyValue> = config
         .labels
         .iter()
@@ -79,25 +73,29 @@ pub fn install_otlp_metrics(
 
     let meter = meter_provider.meter("tempo");
 
-    // Cache for dynamically created counters (and Histograms).
-    //
-    // When reported, Histograms are already aggregated into a collection of counters, thus
-    // we don't have a way to reconstruct the observations to recreate an opentelemetry
-    // Histogram with the individual observations.
-    //
-    // Note: VictoriaMetrics/Grafana will recognize the prometheus bucket labeling format
-    // and will treat these metrics as histograms.
-    let counters: Arc<Mutex<HashMap<String, opentelemetry::metrics::Counter<f64>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-
-    // Cache for dynamically created gauges
-    let gauges: Arc<Mutex<HashMap<String, opentelemetry::metrics::Gauge<f64>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-
     // Poll at half the export interval to ensure fresh data for each export
     let poll_interval = interval / 2;
-    let task = context.spawn(move |context| async move {
+
+    context.spawn(move |context| async move {
         use commonware_runtime::Clock as _;
+
+        // Meter provider must live for the duration of metrics export
+        let _meter_provider = meter_provider;
+
+        // Cache for dynamically created counters (and Histograms).
+        //
+        // When reported, Histograms are already aggregated into a collection of counters, thus
+        // we don't have a way to reconstruct the observations to recreate an opentelemetry
+        // Histogram with the individual observations.
+        //
+        // Note: VictoriaMetrics/Grafana will recognize the prometheus bucket labeling format
+        // and will treat these metrics as histograms.
+        let counters: Mutex<HashMap<String, opentelemetry::metrics::Counter<f64>>> =
+            Mutex::new(HashMap::new());
+
+        // Cache for dynamically created gauges
+        let gauges: Mutex<HashMap<String, opentelemetry::metrics::Gauge<f64>>> =
+            Mutex::new(HashMap::new());
 
         // Track last counter values to compute deltas (OTLP counters expect deltas, not absolutes)
         let mut last_counter_values: HashMap<(String, Vec<(String, String)>), f64> = HashMap::new();
@@ -172,10 +170,7 @@ pub fn install_otlp_metrics(
         }
     });
 
-    Ok(OtlpMetricsHandle {
-        _meter_provider: meter_provider,
-        _task: task,
-    })
+    Ok(())
 }
 
 /// Parse a prometheus metric line like `metric_name{label="value"} 123`
