@@ -1061,15 +1061,7 @@ impl StablecoinDEX {
         };
 
         let policy_id = TIP20Token::from_address(token)?.transfer_policy_id()?;
-
-        // TIP-1015: Use `isAuthorizedSender` for T1+, `isAuthorized` for pre-T1
-        let role = if self.storage.spec().is_t1() {
-            AuthRole::Sender
-        } else {
-            AuthRole::Transfer
-        };
-
-        if TIP403Registry::new().is_authorized_as(policy_id, order.maker(), role)? {
+        if TIP403Registry::new().is_authorized_as(policy_id, order.maker(), AuthRole::sender())? {
             return Err(StablecoinDEXError::order_not_stale().into());
         }
 

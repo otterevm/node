@@ -340,14 +340,8 @@ impl TIP20Token {
         let total_supply = self.total_supply()?;
 
         // Check if the `to` address is authorized to receive minted tokens
-        // TIP-1015: Use `isAuthorizedMintRecipient` for T1+, `isAuthorized` for pre-T1
         let policy_id = self.transfer_policy_id()?;
-        let role = if self.storage.spec().is_t1() {
-            AuthRole::MintRecipient
-        } else {
-            AuthRole::Transfer
-        };
-        if !TIP403Registry::new().is_authorized_as(policy_id, to, role)? {
+        if !TIP403Registry::new().is_authorized_as(policy_id, to, AuthRole::mint_recipient())? {
             return Err(TIP20Error::policy_forbids().into());
         }
 
@@ -419,14 +413,8 @@ impl TIP20Token {
         }
 
         // Check if the address is blocked from transferring (sender authorization)
-        // TIP-1015: Use `isAuthorizedSender` for T1+, `isAuthorized` for pre-T1
         let policy_id = self.transfer_policy_id()?;
-        let role = if self.storage.spec().is_t1() {
-            AuthRole::Sender
-        } else {
-            AuthRole::Transfer
-        };
-        if TIP403Registry::new().is_authorized_as(policy_id, call.from, role)? {
+        if TIP403Registry::new().is_authorized_as(policy_id, call.from, AuthRole::sender())? {
             // Only allow burning from addresses that are blocked from transferring
             return Err(TIP20Error::policy_forbids().into());
         }
@@ -692,16 +680,10 @@ impl TIP20Token {
         let policy_id = self.transfer_policy_id()?;
         let registry = TIP403Registry::new();
 
-        let (from_role, to_role) = if self.storage.spec().is_t1() {
-            (AuthRole::Sender, AuthRole::Recipient)
-        } else {
-            (AuthRole::Transfer, AuthRole::Transfer)
-        };
-
-        if !registry.is_authorized_as(policy_id, from, from_role)? {
+        if !registry.is_authorized_as(policy_id, from, AuthRole::sender())? {
             return Ok(false);
         }
-        registry.is_authorized_as(policy_id, to, to_role)
+        registry.is_authorized_as(policy_id, to, AuthRole::recipient())
     }
 
     /// Ensures the transfer is authorized.
