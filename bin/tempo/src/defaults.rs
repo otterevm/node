@@ -132,7 +132,7 @@ pub(crate) fn parse_telemetry_config(
         }
     }
 
-    // Build URL without credentials for OTLP
+    // Build URL without credentials
     url.set_username("").ok();
     url.set_password(None).ok();
     let base_url_no_creds = url.as_str().trim_end_matches('/');
@@ -141,7 +141,7 @@ pub(crate) fn parse_telemetry_config(
     let logs_otlp_url = Url::parse(&format!("{base_url_no_creds}/opentelemetry/v1/logs"))
         .map_err(|e| eyre::eyre!("failed to construct logs OTLP URL: {e}"))?;
 
-    // Build Victoria Metrics Prometheus import URL
+    // Build metrics prometheus URL (Victoria Metrics Prometheus import path)
     let metrics_prometheus_url = format!("{base_url_no_creds}/api/v1/import/prometheus");
 
     Ok(Some(TelemetryConfig {
