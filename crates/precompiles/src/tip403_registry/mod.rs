@@ -166,13 +166,16 @@ impl TIP403Registry {
         msg_sender: Address,
         call: ITIP403Registry::createPolicyCall,
     ) -> Result<u64> {
+        // Before T1, creating policies with invalid enum types (including values that
+        // decode as COMPOUND or __Invalid) was permitted due to a bug. T1 fixes this by
+        // rejecting invalid policy types. COMPOUND policies must be created via
+        // createCompoundPolicy, not this function.
         if self.storage.spec().is_t1()
             && matches!(
                 call.policyType,
                 ITIP403Registry::PolicyType::COMPOUND | ITIP403Registry::PolicyType::__Invalid
             )
         {
-            // COMPOUND policies are created via createCompoundPolicy
             return Err(TIP403RegistryError::incompatible_policy_type().into());
         }
 
