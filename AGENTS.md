@@ -192,12 +192,82 @@ git commit -m "merge: resolve conflicts from upstream"
 
 ## Docker
 
+### Build Configuration
+- **Dockerfile**: Multi-stage build with 6 targets
+- **Base Image**: `debian:bookworm-slim`
+- **Chef Image**: Pre-compiles dependencies for caching
+- **Build Time**: 10-30 minutes (first time)
+
+### Available Targets
+| Target | Description |
+|--------|-------------|
+| `otter` | Main node binary |
+| `otter-bench` | Benchmark tool (includes nushell) |
+| `otter-sidecar` | Sidecar service |
+| `otter-xtask` | Build/utility tasks |
+
+### Build Commands
+
 ```bash
-# Build images
+# Build all targets
 docker buildx bake
 
-# Run node
-docker run -it otter:latest
+# Build specific target
+docker buildx bake otter
+docker buildx bake otter-bench
+
+# Build and load to local docker
+docker buildx bake --load otter
+
+# Build with custom profile
+docker buildx bake --set *.args.RUST_PROFILE=release
+
+# Using Dockerfile directly
+docker build --target otter -t otter:latest .
+docker build --target otter-bench -t otter-bench:latest .
+```
+
+### Run Containers
+
+```bash
+# Run main node
+docker run -it --rm otter:latest --help
+docker run -it --rm -p 8545:8545 otter:latest node --dev --http
+
+# Run with volume for data
+docker run -it --rm -v $(pwd)/data:/data otter:latest node --datadir /data
+
+# Run sidecar
+docker run -it --rm otter-sidecar:latest --help
+
+# Run benchmark
+docker run -it --rm otter-bench:latest --help
+```
+
+### Build Stages
+```dockerfile
+1. chef      - Cache dependencies
+2. builder   - Compile all binaries
+3. base      - Minimal Debian image
+4. otter     - Copy otter binary
+5. otter-*   - Copy other binaries
+```
+
+### Known Warnings (Non-critical)
+- `DL3045`: COPY without WORKDIR (accepted pattern)
+- `DL3008`: apt-get without version pins (acceptable)
+
+### Troubleshooting
+
+```bash
+# Clean build cache if issues
+docker buildx prune -f
+
+# Check build configuration
+docker buildx bake --print
+
+# Build with verbose output
+docker buildx bake --progress=plain otter
 ```
 
 ---
