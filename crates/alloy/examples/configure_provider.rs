@@ -1,4 +1,4 @@
-//! Configure a Tempo provider to interact with the network.
+//! Configure an OtterEVM provider to interact with the network.
 //!
 //! Run with: `cargo run --example configure_provider`
 

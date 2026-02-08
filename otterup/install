@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-# Tempoup bootstrap installer
-# Downloads tempoup script and sets up PATH
+# Otterup bootstrap installer
+# Downloads otterup script and sets up PATH
 
-INSTALL_DIR="${TEMPO_DIR:-$HOME/.tempo}"
+INSTALL_DIR="${OTTER_DIR:-$HOME/.otter}"
 BIN_DIR="$INSTALL_DIR/bin"
-TEMPOUP_URL="https://raw.githubusercontent.com/tempoxyz/tempo/main/tempoup/tempoup"
+OTTERUP_URL="https://raw.githubusercontent.com/your-org/otterevm/main/otterup/otterup"
 
 # Color output
 GREEN='\033[0;32m'
@@ -46,25 +46,25 @@ get_shell_config() {
 }
 
 main() {
-    echo "Installing tempoup..."
+    echo "Installing otterup..."
     echo ""
 
     # Create bin directory
     mkdir -p "$BIN_DIR"
 
-    # Download tempoup script
-    info "Downloading tempoup script..."
+    # Download otterup script
+    info "Downloading otterup script..."
     if command -v curl >/dev/null 2>&1; then
-        curl -# -L "$TEMPOUP_URL" -o "$BIN_DIR/tempoup"
+        curl -# -L "$OTTERUP_URL" -o "$BIN_DIR/otterup"
     elif command -v wget >/dev/null 2>&1; then
-        wget --show-progress -q -O "$BIN_DIR/tempoup" "$TEMPOUP_URL"
+        wget --show-progress -q -O "$BIN_DIR/otterup" "$OTTERUP_URL"
     else
         echo "Error: Neither curl nor wget found. Please install one of them."
         exit 1
     fi
 
-    chmod +x "$BIN_DIR/tempoup"
-    info "Tempoup installed to $BIN_DIR/tempoup"
+    chmod +x "$BIN_DIR/otterup"
+    info "Otterup installed to $BIN_DIR/otterup"
 
     # Add to PATH if not already present
     if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
@@ -72,11 +72,12 @@ main() {
         SHELL_NAME=$(basename "$SHELL")
 
         info "Adding $BIN_DIR to PATH in $SHELL_CONFIG"
+        echo ""
 
         mkdir -p "$(dirname "$SHELL_CONFIG")"
 
         echo "" >> "$SHELL_CONFIG"
-        echo "# Added by tempoup installer" >> "$SHELL_CONFIG"
+        echo "# Added by otterup installer" >> "$SHELL_CONFIG"
 
         if [[ "$SHELL_NAME" == "fish" ]]; then
             echo "fish_add_path -a \"$BIN_DIR\"" >> "$SHELL_CONFIG"
@@ -90,12 +91,12 @@ main() {
         echo ""
     fi
 
-    # Run tempoup to install tempo binary
-    info "Running tempoup to install tempo..."
+    # Run otterup to install otter binary
+    info "Running otterup to install otter..."
     echo ""
 
     export PATH="$BIN_DIR:$PATH"
-    "$BIN_DIR/tempoup"
+    "$BIN_DIR/otterup"
 }
 
 main

@@ -13,15 +13,15 @@
 <br>
 <br>
 
-# Tempo
+# OtterEVM
 
-The blockchain for payments at scale.
+An EVM-compatible blockchain for payments at scale.
 
-[Tempo](https://docs.tempo.xyz/) is a blockchain designed specifically for stablecoin payments. Its architecture focuses on high throughput, low cost, and features that financial institutions, payment service providers, and fintech platforms expect from modern payment infrastructure.
+OtterEVM is a blockchain designed specifically for stablecoin payments, forked from [Tempo](https://docs.tempo.xyz/). Its architecture focuses on high throughput, low cost, and features that financial institutions, payment service providers, and fintech platforms expect from modern payment infrastructure.
 
-You can get started today by integrating with the [Tempo testnet](https://docs.tempo.xyz/quickstart/integrate-tempo), [building on Tempo](https://docs.tempo.xyz/guide/use-accounts), [running a Tempo node](https://docs.tempo.xyz/guide/node), reading the [Tempo protocol specs](https://docs.tempo.xyz/protocol) or by [building with Tempo SDKs](https://docs.tempo.xyz/sdk).
+You can get started today by integrating with the OtterEVM testnet, building on OtterEVM, running an OtterEVM node, reading the protocol specs or by building with our SDKs.
 
-## What makes Tempo different
+## What makes OtterEVM different
 
 - [TIP‑20 token standard](https://docs.tempo.xyz/protocol/tip20/overview) (enshrined ERC‑20 extensions)
 
@@ -51,63 +51,63 @@ You can get started today by integrating with the [Tempo testnet](https://docs.t
   - On‑chain FX and non‑USD stablecoin support for direct on‑chain liquidity; pay fees in more currencies.
   - Native private token standard: opt‑in privacy for balances/transfers coexisting with issuer compliance and auditability.
 
-## What makes Tempo familiar
+## What makes OtterEVM familiar
 
 - Fully compatible with the Ethereum Virtual Machine (EVM), targeting the Osaka hardfork.
 - Deploy and interact with smart contracts using the same tools, languages, and frameworks used on Ethereum, such as Solidity, Foundry, and Hardhat.
 - All Ethereum JSON-RPC methods work out of the box.
 
-While the execution environment mirrors Ethereum's, Tempo introduces some differences optimized for payments, described [here](https://docs.tempo.xyz/quickstart/evm-compatibility).
+While the execution environment mirrors Ethereum's, OtterEVM introduces some differences optimized for payments, based on the [Tempo protocol](https://docs.tempo.xyz/quickstart/evm-compatibility).
 
 ## Getting Started
 
 ### As a user
 
-You can connect to Tempo's public testnet using the following details:
+You can connect to OtterEVM's public testnet using the following details:
 
 | Property           | Value                              |
 | ------------------ | ---------------------------------- |
-| **Network Name**   | Tempo Testnet (Moderato)           |
+| **Network Name**   | OtterEVM Testnet                   |
 | **Currency**       | `USD`                              |
 | **Chain ID**       | `42431`                            |
-| **HTTP URL**       | `https://rpc.moderato.tempo.xyz`   |
-| **WebSocket URL**  | `wss://rpc.moderato.tempo.xyz`     |
-| **Block Explorer** | `https://explore.tempo.xyz`        |
+| **HTTP URL**       | `https://rpc.otterevm.xyz`         |
+| **WebSocket URL**  | `wss://rpc.otterevm.xyz`           |
+| **Block Explorer** | `https://explorer.otterevm.xyz`    |
 
-Next, grab some stablecoins to test with from Tempo's [Faucet](https://docs.tempo.xyz/quickstart/faucet#faucet).
+Next, grab some stablecoins to test with from the [Faucet](https://faucet.otterevm.xyz).
 
-Alternatively, use [`cast`](https://github.com/tempoxyz/tempo-foundry):
+Alternatively, use `cast`:
 
 ```bash
-cast rpc tempo_fundAddress <ADDRESS> --rpc-url https://rpc.moderato.tempo.xyz
+cast rpc otter_fundAddress <ADDRESS> --rpc-url https://rpc.otterevm.xyz
 ```
 
 ### As an operator
 
 We provide three different installation paths: installing a pre-built binary, building from source or using our provided Docker image.
 
-- [Pre-built Binary](https://docs.tempo.xyz/guide/node/installation#pre-built-binary)
-- [Build from Source](https://docs.tempo.xyz/guide/node/installation#build-from-source)
-- [Docker](https://docs.tempo.xyz/guide/node/installation#docker)
+- Pre-built Binary
+- Build from Source
+- Docker
 
-See the [Tempo documentation](https://docs.tempo.xyz/guide/node) for instructions on how to install and run Tempo.
+See the documentation for instructions on how to install and run OtterEVM.
 
 ### As a developer
 
-Tempo has several SDKs to help you get started building on Tempo:
+OtterEVM has several SDKs to help you get started building:
 
-- [TypeScript](https://docs.tempo.xyz/sdk/typescript)
-- [Rust](https://docs.tempo.xyz/sdk/rust)
-- [Go](https://docs.tempo.xyz/sdk/go)
-- [Foundry](https://docs.tempo.xyz/sdk/foundry)
+- TypeScript
+- Rust
+- Go
+- Foundry
 
 Want to contribute?
 
 First, clone the repository:
 
 ```
-git clone https://github.com/tempoxyz/tempo
-cd tempo
+git clone https://github.com/your-org/otterevm
+cd otterevm
 ```
 
 Next, install [`just`](https://github.com/casey/just?tab=readme-ov-file#packages).
@@ -118,7 +118,7 @@ Install the dependencies:
 just
 ```
 
-Build Tempo:
+Build OtterEVM:
 
 ```bash
 just build-all
@@ -138,11 +138,11 @@ just localnet
 
 ## Contributing
 
-Our contributor guidelines can be found in [`CONTRIBUTING.md`](https://github.com/tempoxyz/tempo?tab=contributing-ov-file).
+Our contributor guidelines can be found in `CONTRIBUTING.md`.
 
 ## Security
 
-See [`SECURITY.md`](https://github.com/tempoxyz/tempo?tab=security-ov-file). Note: Tempo is still undergoing audit and does not have an active bug bounty. Submissions will not be eligible for a bounty until audits have concluded.
+See `SECURITY.md`. Note: OtterEVM is still undergoing audit and does not have an active bug bounty. Submissions will not be eligible for a bounty until audits have concluded.
 
 ## License
 

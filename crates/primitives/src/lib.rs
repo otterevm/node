@@ -1,4 +1,4 @@
-//! Tempo primitive types
+//! OtterEVM primitive types
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg), allow(unexpected_cfgs))]

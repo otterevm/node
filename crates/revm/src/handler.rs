@@ -1,4 +1,4 @@
-//! Tempo EVM Handler implementation.
+//! OtterEVM Handler implementation.
 
 use std::{
     cmp::Ordering,

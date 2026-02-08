@@ -15,10 +15,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked,id=sccache \
     RUSTFLAGS="-C link-arg=-fuse-ld=mold ${EXTRA_RUSTFLAGS}" \
     cargo build --profile ${RUST_PROFILE} \
-        --bin tempo --features "asm-keccak,jemalloc,otlp" \
-        --bin tempo-bench \
-        --bin tempo-sidecar \
-        --bin tempo-xtask
+        --bin otter --features "asm-keccak,jemalloc,otlp" \
+        --bin otter-bench \
+        --bin otter-sidecar \
+        --bin otter-xtask
 
 FROM debian:bookworm-slim AS base
 
@@ -28,27 +28,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /data
 
-# tempo
-FROM base AS tempo
+# otter
+FROM base AS otter
 ARG RUST_PROFILE=profiling
-COPY --from=builder /app/target/${RUST_PROFILE}/tempo /usr/local/bin/tempo
-ENTRYPOINT ["/usr/local/bin/tempo"]
+COPY --from=builder /app/target/${RUST_PROFILE}/otter /usr/local/bin/otter
+ENTRYPOINT ["/usr/local/bin/otter"]
 
-# tempo-sidecar
-FROM base AS tempo-sidecar
+# otter-sidecar
+FROM base AS otter-sidecar
 ARG RUST_PROFILE=profiling
-COPY --from=builder /app/target/${RUST_PROFILE}/tempo-sidecar /usr/local/bin/tempo-sidecar
-ENTRYPOINT ["/usr/local/bin/tempo-sidecar"]
+COPY --from=builder /app/target/${RUST_PROFILE}/otter-sidecar /usr/local/bin/otter-sidecar
+ENTRYPOINT ["/usr/local/bin/otter-sidecar"]
 
-# tempo-xtask
-FROM base AS tempo-xtask
+# otter-xtask
+FROM base AS otter-xtask
 ARG RUST_PROFILE=profiling
-COPY --from=builder /app/target/${RUST_PROFILE}/tempo-xtask /usr/local/bin/tempo-xtask
-ENTRYPOINT ["/usr/local/bin/tempo-xtask"]
+COPY --from=builder /app/target/${RUST_PROFILE}/otter-xtask /usr/local/bin/otter-xtask
+ENTRYPOINT ["/usr/local/bin/otter-xtask"]
 
-# tempo-bench (needs nushell)
-FROM base AS tempo-bench
+# otter-bench (needs nushell)
+FROM base AS otter-bench
 ARG RUST_PROFILE=profiling
 COPY --from=ghcr.io/nushell/nushell:0.108.0-bookworm /usr/bin/nu /usr/bin/nu
-COPY --from=builder /app/target/${RUST_PROFILE}/tempo-bench /usr/local/bin/tempo-bench
-ENTRYPOINT ["/usr/local/bin/tempo-bench"]
+COPY --from=builder /app/target/${RUST_PROFILE}/otter-bench /usr/local/bin/otter-bench
+ENTRYPOINT ["/usr/local/bin/otter-bench"]

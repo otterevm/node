@@ -2,7 +2,7 @@ use crate::cmd::max_tps::MaxTpsArgs;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(name = "otter-bench", version, about = "OtterEVM benchmarking tool", long_about = None)]
 pub struct TempoBench {
     #[command(subcommand)]
     pub cmd: TempoBenchSubcommand,

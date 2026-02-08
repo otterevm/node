@@ -85,7 +85,7 @@ struct PyroscopeArgs {
     pub server_url: String,
 
     /// Application name for Pyroscope
-    #[arg(long = "pyroscope.application-name", default_value = "tempo")]
+    #[arg(long = "pyroscope.application-name", default_value = "otter")]
     pub application_name: String,
 
     /// Sample rate for profiling (default: 100 Hz)

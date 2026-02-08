@@ -8,7 +8,7 @@ cd infrastructure/ansible
 
 echo "[$(date)] setting up testnet with Ansible"
 
-ansible-playbook --vault-password-file ./vault.key --extra-vars "tempo_download_url='https://api.github.com/repos/tempoxyz/tempo/actions/artifacts/$TEMPO_DOWNLOAD_ID/zip' tempo_sidecar_download_url='https://api.github.com/repos/tempoxyz/tempo/actions/artifacts/$TEMPO_SIDECAR_DOWNLOAD_ID/zip' tempo_force_reset=True tempo_relative_path='../../' tempo_commonware=False tempo_proposer='true'" -i benchmark-1 --limit lento-node-1-1 --tags devnet devnet.yml
+ansible-playbook --vault-password-file ./vault.key --extra-vars "tempo_download_url='https://api.github.com/repos/tempoxyz/tempo/actions/artifacts/$TEMPO_DOWNLOAD_ID/zip' otter_sidecar_download_url='https://api.github.com/repos/tempoxyz/tempo/actions/artifacts/$TEMPO_SIDECAR_DOWNLOAD_ID/zip' otter_force_reset=True otter_relative_path='../../' otter_commonware=False otter_proposer='true'" -i benchmark-1 --limit lento-node-1-1 --tags devnet devnet.yml
 
 sleep 1
 

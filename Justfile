@@ -7,12 +7,12 @@ install-cross:
     cargo install cross --git https://github.com/cross-rs/cross
 
 [group('build')]
-[doc('Builds all tempo binaries in cargo release mode')]
-build-all-release extra_args="": (build-release "tempo" extra_args)
+[doc('Builds all OtterEVM binaries in cargo release mode')]
+build-all-release extra_args="": (build-release "otter" extra_args)
 
 [group('build')]
-[doc('Builds all tempo binaries')]
-build-all extra_args="": (build "tempo" extra_args)
+[doc('Builds all OtterEVM binaries')]
+build-all extra_args="": (build "otter" extra_args)
 
 build-release binary extra_args="": (build binary "-r " + extra_args)
 
@@ -22,7 +22,7 @@ build binary extra_args="":
 [group('localnet')]
 [doc('Generates a genesis file')]
 genesis accounts="1000" output="./" profile="maxperf":
-    cargo run -p tempo-xtask --profile {{profile}} -- generate-genesis --output {{output}} -a {{accounts}} --no-dkg-in-genesis
+    cargo run --bin otter-xtask --profile {{profile}} -- generate-genesis --output {{output}} -a {{accounts}} --no-dkg-in-genesis
 
 [group('localnet')]
 [doc('Deletes local network data and launches a new localnet')]
@@ -34,7 +34,7 @@ localnet accounts="1000" reset="true" profile="maxperf" features="asm-keccak" ar
         mkdir ./localnet/
         just genesis {{accounts}} ./localnet {{profile}}
     fi;
-    cargo run --bin tempo --profile {{profile}} --features {{features}} -- \
+    cargo run --bin otter --profile {{profile}} --features {{features}} -- \
                       node \
                       --chain ./localnet/genesis.json \
                       --dev \

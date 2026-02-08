@@ -1,4 +1,4 @@
-//! Tempo Payload Builder.
+//! OtterEVM Payload Builder.
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]

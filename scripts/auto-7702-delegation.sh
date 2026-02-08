@@ -19,7 +19,7 @@ export TEST_ADDR=$(echo "$WALLET_JSON" | jq -r '.[0].address')
 echo "Generated wallet: $TEST_ADDR"
 
 echo "Funding address $TEST_ADDR..."
-cast rpc tempo_fundAddress $TEST_ADDR
+cast rpc otter_fundAddress $TEST_ADDR
 sleep 2
 echo "Balance: $(cast balance --erc20 $TOKEN_ADDR $TEST_ADDR)"
 

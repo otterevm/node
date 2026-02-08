@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 set -e
 
-# Tempoup - Tempo installer
-# Downloads and installs the tempo binary from GitHub releases
+# Otterup - OtterEVM installer
+# Downloads and installs the otter binary from GitHub releases
 
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
-TEMPOUP_INSTALLER_VERSION="0.0.1"
+OTTERUP_INSTALLER_VERSION="0.0.1"
 
-REPO="tempoxyz/tempo"
+REPO="your-org/otterevm"
 # GPG key fingerprint for release signing verification
 GPG_KEY_FINGERPRINT="EE3C5D41EA963E896F310EC3CBBFA54B20D33446"
 GPG_KEYSERVER="keyserver.ubuntu.com"
-INSTALL_DIR="${TEMPO_DIR:-$HOME/.tempo}"
+INSTALL_DIR="${OTTER_DIR:-$HOME/.otter}"
 BIN_DIR="$INSTALL_DIR/bin"
-TEMPOUP_BIN_URL="https://raw.githubusercontent.com/tempoxyz/tempo/main/tempoup/tempoup"
-TEMPOUP_BIN_PATH="$BIN_DIR/tempoup"
+OTTERUP_BIN_URL="https://raw.githubusercontent.com/your-org/otterevm/main/otterup/otterup"
+OTTERUP_BIN_PATH="$BIN_DIR/otterup"
 
 # Color output
 RED='\033[0;31m'
@@ -97,7 +97,7 @@ check_cmd() {
     command -v "$1" &>/dev/null
 }
 
-# Check if tempoup installer is up to date
+# Check if otterup installer is up to date
 check_installer_up_to_date() {
     # Skip check if curl not available
     if ! command -v curl >/dev/null 2>&1; then
@@ -105,26 +105,26 @@ check_installer_up_to_date() {
     fi
 
     # Fetch the remote version
-    local remote_version=$(curl -fsSL "$TEMPOUP_BIN_URL" 2>/dev/null | \
-        grep '^TEMPOUP_INSTALLER_VERSION=' | sed -E 's/TEMPOUP_INSTALLER_VERSION="(.+)"/\1/')
+    local remote_version=$(curl -fsSL "$OTTERUP_BIN_URL" 2>/dev/null | \
+        grep '^OTTERUP_INSTALLER_VERSION=' | sed -E 's/OTTERUP_INSTALLER_VERSION="(.+)"/\1/')
 
     if [[ -z "$remote_version" ]]; then
         return
     fi
 
     # Compare versions
-    if version_gt "$remote_version" "$TEMPOUP_INSTALLER_VERSION"; then
+    if version_gt "$remote_version" "$OTTERUP_INSTALLER_VERSION"; then
         echo ""
-        warn "Your tempoup version ($TEMPOUP_INSTALLER_VERSION) is outdated."
+        warn "Your otterup version ($OTTERUP_INSTALLER_VERSION) is outdated."
         warn "Latest version is $remote_version."
-        warn "Run 'tempoup --update' to update to the latest version."
+        warn "Run 'otterup --update' to update to the latest version."
         echo ""
     fi
 }
 
-# Update tempoup itself
-update_tempoup() {
-    info "Updating tempoup..."
+# Update otterup itself
+update_otterup() {
+    info "Updating otterup..."
 
     if ! command -v curl >/dev/null 2>&1; then
         error "curl not found. Please install curl."
@@ -134,34 +134,34 @@ update_tempoup() {
     local tmp_file=$(mktemp)
     trap "rm -f $tmp_file" EXIT
 
-    # Download latest tempoup script
-    info "Downloading latest tempoup..."
+    # Download latest otterup script
+    info "Downloading latest otterup..."
 
-    if ! curl -fsSL "$TEMPOUP_BIN_URL" -o "$tmp_file" 2>/dev/null; then
-        error "Failed to download tempoup update"
+    if ! curl -fsSL "$OTTERUP_BIN_URL" -o "$tmp_file" 2>/dev/null; then
+        error "Failed to download otterup update"
     fi
 
     # Extract remote version
-    local remote_version=$(grep '^TEMPOUP_INSTALLER_VERSION=' "$tmp_file" | sed -E 's/TEMPOUP_INSTALLER_VERSION="(.+)"/\1/')
+    local remote_version=$(grep '^OTTERUP_INSTALLER_VERSION=' "$tmp_file" | sed -E 's/OTTERUP_INSTALLER_VERSION="(.+)"/\1/')
 
     if [[ -z "$remote_version" ]]; then
         error "Failed to determine remote version"
     fi
 
     # Check if update is needed
-    if ! version_gt "$remote_version" "$TEMPOUP_INSTALLER_VERSION"; then
-        info "Tempoup is already up to date (version $TEMPOUP_INSTALLER_VERSION)"
+    if ! version_gt "$remote_version" "$OTTERUP_INSTALLER_VERSION"; then
+        info "Otterup is already up to date (version $OTTERUP_INSTALLER_VERSION)"
         exit 0
     fi
 
     # Replace current script with new version
-    info "Updating from $TEMPOUP_INSTALLER_VERSION to $remote_version..."
+    info "Updating from $OTTERUP_INSTALLER_VERSION to $remote_version..."
     mkdir -p "$BIN_DIR"
-    cp "$tmp_file" "$TEMPOUP_BIN_PATH"
-    chmod +x "$TEMPOUP_BIN_PATH"
+    cp "$tmp_file" "$OTTERUP_BIN_PATH"
+    chmod +x "$OTTERUP_BIN_PATH"
 
     echo ""
-    info "✓ Tempoup updated successfully to version $remote_version"
+    info "✓ Otterup updated successfully to version $remote_version"
     exit 0
 }
 
@@ -177,22 +177,22 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -U|--update)
-            update_tempoup
+            update_otterup
             ;;
         -h|--help)
-            echo "Usage: tempoup [OPTIONS]"
+            echo "Usage: otterup [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  -v, --version         Print tempoup installer version"
-            echo "  -i, --install <VER>   Install specific tempo version (e.g., v1.0.0)"
-            echo "  -U, --update          Update tempoup to the latest version"
+            echo "  -v, --version         Print otterup installer version"
+            echo "  -i, --install <VER>   Install specific otter version (e.g., v1.0.0)"
+            echo "  -U, --update          Update otterup to the latest version"
             echo "  -h, --help            Show this help message"
             echo ""
             echo "Examples:"
-            echo "  tempoup                   # Install latest release"
-            echo "  tempoup -i v1.0.0         # Install specific version"
-            echo "  tempoup -v                # Print installer version"
-            echo "  tempoup --update          # Update tempoup itself"
+            echo "  otterup                   # Install latest release"
+            echo "  otterup -i v1.0.0         # Install specific version"
+            echo "  otterup -v                # Print installer version"
+            echo "  otterup --update          # Update otterup itself"
             exit 0
             ;;
         *)
@@ -298,7 +298,7 @@ main() {
     # Check if tempoup installer is up to date
     check_installer_up_to_date
 
-    info "Installing tempo..."
+    info "Installing otter..."
 
     # Detect system
     PLATFORM=$(detect_platform)
@@ -319,23 +319,23 @@ main() {
     VERSION_TAG="$VERSION"
     VERSION_NUMBER="${VERSION#v}"
 
-    info "Installing tempo $VERSION_TAG"
+    info "Installing otter $VERSION_TAG"
 
     # Construct archive name
-    # Format: tempo-v{VERSION}-{TARGET}.tar.gz
+    # Format: otter-v{VERSION}-{TARGET}.tar.gz
     ARCHIVE_EXT="tar.gz"
     if [[ "$PLATFORM" == "win32" ]]; then
         ARCHIVE_EXT="zip"
     fi
 
-    ARCHIVE_NAME="tempo-${VERSION_TAG}-${TARGET}.${ARCHIVE_EXT}"
+    ARCHIVE_NAME="otter-${VERSION_TAG}-${TARGET}.${ARCHIVE_EXT}"
 
     # Create temporary directory
     TMP_DIR=$(mktemp -d)
     trap "rm -rf $TMP_DIR" EXIT
 
     # Download archive
-    info "Downloading tempo binary..."
+    info "Downloading otter binary..."
     download_file "$VERSION_TAG" "$ARCHIVE_NAME" "$TMP_DIR"
 
     ARCHIVE_PATH="$TMP_DIR/$ARCHIVE_NAME"
@@ -365,7 +365,7 @@ main() {
 
         # Import the release signing key if not already present
         if ! gpg --list-keys "$GPG_KEY_FINGERPRINT" >/dev/null 2>&1; then
-            info "Fetching Tempo release signing key from $GPG_KEYSERVER..."
+            info "Fetching OtterEVM release signing key from $GPG_KEYSERVER..."
             if ! gpg --keyserver "$GPG_KEYSERVER" --recv-keys "$GPG_KEY_FINGERPRINT" 2>/dev/null; then
                 warn "Failed to fetch GPG key from keyserver. Skipping signature verification."
                 warn "You can manually import the key: gpg --keyserver $GPG_KEYSERVER --recv-keys $GPG_KEY_FINGERPRINT"
@@ -392,9 +392,9 @@ main() {
         unzip -q "$ARCHIVE_PATH" -d "$TMP_DIR"
     fi
 
-    # Find tempo binary in extracted files
-    # Binary is named: tempo-{VERSION}-{TARGET}
-    BINARY_PATTERN="tempo-${VERSION_TAG}-${TARGET}"
+    # Find otter binary in extracted files
+    # Binary is named: otter-{VERSION}-{TARGET}
+    BINARY_PATTERN="otter-${VERSION_TAG}-${TARGET}"
     if [[ "$PLATFORM" == "win32" ]]; then
         BINARY_PATTERN="${BINARY_PATTERN}.exe"
     fi
@@ -402,13 +402,13 @@ main() {
     BINARY_PATH=$(find "$TMP_DIR" -name "$BINARY_PATTERN" -type f | head -n 1)
 
     if [[ -z "$BINARY_PATH" ]]; then
-        error "Could not find tempo binary in downloaded archive"
+        error "Could not find otter binary in downloaded archive"
     fi
 
-    # Final binary name (just "tempo" or "tempo.exe")
-    BINARY_NAME="tempo"
+    # Final binary name (just "otter" or "otter.exe")
+    BINARY_NAME="otter"
     if [[ "$PLATFORM" == "win32" ]]; then
-        BINARY_NAME="tempo.exe"
+        BINARY_NAME="otter.exe"
     fi
 
     # Create installation directory
@@ -421,14 +421,14 @@ main() {
 
     # Success message
     echo ""
-    info "✓ Tempo $VERSION_TAG installed successfully!"
+    info "✓ OtterEVM $VERSION_TAG installed successfully!"
     echo ""
 
     # Check if BIN_DIR is in PATH
     if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
         warn "The installation directory is not in your PATH."
         echo ""
-        echo "To use tempo, add the following to your shell configuration file:"
+        echo "To use otter, add the following to your shell configuration file:"
         echo ""
         echo "  export PATH=\"$BIN_DIR:\$PATH\""
         echo ""
@@ -441,7 +441,7 @@ main() {
         fi
         echo ""
     else
-        info "Run 'tempo --version' to verify installation"
+        info "Run 'otter --version' to verify installation"
     fi
 }
 

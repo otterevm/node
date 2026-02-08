@@ -2,7 +2,7 @@ use reth_ethereum::node::core::version::RethCliVersionConsts;
 use reth_node_core::version::try_init_version_metadata;
 use std::{borrow::Cow, env};
 
-/// Sets version information for Tempo globally.
+/// Sets version information for OtterEVM globally.
 ///
 /// The version information is read by the CLI.
 pub fn init_version_metadata() {
@@ -10,10 +10,10 @@ pub fn init_version_metadata() {
         .expect("Version metadata should be generated in `build.rs`");
 }
 
-/// The version information for Tempo.
+/// The version information for OtterEVM.
 pub fn version_metadata() -> RethCliVersionConsts {
     RethCliVersionConsts {
-        name_client: Cow::Borrowed("Tempo"),
+        name_client: Cow::Borrowed("OtterEVM"),
         cargo_pkg_version: Cow::Borrowed(env!("CARGO_PKG_VERSION")),
         vergen_git_sha_long: Cow::Borrowed(env!("VERGEN_GIT_SHA")),
         vergen_git_sha: Cow::Borrowed(env!("VERGEN_GIT_SHA_SHORT")),
@@ -37,5 +37,5 @@ pub fn version_metadata() -> RethCliVersionConsts {
 }
 
 fn extra_data() -> String {
-    format!("tempo/v{}/{}", env!("CARGO_PKG_VERSION"), env::consts::OS)
+    format!("otter/v{}/{}", env!("CARGO_PKG_VERSION"), env::consts::OS)
 }

@@ -9,10 +9,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Source test utilities
 source "$SCRIPT_DIR/test-utils.sh"
 
-DOCKER_IMAGE="tempo:latest"
-NETWORK_NAME="tempo"
+DOCKER_IMAGE="otter:latest"
+NETWORK_NAME="otter"
 
-echo "=== Starting Tempo Network ==="
+echo "=== Starting OtterEVM Network ==="
 
 # Create Docker network if it doesn't exist
 if ! docker network ls | grep -q "$NETWORK_NAME"; then
@@ -31,7 +31,7 @@ CONFIGS=(
 start_validator() {
   local validator_id="$1"
   local config_file="$2"
-  local container_name="tempo-validator-$validator_id"
+  local container_name="otter-validator-$validator_id"
   local rpc_port=$((8545 + validator_id))
 
   echo "Starting $container_name with config $config_file..."

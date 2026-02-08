@@ -1,4 +1,4 @@
-//! Tempo-specific transaction validation errors.
+//! OtterEVM-specific transaction validation errors.
 
 use alloy_evm::error::InvalidTxError;
 use alloy_primitives::{Address, U256};

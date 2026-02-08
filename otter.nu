@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-# Tempo local utilities
+# OtterEVM local utilities
 
 const BENCH_DIR = "contrib/bench"
 const LOCALNET_DIR = "localnet"
@@ -15,7 +15,7 @@ const PRESETS = {
     erc20: [0.0, 1.0, 0.0, 0.0],
     swap: [0.0, 0.0, 1.0, 0.0],
     order: [0.0, 0.0, 0.0, 1.0],
-    "tempo-mix": [0.8, 0, 0.19, 0.01]
+    "otter-mix": [0.8, 0, 0.19, 0.01]
 }
 
 # ============================================================================
@@ -49,8 +49,8 @@ def validate-mode [mode: string] {
     }
 }
 
-# Build tempo binary with cargo
-def build-tempo [bins: list<string>, profile: string, features: string] {
+# Build otter binary with cargo
+def build-otter [bins: list<string>, profile: string, features: string] {
     let bin_args = ($bins | each { |bin| ["--bin" $bin] } | flatten)
     let build_cmd = ["cargo" "build" "--profile" $profile "--features" $features] | append $bin_args
     print $"Building ($bins | str join ', '): `($build_cmd | str join ' ')`..."
@@ -59,9 +59,9 @@ def build-tempo [bins: list<string>, profile: string, features: string] {
     }
 }
 
-# Find tempo process PIDs (excluding tempo-bench)
-def find-tempo-pids [] {
-    ps | where name =~ "tempo" | where name !~ "tempo-bench" | get pid
+# Find otter process PIDs (excluding otter-bench)
+def find-otter-pids [] {
+    ps | where name =~ "otter" | where name !~ "otter-bench" | get pid
 }
 
 # ============================================================================
@@ -86,20 +86,20 @@ def "main infra down" [] {
 # Kill command
 # ============================================================================
 
-# Kill any running tempo processes and cleanup
+# Kill any running otter processes and cleanup
 def "main kill" [
     --prompt    # Prompt before killing (for interactive use)
 ] {
-    let pids = (find-tempo-pids)
+    let pids = (find-otter-pids)
     let has_stale_ipc = ("/tmp/reth.ipc" | path exists)
 
     if ($pids | length) == 0 and not $has_stale_ipc {
-        print "No tempo processes or stale IPC socket found."
+        print "No otter processes or stale IPC socket found."
         return
     }
 
     if ($pids | length) > 0 {
-        print $"Found ($pids | length) running tempo process\(es\)."
+        print $"Found ($pids | length) running otter process\(es\)."
     }
     if $has_stale_ipc {
         print "Found stale /tmp/reth.ipc socket."
@@ -118,7 +118,7 @@ def "main kill" [
     }
 
     if ($pids | length) > 0 {
-        print $"Sending SIGINT to ($pids | length) tempo processes..."
+        print $"Sending SIGINT to ($pids | length) otter processes..."
         for pid in $pids {
             kill -s 2 $pid
         }
@@ -136,7 +136,7 @@ def "main kill" [
 # Localnet command
 # ============================================================================
 
-# Run Tempo localnet
+# Run OtterEVM localnet
 def "main localnet" [
     --mode: string = "dev"      # Mode: "dev" or "consensus"
     --nodes: int = 3            # Number of validators (consensus mode)
@@ -155,7 +155,7 @@ def "main localnet" [
     validate-mode $mode
 
     # Check for dangling processes or stale IPC socket
-    let pids = (find-tempo-pids)
+    let pids = (find-otter-pids)
     let has_stale_ipc = ("/tmp/reth.ipc" | path exists)
     if ($pids | length) > 0 or $has_stale_ipc {
         main kill --prompt=($force | not $in)
@@ -167,7 +167,7 @@ def "main localnet" [
 
     # Build first (unless skipped)
     if not $skip_build {
-        build-tempo ["tempo"] $profile $features
+        build-otter ["otter"] $profile $features
     }
 
     if $mode == "dev" {
@@ -201,15 +201,15 @@ def run-dev-node [accounts: int, genesis: string, samply: bool, samply_args: lis
             rm -rf $LOCALNET_DIR
             mkdir $LOCALNET_DIR
             print $"Generating genesis with ($accounts) accounts..."
-            cargo run -p tempo-xtask --profile $profile -- generate-genesis --output $LOCALNET_DIR -a $accounts --no-dkg-in-genesis
+            cargo run --bin otter-xtask --profile $profile -- generate-genesis --output $LOCALNET_DIR -a $accounts --no-dkg-in-genesis
         }
         $default_genesis
     }
 
-    let tempo_bin = if $profile == "dev" {
-        "./target/debug/tempo"
+    let otter_bin = if $profile == "dev" {
+        "./target/debug/otter"
     } else {
-        $"./target/($profile)/tempo"
+        $"./target/($profile)/otter"
     }
     let datadir = $"($LOCALNET_DIR)/reth"
     let log_dir = $"($LOCALNET_DIR)/logs"
@@ -219,7 +219,7 @@ def run-dev-node [accounts: int, genesis: string, samply: bool, samply_args: lis
         | append (log-filter-args $loud)
         | append $extra_args
 
-    let cmd = wrap-samply [$tempo_bin ...$args] $samply $samply_args
+    let cmd = wrap-samply [$otter_bin ...$args] $samply $samply_args
     print $"Running dev node: `($cmd | str join ' ')`..."
     run-external ($cmd | first) ...($cmd | skip 1)
 }
@@ -279,7 +279,7 @@ def run-consensus-nodes [nodes: int, accounts: int, genesis: string, samply: boo
             let validators = (0..<$nodes | each { |i| $"127.0.0.1:($i * 100 + 8000)" } | str join ",")
 
             print $"Generating localnet with ($accounts) accounts and ($nodes) validators..."
-            cargo run -p tempo-xtask --profile $profile -- generate-localnet -o $LOCALNET_DIR --accounts $accounts --validators $validators --force | ignore
+            cargo run --bin otter-xtask --profile $profile -- generate-localnet -o $LOCALNET_DIR --accounts $accounts --validators $validators --force | ignore
         }
     }
 
@@ -297,10 +297,10 @@ def run-consensus-nodes [nodes: int, accounts: int, genesis: string, samply: boo
 
     print $"Found ($validator_dirs | length) validator configs"
 
-    let tempo_bin = if $profile == "dev" {
-        "./target/debug/tempo"
+    let otter_bin = if $profile == "dev" {
+        "./target/debug/otter"
     } else {
-        $"./target/($profile)/tempo"
+        $"./target/($profile)/otter"
     }
 
     # Start background nodes first (all except node 0)
@@ -312,11 +312,11 @@ def run-consensus-nodes [nodes: int, accounts: int, genesis: string, samply: boo
     let background_nodes = $validator_dirs | skip 1
 
     for node in $background_nodes {
-        run-consensus-node $node $genesis_path $trusted_peers $tempo_bin $loud false [] $extra_args true
+        run-consensus-node $node $genesis_path $trusted_peers $otter_bin $loud false [] $extra_args true
     }
 
     # Run node 0 in foreground (receives Ctrl+C directly)
-    run-consensus-node $foreground_node $genesis_path $trusted_peers $tempo_bin $loud $samply $samply_args $extra_args false
+    run-consensus-node $foreground_node $genesis_path $trusted_peers $otter_bin $loud $samply $samply_args $extra_args false
 }
 
 # Run a single consensus node (foreground or background)
@@ -324,7 +324,7 @@ def run-consensus-node [
     node_dir: string
     genesis_path: string
     trusted_peers: string
-    tempo_bin: string
+    otter_bin: string
     loud: bool
     samply: bool
     samply_args: list<string>
@@ -343,7 +343,7 @@ def run-consensus-node [
         | append (log-filter-args $loud)
         | append $extra_args
 
-    let cmd = wrap-samply [$tempo_bin ...$args] $samply $samply_args
+    let cmd = wrap-samply [$otter_bin ...$args] $samply $samply_args
 
     print $"  Node ($addr) -> http://localhost:($http_port)(if $background { '' } else { ' (foreground)' })"
 
@@ -393,7 +393,7 @@ def build-consensus-args [node_dir: string, trusted_peers: string, port: int] {
 # Bench command
 # ============================================================================
 
-# Run a full benchmark: start infra, localnet, and tempo-bench
+# Run a full benchmark: start infra, localnet, and otter-bench
 def "main bench" [
     --mode: string = "consensus"                    # Mode: "dev" or "consensus"
     --preset: string = ""                           # Preset: tip20, erc20, swap, order, tempo-mix
@@ -440,7 +440,7 @@ def "main bench" [
     docker compose -f $"($BENCH_DIR)/docker-compose.yml" up -d
 
     # Build both binaries first
-    build-tempo ["tempo" "tempo-bench"] $profile $features
+    build-otter ["otter" "otter-bench"] $profile $features
 
     # Start nodes in background (skip build since we already compiled)
     let num_nodes = if $mode == "dev" { 1 } else { $nodes }
@@ -450,7 +450,7 @@ def "main bench" [
     let genesis_accounts = ([$accounts $num_nodes] | math max) + 1
 
     let node_cmd = [
-        "nu" "tempo.nu" "localnet"
+        "nu" "otter.nu" "localnet"
         "--mode" $mode
         "--accounts" $"($genesis_accounts)"
         "--skip-build"
@@ -480,14 +480,14 @@ def "main bench" [
     }
     print "All nodes ready!"
 
-    # Run tempo-bench
-    let tempo_bench_bin = if $profile == "dev" {
-        "./target/debug/tempo-bench"
+    # Run otter-bench
+    let otter_bench_bin = if $profile == "dev" {
+        "./target/debug/otter-bench"
     } else {
-        $"./target/($profile)/tempo-bench"
+        $"./target/($profile)/otter-bench"
     }
     let bench_cmd = [
-        $tempo_bench_bin
+        $otter_bench_bin
         "run-max-tps"
         "--tps" $"($tps)"
         "--duration" $"($duration)"

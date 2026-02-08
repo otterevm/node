@@ -1,23 +1,23 @@
-//! Tempo-specific hardfork definitions and traits.
+//! OtterEVM-specific hardfork definitions and traits.
 //!
-//! This module provides the infrastructure for managing hardfork transitions in Tempo.
+//! This module provides the infrastructure for managing hardfork transitions in OtterEVM.
 //!
 //! ## Adding a New Hardfork
 //!
 //! When a new hardfork is needed (e.g., `Vivace`):
 //!
 //! ### In `hardfork.rs`:
-//! 1. Add a new variant to `TempoHardfork` enum
+//! 1. Add a new variant to the hardfork enum
 //! 2. Add `is_vivace()` method to `TempoHardfork` impl
-//! 3. Add `is_vivace_active_at_timestamp()` to `TempoHardforks` trait
+//! 3. Add `is_vivace_active_at_timestamp()` to the hardforks trait
 //! 4. Update `tempo_hardfork_at()` to check for the new hardfork first (latest hardfork is checked first)
 //! 5. Update `From<TempoHardfork> for SpecId` if the new hardfork requires a different Ethereum SpecId
 //! 6. Add test `test_is_vivace` and update existing `is_*` tests to include the new variant
 //!
 //! ### In `spec.rs`:
-//! 7. Add `vivace_time: Option<u64>` field to `TempoGenesisInfo`
-//! 8. Extract `vivace_time` in `TempoChainSpec::from_genesis`
-//! 9. Add `(TempoHardfork::Vivace, vivace_time)` to `tempo_forks` vec
+//! 7. Add `vivace_time: Option<u64>` field to genesis info
+//! 8. Extract `vivace_time` in chain spec from_genesis
+//! 9. Add hardfork to the forks vec
 //! 10. Update tests to include `"vivaceTime": <timestamp>` in genesis JSON
 //!
 //! ### In genesis files and generator:

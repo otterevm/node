@@ -1,4 +1,4 @@
-//! Tempo RPC types.
+//! OtterEVM RPC types.
 
 mod header;
 pub use header::TempoHeaderResponse;

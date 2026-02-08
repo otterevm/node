@@ -1,6 +1,6 @@
-//! The foundational datastructure the Tempo network comes to consensus over.
+//! The foundational datastructure the OtterEVM network comes to consensus over.
 //!
-//! The Tempo [`Block`] at its core is just a thin wrapper around an Ethereum
+//! The OtterEVM [`Block`] at its core is just a thin wrapper around an Ethereum
 //! block.
 
 use alloy_consensus::BlockHeader as _;

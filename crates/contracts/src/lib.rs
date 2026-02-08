@@ -1,4 +1,4 @@
-//! Tempo predeployed contracts and bindings.
+//! OtterEVM predeployed contracts and bindings.
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]

@@ -1,7 +1,7 @@
 [package]
 name = "tempo"
-description = "Tempo node implementation"
-default-run = "tempo"
+description = "OtterEVM node implementation"
+default-run = "otter"
 
 version.workspace = true
 edition.workspace = true
@@ -62,7 +62,7 @@ pyroscope = { workspace = true, optional = true }
 pyroscope_pprofrs = { workspace = true, optional = true }
 
 [[bin]]
-name = "tempo"
+name = "otter"
 path = "src/main.rs"
 
 [features]

@@ -1,8 +1,8 @@
-tempo-dev-up:
+otter-dev-up:
 	#!/bin/bash
 	mkdir -p logs
-	RUST_LOG=debug,tempo=trace,tempo_precompiles=trace \
-	cargo run --bin tempo node \
+	RUST_LOG=debug,otter=trace,otter_precompiles=trace \
+	cargo run --bin otter node \
 		--chain genesis/staccato.json \
 		--datadir data \
 		--dev \
@@ -19,16 +19,16 @@ tempo-dev-up:
 		--faucet.private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
 		--faucet.amount 1000000000000000 \
 		--faucet.address 0x20c0000000000000000000000000000000000000 \
-		> logs/tempo-dev.log 2>&1 &
+		> logs/otter-dev.log 2>&1 &
 	PID=$!
-	echo "Started tempo-dev with PID $PID"
+	echo "Started otter-dev with PID $PID"
 
-tempo-dev-down:
+otter-dev-down:
 	#!/bin/bash
-	if pkill -f "tempo node"; then
-		echo "Killed tempo node processes"
+	if pkill -f "otter node"; then
+		echo "Killed otter node processes"
 	else
-		echo "No tempo-dev processes found"
+		echo "No otter-dev processes found"
 	fi
 	# Clean up logs and data
 	rm -rf logs data

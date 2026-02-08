@@ -1,4 +1,4 @@
-//! Tempo revm specific implementations.
+//! OtterEVM revm specific implementations.
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]

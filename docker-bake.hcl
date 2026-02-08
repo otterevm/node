@@ -7,7 +7,7 @@ variable "VERGEN_GIT_SHA_SHORT" {
 }
 
 group "default" {
-  targets = ["tempo", "tempo-bench", "tempo-sidecar", "tempo-xtask"]
+  targets = ["otter", "otter-bench", "otter-sidecar", "otter-xtask"]
 }
 
 target "docker-metadata" {}
@@ -38,22 +38,22 @@ target "_common" {
   platforms = ["linux/amd64"]
 }
 
-target "tempo" {
+target "otter" {
   inherits = ["_common", "docker-metadata"]
-  target = "tempo"
+  target = "otter"
 }
 
-target "tempo-bench" {
+target "otter-bench" {
   inherits = ["_common", "docker-metadata"]
-  target = "tempo-bench"
+  target = "otter-bench"
 }
 
-target "tempo-sidecar" {
+target "otter-sidecar" {
   inherits = ["_common", "docker-metadata"]
-  target = "tempo-sidecar"
+  target = "otter-sidecar"
 }
 
-target "tempo-xtask" {
+target "otter-xtask" {
   inherits = ["_common", "docker-metadata"]
-  target = "tempo-xtask"
+  target = "otter-xtask"
 }

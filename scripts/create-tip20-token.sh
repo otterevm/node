@@ -29,7 +29,7 @@ echo "Recipient wallet: $RECIPIENT_ADDR"
 
 # Fund the sender with fee tokens for gas
 echo "Funding sender address..."
-cast rpc tempo_fundAddress $SENDER_ADDR
+cast rpc otter_fundAddress $SENDER_ADDR
 sleep 2
 
 # Check sender's initial balance
