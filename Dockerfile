@@ -2,7 +2,9 @@ ARG CHEF_IMAGE=chef
 
 FROM ${CHEF_IMAGE} AS builder
 
+ARG TARGETARCH
 ARG RUST_PROFILE=profiling
+ARG RUST_FEATURES="asm-keccak,jemalloc,otlp"
 ARG VERGEN_GIT_SHA
 ARG VERGEN_GIT_SHA_SHORT
 ARG EXTRA_RUSTFLAGS=""
@@ -10,12 +12,12 @@ ARG EXTRA_RUSTFLAGS=""
 COPY . .
 
 # Build ALL binaries in one pass - they share compiled artifacts
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git \
-    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked,id=sccache \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry-${TARGETARCH} \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git-${TARGETARCH} \
+    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked,id=sccache-${TARGETARCH} \
     RUSTFLAGS="-C link-arg=-fuse-ld=mold ${EXTRA_RUSTFLAGS}" \
     cargo build --profile ${RUST_PROFILE} \
-        --bin otter --features "asm-keccak,jemalloc,otlp" \
+        --bin otter --features "${RUST_FEATURES}" \
         --bin otter-bench \
         --bin otter-sidecar \
         --bin otter-xtask
@@ -47,8 +49,10 @@ COPY --from=builder /app/target/${RUST_PROFILE}/otter-xtask /usr/local/bin/otter
 ENTRYPOINT ["/usr/local/bin/otter-xtask"]
 
 # otter-bench (needs nushell)
+FROM --platform=$TARGETPLATFORM ghcr.io/nushell/nushell:0.108.0-bookworm AS nushell
+
 FROM base AS otter-bench
 ARG RUST_PROFILE=profiling
-COPY --from=ghcr.io/nushell/nushell:0.108.0-bookworm /usr/bin/nu /usr/bin/nu
+COPY --from=nushell /usr/bin/nu /usr/bin/nu
 COPY --from=builder /app/target/${RUST_PROFILE}/otter-bench /usr/local/bin/otter-bench
 ENTRYPOINT ["/usr/local/bin/otter-bench"]
