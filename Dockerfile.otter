@@ -1,0 +1,41 @@
+ARG RUST_FEATURES="asm-keccak,jemalloc,otlp"
+
+# Dockerfile for Otter Node
+# Build for native host architecture (ARM or AMD)
+FROM rust:1.91-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    build-essential \
+    clang \
+    llvm \
+    lld \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy source
+COPY . .
+
+# Build for native target (no cross-compilation)
+RUN cargo build --profile release --bin otter --features "${RUST_FEATURES}"
+
+# Runtime image - use same architecture as builder
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /data
+
+COPY --from=builder /app/target/release/otter /usr/local/bin/otter
+
+RUN chmod +x /usr/local/bin/otter
+
+EXPOSE 8545 3001 3000
+
+ENTRYPOINT ["/usr/local/bin/otter"]
