@@ -1,6 +1,8 @@
-cross_compile := "false"
-cargo_build_binary := if cross_compile == "true" { "cross" } else { "cargo" }
-act_debug_mode := env("ACT", "false")
+[group('deps')]
+[doc('Bump all reth dependencies to a specific commit hash')]
+bump-reth commit:
+    sed -i '' 's/\(reth[a-z_-]* = { git = "https:\/\/github.com\/paradigmxyz\/reth", rev = "\)[a-f0-9]*"/\1{{commit}}"/g' Cargo.toml
+    cargo update
 
 [group('deps')]
 install-cross:
@@ -61,39 +63,3 @@ mod scripts
 [group('dev')]
 tempo-dev-up: scripts::tempo-dev-up
 tempo-dev-down: scripts::tempo-dev-down
-
-[group('test')]
-feature-test: scripts::auto-7702-delegation  scripts::basic-transfer scripts::registrar-delegation scripts::create-tip20-token scripts::fee-amm
-
-fee-amm: scripts::fee-amm
-
-# Docs commands
-[group('docs')]
-[doc('Install docs dependencies')]
-docs-install:
-    cd docs && bun install
-
-[group('docs')]
-[doc('Start docs dev server')]
-docs-dev:
-    cd docs && bun run dev
-
-[group('docs')]
-[doc('Build docs for production')]
-docs-build:
-    cd docs && bun run build
-
-[group('docs')]
-[doc('Run docs linting and type checks')]
-docs-check:
-    cd docs && bun run check && bun run check:types
-
-[group('docs')]
-[doc('Run Solidity specs tests')]
-docs-specs-test:
-    cd docs/specs && forge test -vvv
-
-[group('docs')]
-[doc('Build Solidity specs')]
-docs-specs-build:
-    cd docs/specs && forge build --sizes
