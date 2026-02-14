@@ -610,9 +610,9 @@ fn create_path_usd_token(
         || {
             TIP20Factory::new().create_token_reserved_address(
                 PATH_USD_ADDRESS,
-                "pathUSD",
-                "pathUSD",
-                "USD",
+                "pathFEE",
+                "pathFEE",
+                "FEE",
                 Address::ZERO,
                 admin,
             )?;
