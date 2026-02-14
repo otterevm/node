@@ -173,12 +173,22 @@ nu otter.nu localnet
 2. `bin/tempo/Cargo.toml` - Binary name
 3. `crates/node/src/version.rs` - Client name
 4. `Justfile` - Command names
+5. **Currency identifier files** - USD vs FEE (OtterEVM uses "FEE", Tempo uses "USD"):
+   - `crates/precompiles/src/tip20/mod.rs` - `USD_CURRENCY` constant
+   - `crates/revm/src/common.rs` - Fee token validation
+   - `xtask/src/genesis_args.rs` - pathUSD/pathFEE token naming
 
 ### Resolution Strategy
 ```bash
 # For branding files, keep ours
 git checkout --ours README.md
 git add README.md
+
+# For currency identifier (we use FEE, upstream uses USD), keep ours
+git checkout --ours crates/precompiles/src/tip20/mod.rs
+git checkout --ours crates/revm/src/common.rs
+git checkout --ours xtask/src/genesis_args.rs
+git add crates/precompiles/src/tip20/mod.rs crates/revm/src/common.rs xtask/src/genesis_args.rs
 
 # For upstream code changes, keep theirs
 git checkout --theirs crates/some-crate/src/lib.rs
@@ -495,3 +505,7 @@ See existing chains as examples:
 3. **Crate names remain `tempo-*`** for Cargo.toml dependencies
 4. **Main branch** tracks upstream; **otterevm branch** has our changes
 5. When updating from upstream, expect conflicts in branding files
+6. **Currency identifier is "FEE" not "USD"** - Always keep OtterEVM's FEE changes:
+   - `USD_CURRENCY = "FEE"` (not "USD")
+   - Token name: `pathFEE` (not `pathUSD`)
+   - Fee token validation checks for "FEE"
