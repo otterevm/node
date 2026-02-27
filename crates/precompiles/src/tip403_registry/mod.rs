@@ -14,6 +14,13 @@ use crate::{
 };
 use alloy::primitives::{Address, U256};
 
+/// Registry for [TIP-403] transfer policies. TIP20 tokens reference an ID from this registry
+/// to police transfers between sender and receiver addresses.
+///
+/// [TIP-403]: <https://docs.tempo.xyz/protocol/tip403>
+///
+/// The struct fields define the on-chain storage layout; the `#[contract]` macro generates the
+/// storage handlers which provide an ergonomic way to interact with the EVM state.
 #[contract(addr = TIP403_REGISTRY_ADDRESS)]
 pub struct TIP403Registry {
     policy_id_counter: u64,
@@ -21,7 +28,9 @@ pub struct TIP403Registry {
     policy_set: Mapping<u64, Mapping<Address, bool>>,
 }
 
-/// Policy record containing base data and optional data for compound policies (TIP-1015)
+/// Policy record containing base data and optional data for compound policies ([TIP-1015])
+///
+/// [TIP-1015]: <https://docs.tempo.xyz/protocol/tips/tip-1015>
 #[derive(Debug, Clone, Storable)]
 pub struct PolicyRecord {
     /// Base policy data
@@ -30,7 +39,9 @@ pub struct PolicyRecord {
     pub compound: CompoundPolicyData,
 }
 
-/// Data for compound policies (TIP-1015)
+/// Data for compound policies ([TIP-1015])
+///
+/// [TIP-1015]: <https://docs.tempo.xyz/protocol/tips/tip-1015>
 #[derive(Debug, Clone, Default, Storable)]
 pub struct CompoundPolicyData {
     pub sender_policy_id: u64,
@@ -54,6 +65,7 @@ pub enum AuthRole {
     MintRecipient,
 }
 
+/// Base policy metadata. Packed into a single storage slot.
 #[derive(Debug, Clone, Storable)]
 pub struct PolicyData {
     // NOTE: enums are defined as u8, and leverage the sol! macro's `TryInto<u8>` impl
@@ -158,7 +170,9 @@ impl TIP403Registry {
         })
     }
 
-    /// Returns the compound policy data for a compound policy (TIP-1015)
+    /// Returns the compound policy data for a compound policy ([TIP-1015])
+    ///
+    /// [TIP-1015]: <https://docs.tempo.xyz/protocol/tips/tip-1015>
     pub fn compound_policy_data(
         &self,
         call: ITIP403Registry::compoundPolicyDataCall,
@@ -387,7 +401,9 @@ impl TIP403Registry {
         ))
     }
 
-    /// Creates a new compound policy that references three simple policies (TIP-1015)
+    /// Creates a new compound policy that references three simple policies ([TIP-1015])
+    ///
+    /// [TIP-1015]: <https://docs.tempo.xyz/protocol/tips/tip-1015>
     pub fn create_compound_policy(
         &mut self,
         msg_sender: Address,
@@ -434,7 +450,9 @@ impl TIP403Registry {
         Ok(new_policy_id)
     }
 
-    /// Core role-based authorization check (TIP-1015).
+    /// Core role-based authorization check ([TIP-1015]).
+    ///
+    /// [TIP-1015]: <https://docs.tempo.xyz/protocol/tips/tip-1015>
     pub fn is_authorized_as(&self, policy_id: u64, user: Address, role: AuthRole) -> Result<bool> {
         if let Some(auth) = self.builtin_authorization(policy_id) {
             return Ok(auth);

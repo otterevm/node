@@ -126,7 +126,7 @@ def "main kill" [
 
     # Remove stale IPC socket
     if $has_stale_ipc {
-        rm /tmp/reth.ipc
+        rm --force /tmp/reth.ipc
         print "Removed /tmp/reth.ipc"
     }
     print "Done."
@@ -214,7 +214,7 @@ def run-dev-node [accounts: int, genesis: string, samply: bool, samply_args: lis
     let datadir = $"($LOCALNET_DIR)/reth"
     let log_dir = $"($LOCALNET_DIR)/logs"
 
-    let args = (build-base-args $genesis_path $datadir $log_dir 8545 9001)
+    let args = (build-base-args $genesis_path $datadir $log_dir "0.0.0.0" 8545 9001)
         | append (build-dev-args)
         | append (log-filter-args $loud)
         | append $extra_args
@@ -225,16 +225,16 @@ def run-dev-node [accounts: int, genesis: string, samply: bool, samply_args: lis
 }
 
 # Build base node arguments shared between dev and consensus modes
-def build-base-args [genesis_path: string, datadir: string, log_dir: string, http_port: int, reth_metrics_port: int] {
+def build-base-args [genesis_path: string, datadir: string, log_dir: string, bind_ip: string, http_port: int, reth_metrics_port: int] {
     [
         "node"
         "--chain" $genesis_path
         "--datadir" $datadir
         "--http"
-        "--http.addr" "0.0.0.0"
+        "--http.addr" $bind_ip
         "--http.port" $"($http_port)"
         "--http.api" "all"
-        "--metrics" $"0.0.0.0:($reth_metrics_port)"
+        "--metrics" $"($bind_ip):($reth_metrics_port)"
         "--log.file.directory" $log_dir
         "--faucet.enabled"
         "--faucet.private-key" "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -274,9 +274,9 @@ def run-consensus-nodes [nodes: int, accounts: int, genesis: string, samply: boo
             }
             rm -rf $LOCALNET_DIR
 
-            # Generate validator addresses (port 8000, 8100, 8200, ...)
-            # Using 100-port gaps to avoid collisions with system services (e.g., Intuit on 8021)
-            let validators = (0..<$nodes | each { |i| $"127.0.0.1:($i * 100 + 8000)" } | str join ",")
+            # Generate validator addresses with distinct loopback IPs (required by ValidatorConfigV2
+            # ingress uniqueness check which is per-IP, not per-socket-address)
+            let validators = (0..<$nodes | each { |i| $"127.0.0.($i + 1):($i * 100 + 8000)" } | str join ",")
 
             print $"Generating localnet with ($accounts) accounts and ($nodes) validators..."
             cargo run --bin otter-xtask --profile $profile -- generate-localnet -o $LOCALNET_DIR --accounts $accounts --validators $validators --force | ignore
@@ -290,9 +290,10 @@ def run-consensus-nodes [nodes: int, accounts: int, genesis: string, samply: boo
     let validator_dirs = (ls $LOCALNET_DIR | where type == "dir" | get name | where { |d| ($d | path basename) =~ '^\d+\.\d+\.\d+\.\d+:\d+$' })
     let trusted_peers = ($validator_dirs | each { |d|
         let addr = ($d | path basename)
+        let ip = ($addr | split row ":" | get 0)
         let port = ($addr | split row ":" | get 1 | into int)
         let identity = (open $"($d)/enode.identity" | str trim)
-        $"enode://($identity)@127.0.0.1:($port + 1)"
+        $"enode://($identity)@($ip):($port + 1)"
     } | str join ",")
 
     print $"Found ($validator_dirs | length) validator configs"
@@ -301,6 +302,24 @@ def run-consensus-nodes [nodes: int, accounts: int, genesis: string, samply: boo
         "./target/debug/otter"
     } else {
         $"./target/($profile)/otter"
+    }
+
+    # Ensure loopback aliases exist for distinct validator IPs (macOS only has 127.0.0.1 by default)
+    if (sys host | get name) == "Darwin" {
+        let extra_ips = ($validator_dirs | each { |d| $d | path basename | split row ":" | get 0 } | where { |ip| $ip != "127.0.0.1" })
+        if ($extra_ips | length) > 0 {
+            print $"Adding macOS loopback aliases for validator IPs: ($extra_ips | str join ', ') \(sudo required\)..."
+        }
+        for dir in $validator_dirs {
+            let ip = ($dir | path basename | split row ":" | get 0)
+            if $ip != "127.0.0.1" {
+                try { sudo ifconfig lo0 alias $ip up } catch { |e|
+                    print $"(ansi red)Failed to add loopback alias ($ip): ($e.msg)(ansi reset)"
+                    print "Run: sudo ifconfig lo0 alias $ip up"
+                    exit 1
+                }
+            }
+        }
     }
 
     # Start background nodes first (all except node 0)
@@ -361,12 +380,14 @@ def build-consensus-node-args [node_dir: string, genesis_path: string, trusted_p
     let http_port = 8545 + $node_index
     let reth_metrics_port = 9001 + $node_index
 
-    (build-base-args $genesis_path $node_dir $log_dir $http_port $reth_metrics_port)
+    (build-base-args $genesis_path $node_dir $log_dir "0.0.0.0" $http_port $reth_metrics_port)
         | append (build-consensus-args $node_dir $trusted_peers $port)
 }
 
 # Build consensus mode specific arguments
 def build-consensus-args [node_dir: string, trusted_peers: string, port: int] {
+    let addr = ($node_dir | path basename)
+    let ip = ($addr | split row ":" | get 0)
     let signing_key = $"($node_dir)/signing.key"
     let signing_share = $"($node_dir)/signing.share"
     let enode_key = $"($node_dir)/enode.key"
@@ -374,18 +395,22 @@ def build-consensus-args [node_dir: string, trusted_peers: string, port: int] {
     let execution_p2p_port = $port + 1
     let metrics_port = $port + 2
     let authrpc_port = $port + 3
+    let discv5_port = $port + 4
 
     [
         "--consensus.signing-key" $signing_key
         "--consensus.signing-share" $signing_share
-        "--consensus.listen-address" $"127.0.0.1:($port)"
-        "--consensus.metrics-address" $"127.0.0.1:($metrics_port)"
+        "--consensus.listen-address" $"($ip):($port)"
+        "--consensus.metrics-address" $"($ip):($metrics_port)"
         "--trusted-peers" $trusted_peers
         "--port" $"($execution_p2p_port)"
         "--discovery.port" $"($execution_p2p_port)"
+        "--discovery.v5.port" $"($discv5_port)"
         "--p2p-secret-key" $enode_key
         "--authrpc.port" $"($authrpc_port)"
         "--consensus.fee-recipient" "0x0000000000000000000000000000000000000000"
+        "--consensus.use-local-defaults"
+        "--consensus.bypass-ip-check"
     ]
 }
 
@@ -569,6 +594,404 @@ def wait-for-rpc [url: string, max_attempts: int = 120] {
 }
 
 # ============================================================================
+# Coverage commands
+# ============================================================================
+
+const COV_DIR = "coverage"
+const INVARIANT_DIR = "tips/ref-impls"
+
+# Find tempo-foundry checkout (same search as tempo-forge script)
+def find-tempo-foundry [] {
+    let env_path = (if "TEMPO_FOUNDRY_PATH" in $env { $env.TEMPO_FOUNDRY_PATH } else { "" })
+    if $env_path != "" and ($env_path | path exists) {
+        return ($env_path | path expand)
+    }
+    let sibling = ("../tempo-foundry" | path expand)
+    if ($sibling | path exists) and (($sibling | path join "Cargo.toml") | path exists) {
+        return $sibling
+    }
+    let parent = ("../../tempo-foundry" | path expand)
+    if ($parent | path exists) and (($parent | path join "Cargo.toml") | path exists) {
+        return $parent
+    }
+    ""
+}
+
+# Get LLVM tools bin directory for the active Rust toolchain
+def get-llvm-bin-dir [] {
+    let sysroot = (rustc --print sysroot | str trim)
+    let host = (rustc -vV | lines | where { |l| $l starts-with "host:" } | first | split row " " | get 1)
+    $"($sysroot)/lib/rustlib/($host)/bin"
+}
+
+# Run coverage: collects from unit tests, integration tests, Solidity invariant
+# fuzz tests (with merged Rust precompile coverage), and/or a live localnet.
+#
+# When --invariants is used, coverage from forge (which exercises Rust precompiles)
+# is merged with cargo test coverage via llvm-profdata, matching CI behavior.
+#
+# Examples:
+#   nu tempo.nu coverage --tests                           # unit + integration tests only
+#   nu tempo.nu coverage --invariants                      # forge invariant fuzz (Rust precompile coverage)
+#   nu tempo.nu coverage --tests --invariants              # merged: cargo tests + forge invariants
+#   nu tempo.nu coverage --live --preset tip20             # live node + bench traffic only
+#   nu tempo.nu coverage --tests --live --preset tip20     # all combined
+#   nu tempo.nu coverage --live --script /path/to/test.sh  # live node + external script
+def "main coverage" [
+    --tests                                # Include unit + integration test coverage
+    --invariants                           # Run Solidity invariant fuzz tests (builds instrumented forge)
+    --invariant-profile: string = "ci"     # Foundry profile for invariants (ci, fuzz500, default)
+    --invariant-contract: string = ""      # Run only a specific invariant contract (e.g. TempoTransactionInvariantTest)
+    --live                                 # Include live node coverage (runs localnet + traffic)
+    --preset: string = ""                  # Bench preset for live mode (tip20, erc20, swap, order, tempo-mix)
+    --script: string = ""                  # External script to run against live node (instead of bench)
+    --tps: int = 1000                      # Target TPS for live bench (ignored with --script)
+    --duration: int = 10                   # Bench duration in seconds (ignored with --script)
+    --accounts: int = 100                  # Number of accounts
+    --format: string = "html"             # Report format: html, lcov, json, text
+    --open                                 # Open HTML report in browser
+    --reset                                # Wipe localnet data before live run
+] {
+    if not $tests and not $live and not $invariants {
+        print "Error: specify at least one of --tests, --invariants, or --live"
+        exit 1
+    }
+
+    if $invariants and $live {
+        print "Error: --invariants and --live cannot be combined yet"
+        print "  Run them separately and merge reports manually"
+        exit 1
+    }
+
+    if $live and $script == "" and $preset == "" {
+        print "Error: --live requires --preset or --script"
+        print $"  Available presets: ($PRESETS | columns | str join ', ')"
+        exit 1
+    }
+
+    if $live and $preset != "" and not ($preset in $PRESETS) {
+        print $"Unknown preset: ($preset). Available: ($PRESETS | columns | str join ', ')"
+        exit 1
+    }
+
+    if $script != "" and not ($script | path exists) {
+        print $"Error: script not found: ($script)"
+        exit 1
+    }
+
+    print "=== Tempo Coverage ==="
+    mkdir $COV_DIR
+
+    if $invariants {
+        # =================================================================
+        # Manual instrumentation path (merges forge + cargo profdata)
+        # Matches CI: specs.yml → coverage.yml pipeline
+        # =================================================================
+        let foundry_dir = (find-tempo-foundry)
+        if $foundry_dir == "" {
+            print "Error: could not find tempo-foundry repository."
+            print ""
+            print "Either:"
+            print "  1. Clone as sibling: git clone git@github.com:tempoxyz/tempo-foundry.git ../tempo-foundry"
+            print "  2. Set TEMPO_FOUNDRY_PATH=/path/to/tempo-foundry"
+            exit 1
+        }
+        print $"Using tempo-foundry at: ($foundry_dir)"
+
+        let profraw_dir = ([$env.PWD $COV_DIR "profraw"] | path join)
+        rm -rf $profraw_dir
+        mkdir $profraw_dir
+
+        # Step 1: Cargo tests with -C instrument-coverage (if --tests)
+        if $tests {
+            print ""
+            print "--- Running unit + integration tests (instrumented) ---"
+            with-env {
+                RUSTFLAGS: "-C instrument-coverage"
+                LLVM_PROFILE_FILE: $"($profraw_dir)/cargo-%p-%m.profraw"
+                RUSTC_WRAPPER: ""
+            } {
+                cargo test --workspace --exclude tempo-e2e
+            }
+            print "Tests complete."
+        }
+
+        # Step 2: Build tempo-foundry forge with coverage instrumentation
+        # Patch tempo-foundry to use local tempo checkout so source paths match
+        # in the merged profdata. Uses .cargo/config.toml patch override.
+        print ""
+        print "--- Building tempo-foundry forge (instrumented) ---"
+        print "This may take a while on first run..."
+        let tempo_root = ($env.PWD | path expand)
+        let foundry_cargo_dir = ($foundry_dir | path join ".cargo")
+        let foundry_cargo_config = ($foundry_cargo_dir | path join "config.toml")
+        let had_existing_config = ($foundry_cargo_config | path exists)
+        let existing_config = (if $had_existing_config { open --raw $foundry_cargo_config } else { "" })
+        let foundry_cargo_lock = ($foundry_dir | path join "Cargo.lock")
+        let existing_lock = (if ($foundry_cargo_lock | path exists) { open --raw $foundry_cargo_lock } else { "" })
+
+        # Append patch overrides pointing tempo deps at local checkout
+        let patch_block = $"
+
+# AUTO-GENERATED by tempo.nu coverage --invariants -- do not commit
+[patch.'https://github.com/tempoxyz/tempo']
+tempo-alloy = { path = '($tempo_root)/crates/alloy' }
+tempo-contracts = { path = '($tempo_root)/crates/contracts' }
+tempo-revm = { path = '($tempo_root)/crates/revm' }
+tempo-evm = { path = '($tempo_root)/crates/evm' }
+tempo-chainspec = { path = '($tempo_root)/crates/chainspec' }
+tempo-primitives = { path = '($tempo_root)/crates/primitives' }
+tempo-precompiles = { path = '($tempo_root)/crates/precompiles' }
+"
+        mkdir $foundry_cargo_dir
+        $"($existing_config)($patch_block)" | save -f $foundry_cargo_config
+
+        try {
+            do {
+                cd $foundry_dir
+                # Update Cargo.lock to resolve patched crate versions
+                cargo update
+                with-env { RUSTFLAGS: "-C instrument-coverage", RUSTC_WRAPPER: "" } {
+                    cargo build -p forge --profile release
+                }
+            }
+        } catch { |e|
+            # Restore original config and lock before propagating error
+            if $had_existing_config {
+                $existing_config | save -f $foundry_cargo_config
+            } else {
+                rm -f $foundry_cargo_config
+            }
+            if $existing_lock != "" {
+                $existing_lock | save -f $foundry_cargo_lock
+            }
+            print $"Error building forge: ($e)"
+            exit 1
+        }
+
+        # Restore original .cargo/config.toml and Cargo.lock
+        if $had_existing_config {
+            $existing_config | save -f $foundry_cargo_config
+        } else {
+            rm -f $foundry_cargo_config
+        }
+        if $existing_lock != "" {
+            $existing_lock | save -f $foundry_cargo_lock
+        }
+
+        let forge_bin = $"($foundry_dir)/target/release/forge"
+        print $"Forge binary: ($forge_bin)"
+
+        # Step 3: Run invariant tests collecting profraw
+        print ""
+        print $"--- Running Solidity invariant fuzz tests \(profile: ($invariant_profile)\) ---"
+        let forge_args = ["test" "--fail-fast" "--show-progress" "-vv"]
+            | append (if $invariant_contract != "" { ["--match-contract" $invariant_contract] } else { [] })
+
+        do {
+            cd $"($env.PWD)/($INVARIANT_DIR)"
+            with-env {
+                LLVM_PROFILE_FILE: $"($profraw_dir)/forge-%p-%m.profraw"
+                FOUNDRY_PROFILE: $invariant_profile
+            } {
+                run-external $forge_bin ...($forge_args)
+            }
+        }
+        print "Invariant tests complete."
+
+        # Step 4: Merge profraw → profdata and generate report
+        print ""
+        print "--- Merging coverage data ---"
+        let llvm_bin = (get-llvm-bin-dir)
+
+        let profraw_files = (glob $"($profraw_dir)/*.profraw")
+        if ($profraw_files | length) == 0 {
+            print "Error: no profraw files found"
+            exit 1
+        }
+        print $"Found ($profraw_files | length) profraw files"
+
+        let profdata_path = $"($COV_DIR)/merged.profdata"
+        run-external $"($llvm_bin)/llvm-profdata" "merge" "-sparse" ...$profraw_files "-o" $profdata_path
+
+        # Collect object files (instrumented binaries)
+        mut objects: list<string> = [$forge_bin]
+        if $tests {
+            let test_bins = (bash -c "find target/debug/deps -type f -executable ! -name '*.d' ! -name '*.rmeta' 2>/dev/null" | lines | where { |l| $l != "" })
+            $objects = ($objects | append $test_bins)
+        }
+
+        let object_flags = ($objects | each { |o| ["--object" $o] } | flatten)
+        let ignore_flags = [
+            "--ignore-filename-regex=/rustc/"
+            "--ignore-filename-regex=\\.cargo/"
+            "--ignore-filename-regex=\\.rustup/"
+            "--ignore-filename-regex=tempo-foundry/"
+            "--ignore-filename-regex=library/"
+        ]
+
+        print $"--- Generating ($format) coverage report ---"
+
+        if $format == "html" or $format == "lcov" {
+            let lcov_path = $"($COV_DIR)/coverage.lcov"
+            run-external $"($llvm_bin)/llvm-cov" "export" "--format=lcov" $"--instr-profile=($profdata_path)" ...$object_flags ...$ignore_flags o> $lcov_path
+
+            if $format == "html" {
+                let html_dir = $"($COV_DIR)/html"
+                genhtml $lcov_path --output-directory $html_dir --title "Tempo Precompiles Coverage" --legend
+                print $"Report saved to ($html_dir)/index.html"
+                if $open {
+                    xdg-open $"($html_dir)/index.html"
+                }
+            } else {
+                print $"LCOV report saved to ($lcov_path)"
+            }
+        } else if $format == "json" {
+            let json_path = $"($COV_DIR)/coverage.json"
+            run-external $"($llvm_bin)/llvm-cov" "export" $"--instr-profile=($profdata_path)" ...$object_flags ...$ignore_flags o> $json_path
+            print $"JSON report saved to ($json_path)"
+        } else {
+            # text
+            run-external $"($llvm_bin)/llvm-cov" "report" $"--instr-profile=($profdata_path)" ...$object_flags ...$ignore_flags
+        }
+
+    } else {
+        # =================================================================
+        # Existing cargo llvm-cov path (--tests and/or --live, no --invariants)
+        # =================================================================
+        print "Cleaning previous coverage data..."
+        cargo llvm-cov clean --workspace
+
+        # Step 1: Unit + integration tests
+        if $tests {
+            print ""
+            print "--- Running unit + integration tests (instrumented) ---"
+            cargo llvm-cov --no-report test --workspace
+            print "Tests complete."
+        }
+
+        # Step 2: Live node coverage
+        if $live {
+            print ""
+            print "--- Running live node coverage ---"
+
+            # Generate genesis if needed
+            let genesis_path = $"($LOCALNET_DIR)/genesis.json"
+            let needs_genesis = $reset or (not ($genesis_path | path exists))
+            if $needs_genesis {
+                rm -rf $LOCALNET_DIR
+                mkdir $LOCALNET_DIR
+                print $"Generating genesis with ($accounts) accounts..."
+                cargo run -p tempo-xtask -- generate-genesis --output $LOCALNET_DIR -a $accounts --no-dkg-in-genesis
+            }
+
+            # Build node args
+            let datadir = $"($LOCALNET_DIR)/reth-cov"
+            let log_dir = $"($LOCALNET_DIR)/logs-cov"
+            rm -rf $datadir
+            let args = (build-base-args $genesis_path $datadir $log_dir "0.0.0.0" 8545 9001)
+                | append (build-dev-args)
+                | append ["--log.stdout.filter" "warn"]
+                | append [
+                    "--faucet.address" "0x20c0000000000000000000000000000000000002"
+                    "--faucet.address" "0x20c0000000000000000000000000000000000003"
+                ]
+
+            # Build + run instrumented binary via cargo llvm-cov run (backgrounds itself)
+            print "Building and starting instrumented tempo node..."
+            let node_args_str = ($args | str join " ")
+            job spawn {
+                bash -c $"cargo llvm-cov run --no-report --bin tempo -- ($node_args_str)"
+            }
+
+            # Wait for node (generous timeout since cargo llvm-cov run compiles first)
+            sleep 5sec
+            print "Waiting for node to be ready (this includes compile time)..."
+            wait-for-rpc "http://localhost:8545" 600
+            print "Node ready!"
+
+            # Run traffic against the node
+            if $script != "" {
+                print $"Running script: ($script)"
+                try {
+                    with-env { ETH_RPC_URL: "http://localhost:8545" } {
+                        bash $script
+                    }
+                } catch {
+                    print "Script finished (or failed)."
+                }
+            } else {
+                print "Building tempo-bench..."
+                cargo build --bin tempo-bench
+
+                let weights = $PRESETS | get $preset
+                let bench_bin = "./target/debug/tempo-bench"
+                let bench_cmd = [
+                    $bench_bin
+                    "run-max-tps"
+                    "--tps" $"($tps)"
+                    "--duration" $"($duration)"
+                    "--accounts" $"($accounts)"
+                    "--target-urls" "http://localhost:8545"
+                    "--faucet"
+                    "--clear-txpool"
+                    "--tip20-weight" $"($weights | get 0)"
+                    "--erc20-weight" $"($weights | get 1)"
+                    "--swap-weight" $"($weights | get 2)"
+                    "--place-order-weight" $"($weights | get 3)"
+                ]
+
+                print $"Running bench: ($bench_cmd | str join ' ')"
+                try {
+                    run-external ($bench_cmd | first) ...($bench_cmd | skip 1)
+                } catch {
+                    print "Bench finished (or interrupted)."
+                }
+            }
+
+            # Graceful shutdown (SIGINT so profraw gets written)
+            print "Stopping instrumented node (SIGINT for profraw flush)..."
+            let pids = (find-tempo-pids)
+            for pid in $pids {
+                kill -s 2 $pid
+            }
+            sleep 3sec
+            print "Node stopped."
+        }
+
+        # Generate report
+        print ""
+        print $"--- Generating ($format) coverage report ---"
+        let output_flag = if $format == "html" {
+            ["--html" "--output-dir" $COV_DIR]
+        } else if $format == "lcov" {
+            ["--lcov" "--output-path" $"($COV_DIR)/lcov.info"]
+        } else if $format == "json" {
+            ["--json" "--output-path" $"($COV_DIR)/coverage.json"]
+        } else {
+            ["--text"]
+        }
+
+        let report_cmd = ["cargo" "llvm-cov" "report"] | append $output_flag
+        run-external ($report_cmd | first) ...($report_cmd | skip 1)
+
+        if $format == "html" {
+            print $"Report saved to ($COV_DIR)/index.html"
+            if $open {
+                xdg-open $"($COV_DIR)/index.html"
+            }
+        } else if $format == "lcov" {
+            print $"LCOV report saved to ($COV_DIR)/lcov.info"
+        } else if $format == "json" {
+            print $"JSON report saved to ($COV_DIR)/coverage.json"
+        }
+    }
+
+    print ""
+    print "=== Coverage complete ==="
+}
+
+# ============================================================================
 # Help
 # ============================================================================
 
@@ -579,6 +1002,7 @@ def main [] {
     print "Usage:"
     print "  nu tempo.nu bench [flags]            Run full benchmark (infra + localnet + bench)"
     print "  nu tempo.nu localnet [flags]         Run Tempo localnet"
+    print "  nu tempo.nu coverage [flags]         Run coverage (tests, live node, or both)"
     print "  nu tempo.nu infra up                 Start Grafana + Prometheus"
     print "  nu tempo.nu infra down               Stop the observability stack"
     print "  nu tempo.nu kill                     Kill any running tempo processes"
@@ -612,9 +1036,31 @@ def main [] {
     print $"  --features <F>           Cargo features \(default: ($DEFAULT_FEATURES)\)"
     print "  --node-args <ARGS>       Additional node arguments (space-separated)"
     print ""
+    print "Coverage flags:"
+    print "  --tests                  Include unit + integration test coverage"
+    print "  --invariants             Run Solidity invariant fuzz tests (merged Rust precompile coverage)"
+    print "  --invariant-profile <P>  Foundry profile for invariants (ci, fuzz500, default; default: ci)"
+    print "  --invariant-contract <C> Run only a specific invariant contract"
+    print "  --live                   Include live node coverage (runs localnet + traffic)"
+    print "  --preset <P>             Bench preset for live mode"
+    print "  --script <PATH>          External script to run against live node (instead of bench)"
+    print "  --tps <N>                Target TPS for live bench (default: 1000)"
+    print "  --duration <N>           Bench duration in seconds (default: 10)"
+    print "  --accounts <N>           Number of accounts (default: 100)"
+    print "  --format <F>             Report format: html, lcov, json, text (default: html)"
+    print "  --open                   Open HTML report in browser"
+    print "  --reset                  Wipe localnet data before live run"
+    print ""
     print "Examples:"
     print "  nu tempo.nu bench --preset tip20 --tps 20000 --duration 60"
     print "  nu tempo.nu bench --preset tempo-mix --tps 5000 --samply --reset"
+    print "  nu tempo.nu coverage --tests                              # unit + integration tests"
+    print "  nu tempo.nu coverage --invariants                         # forge invariant fuzz (precompile coverage)"
+    print "  nu tempo.nu coverage --tests --invariants                 # merged: cargo + forge coverage"
+    print "  nu tempo.nu coverage --invariants --invariant-profile fuzz500  # deeper fuzz run"
+    print "  nu tempo.nu coverage --live --preset tip20 --open         # live tx coverage"
+    print "  nu tempo.nu coverage --live --script /path/to/test.sh     # live + external script"
+    print "  nu tempo.nu coverage --tests --live --preset tempo-mix    # everything merged"
     print "  nu tempo.nu infra up"
     print "  nu tempo.nu localnet --mode dev --samply --accounts 50000 --reset"
     print "  nu tempo.nu localnet --mode consensus --nodes 3"
@@ -624,6 +1070,7 @@ def main [] {
     print "  P2P:           8001 + N*100"
     print "  Metrics:       8002 + N*100"
     print "  AuthRPC:       8003 + N*100"
+    print "  Discv5:        8004 + N*100"
     print "  HTTP RPC:      8545 + N"
     print "  Reth Metrics:  9001 + N"
 }
