@@ -1,41 +1,34 @@
+ARG CHEF_IMAGE=chef
+
+FROM ${CHEF_IMAGE} AS builder
+
+ARG TARGETARCH
+ARG RUST_PROFILE=profiling
 ARG RUST_FEATURES="asm-keccak,jemalloc,otlp"
+ARG VERGEN_GIT_SHA
+ARG VERGEN_GIT_SHA_SHORT
+ARG EXTRA_RUSTFLAGS=""
 
-# Dockerfile for Otter Node
-# Build for native host architecture (ARM or AMD)
-FROM rust:1.91-bookworm AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    build-essential \
-    clang \
-    llvm \
-    lld \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy source
 COPY . .
 
-# Build for native target (no cross-compilation)
-RUN cargo build --profile release --bin otter --features "${RUST_FEATURES}"
+# Build ALL binaries in one pass - they share compiled artifacts
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry-${TARGETARCH} \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git-${TARGETARCH} \
+    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked,id=sccache-${TARGETARCH} \
+    RUSTFLAGS="-C link-arg=-fuse-ld=mold ${EXTRA_RUSTFLAGS}" \
+    cargo build --profile ${RUST_PROFILE} \
+        --bin otter --features "${RUST_FEATURES}"
 
-# Runtime image - use same architecture as builder
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
-    jq \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /data
 
-COPY --from=builder /app/target/release/otter /usr/local/bin/otter
-
-RUN chmod +x /usr/local/bin/otter
-
-EXPOSE 8545 3001 3000
-
+# otter
+FROM base AS otter
+ARG RUST_PROFILE=profiling
+COPY --from=builder /app/target/${RUST_PROFILE}/otter /usr/local/bin/otter
 ENTRYPOINT ["/usr/local/bin/otter"]

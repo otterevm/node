@@ -36,3 +36,6 @@ _
 
 # LLVM coverage profraw files
 *.profraw
+
+# Test directory
+test/
