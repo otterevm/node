@@ -574,6 +574,238 @@ This PR introduces comprehensive validation checks for the valid_before field.
 
 ---
 
+## Node Upgrade Guide
+
+This section documents how to upgrade OtterEVM nodes between versions, particularly from v1.2.x to v1.3.x.
+
+### Critical: Hardfork Compatibility
+
+The most important factor for successful upgrades is **genesis hardfork configuration**.
+
+#### ✅ Compatible Upgrade (No Issues)
+
+```json
+{
+  "config": {
+    "chainId": 7441,
+    "t0Time": 0,
+    "t1Time": 0
+  }
+}
+```
+
+When genesis only has `t0Time` and `t1Time`, upgrades work seamlessly because:
+- No T2 hardfork activation
+- No ValidatorConfigV2 bytecode deployment
+- State root calculation remains consistent across versions
+
+#### ❌ Incompatible Upgrade (Will Fail)
+
+```json
+{
+  "config": {
+    "chainId": 7441,
+    "t0Time": 0,
+    "t1Time": 0,
+    "t2Time": 0
+  }
+}
+```
+
+When `t2Time` is set to 0 (or any past timestamp), the T2 hardfork activates immediately:
+- v1.3.x deploys 0xEF marker bytecode to `VALIDATOR_CONFIG_V2_ADDRESS` in `apply_pre_execution_changes()`
+- v1.2.x does NOT deploy this bytecode
+- **Result**: State root mismatch between versions
+
+### Pre-Upgrade Checklist
+
+1. **Verify genesis.json hardfork times:**
+   ```bash
+   grep -E '"t[0-9]Time"' genesis.json
+   ```
+   - Ensure no `t2Time` or set it to future timestamp
+
+2. **Backup data directory:**
+   ```bash
+   cp -r data/ data.backup.$(date +%Y%m%d)/
+   ```
+
+3. **Check current block height:**
+   ```bash
+   ./otter --version
+   tail -f logs | grep "Block added"
+   ```
+
+4. **Prepare new binary:**
+   ```bash
+   # Build v1.3 binary
+   git checkout v1.3.1  # or otterevm branch
+   cargo build --release --bin otter
+   cp target/release/otter ./otter-1.3
+   ```
+
+### Upgrade Procedure
+
+#### Step 1: Stop Current Node
+```bash
+# Graceful shutdown
+pkill -SIGTERM -f "otter"
+
+# Verify stopped
+ps aux | grep otter | grep -v grep
+```
+
+#### Step 2: Verify Data Integrity
+```bash
+# Check last finalized block
+ls -la data/consensus/
+ls -la data/db/
+```
+
+#### Step 3: Switch Binary
+```bash
+# Option A: Replace binary
+mv otter otter-1.2.backup
+mv otter-1.3 otter
+
+# Option B: Use explicit version
+./otter-1.3 node --datadir data/ ...
+```
+
+#### Step 4: Start New Version
+```bash
+./otter-1.3 node \
+  --consensus.signing-key keys/signing.key \
+  --consensus.signing-share keys/signing.share \
+  --chain genesis.json \
+  --datadir data/ \
+  --consensus.fee-recipient 0x... \
+  --http --http.addr 0.0.0.0 --http.port 8545 \
+  --port 30303 \
+  --discovery.port 30304
+```
+
+#### Step 5: Verify Success
+Watch for these log messages:
+```
+✅ Block added to canonical chain number={N+1}
+✅ Constructed proposal proposal.height={N+2}
+✅ No "state root mismatch" errors
+```
+
+### Troubleshooting Upgrades
+
+#### Issue: "proposal return channel was closed"
+
+**Symptoms:**
+```
+WARN handle_propose: error=[proposal return channel was closed by consensus engine...]
+```
+
+**Causes & Solutions:**
+
+| Cause | Solution |
+|-------|----------|
+| Consensus layer catching up | Wait 30-60 seconds, usually resolves automatically |
+| Port conflicts | Use different `--port` and `--discovery.port` |
+| State root mismatch | **Fatal** - Check if t2Time is set in genesis |
+
+#### Issue: State Root Mismatch (Fatal)
+
+**Symptoms:**
+```
+ERROR: State root mismatch
+Expected: 0x5a5745ed6bed0f7e8500247c9014fb49a9644c5f4b2813c307875beb456156e8
+Actual:   0xbc3085672aa756336bcafe28622085b75520367df28e7e74a389e15666e54788
+```
+
+**Root Cause:** T2 hardfork active (`t2Time: 0` in genesis)
+
+**Solutions:**
+1. **Best**: Modify genesis to remove/disable t2Time (requires chain reset)
+2. **Alternative**: Stay on v1.2.x indefinitely
+3. **Not Recommended**: Patch v1.3 to skip T2 validation (security risk)
+
+#### Issue: Port Already in Use
+
+**Solution:** Use different ports for testing:
+```bash
+./otter-1.3 node \
+  --port 30305 \
+  --discovery.port 30306 \
+  --http.port 8546
+```
+
+### Testing Upgrades
+
+Before production deployment, test in this order:
+
+1. **Local Test** (Fresh chain):
+   ```bash
+   rm -rf test-data/
+   ./otter-1.2 node --datadir test-data/ ...  # Run 5 mins
+   pkill otter-1.2
+   ./otter-1.3 node --datadir test-data/ ...  # Verify continues
+   ```
+
+2. **Snapshot Test** (Existing chain):
+   ```bash
+   # Use copy of production data
+   cp -r prod-data/ test-data/
+   ./otter-1.3 node --datadir test-data/ ...
+   ```
+
+3. **Staging Test** (Full replica):
+   - Deploy to staging environment
+   - Run for 24+ hours
+   - Monitor block production
+
+### Rollback Procedure
+
+If upgrade fails:
+
+```bash
+# 1. Stop new version
+pkill -f "otter-1.3"
+
+# 2. Restore from backup
+rm -rf data/
+cp -r data.backup.20250302/ data/
+
+# 3. Start old version
+./otter-1.2 node --datadir data/ ...
+```
+
+### Version-Specific Notes
+
+#### v1.2.0 → v1.3.0
+- **Reth Upgrade**: v1.10.x → v1.11.x
+- **Breaking API**: `ReceiptRootBloom` parameter added to consensus validation
+- **New Behavior**: `PayloadStatusEnum::Accepted` now rejected (only `Valid` accepted)
+- **Compatible if**: No t2Time in genesis
+
+#### v1.3.x Future Upgrades
+- Always check `crates/evm/src/block.rs` for `apply_pre_execution_changes()` modifications
+- Hardfork times in genesis are the primary compatibility factor
+
+### Quick Reference: Upgrade Commands
+
+```bash
+# Pre-upgrade backup
+tar -czf backup-$(date +%Y%m%d).tar.gz data/ keys/ genesis.json
+
+# Version check
+./otter --version
+
+# Start with logs
+tee -a otter.log | ./otter node ...
+
+# Monitor blocks
+tail -f otter.log | grep "Block added"
+```
+
+---
+
 ## Notes for AI Agents
 
 1. **Always check this file first** when starting a new session
