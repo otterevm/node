@@ -195,13 +195,6 @@ interface IValidatorConfigV2 {
     /// @return validators Array of active validators
     function getActiveValidators() external view returns (Validator[] memory validators);
 
-    /// @notice Get validators with gas-bounded pagination over the entire array
-    /// @dev Iterates from startIndex through the validators array. May return fewer
-    ///      entries than remaining if gas is insufficient. Use validatorCount() to
-    ///      detect truncation and paginate with startIndex.
-    /// @param startIndex The index into the validators array to begin from
-    /// @return validators Array of validators starting from startIndex (may be truncated)
-    function getValidators(uint64 startIndex) external view returns (Validator[] memory validators);
     /// @notice Get the owner of the precompile
     /// @return The owner address
     function owner() external view returns (address);

@@ -15,9 +15,6 @@ contract ValidatorConfigV2 is IValidatorConfigV2 {
     // Constants
     // =========================================================================
 
-    /// @dev Gas budget per validator iteration: 9 cold SLOADs × 2100 gas + 10k buffer.
-    uint256 private constant _GAS_PER_VALIDATOR = 9 * 2100 + 10_000;
-
     // =========================================================================
     // Storage
     // =========================================================================
@@ -269,29 +266,6 @@ contract ValidatorConfigV2 is IValidatorConfigV2 {
         for (uint64 i = 0; i < len; i++) {
             validators[i] = _toValidator(validatorsArray[activeIndices[i] - 1]);
         }
-    }
-
-    /// @inheritdoc IValidatorConfigV2
-    function getValidators(uint64 startIndex) external view returns (Validator[] memory result) {
-        uint256 len = validatorsArray.length;
-
-        result = new Validator[](len > startIndex ? len - startIndex : 0);
-
-        uint256 count;
-        for (uint256 i = startIndex; i < len; i++) {
-            if (gasleft() < _GAS_PER_VALIDATOR) {
-                assembly {
-                    mstore(result, count)
-                }
-                return result;
-            }
-            result[count] = _toValidator(validatorsArray[i]);
-            unchecked {
-                ++count;
-            }
-        }
-
-        return result;
     }
 
     /// @inheritdoc IValidatorConfigV2

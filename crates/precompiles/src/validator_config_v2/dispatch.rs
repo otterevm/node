@@ -23,9 +23,6 @@ impl Precompile for ValidatorConfigV2 {
             IValidatorConfigV2Calls::abi_decode,
             |call| match call {
                 IValidatorConfigV2Calls::owner(call) => view(call, |_| self.owner()),
-                IValidatorConfigV2Calls::getValidators(call) => {
-                    view(call, |c| self.get_validators_paginated(c.startIndex))
-                }
                 IValidatorConfigV2Calls::getActiveValidators(call) => {
                     view(call, |_| self.get_active_validators())
                 }

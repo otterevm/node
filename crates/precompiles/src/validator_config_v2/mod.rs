@@ -23,10 +23,6 @@ pub const VALIDATOR_NS_ADD: &[u8] = b"TEMPO_VALIDATOR_CONFIG_V2_ADD_VALIDATOR";
 /// Signature namespace for `rotateValidator` operations.
 pub const VALIDATOR_NS_ROTATE: &[u8] = b"TEMPO_VALIDATOR_CONFIG_V2_ROTATE_VALIDATOR";
 
-/// Approximate gas cost per validator read during pagination.
-/// 9 SLOADs per validator × 2100 gas per cold SLOAD + 10000 buffer.
-const GAS_PER_VALIDATOR: u64 = 9 * 2100 + 10_000;
-
 /// Per-validator record stored in the `validators` vector.
 #[derive(Debug, Storable)]
 struct ValidatorV2 {
@@ -204,22 +200,6 @@ impl ValidatorConfigV2 {
         let count = self.validator_count()?;
         let mut out = Vec::with_capacity(count as usize);
         for i in 0..count {
-            out.push(self.read_validator_at(i)?);
-        }
-        Ok(out)
-    }
-
-    pub fn get_validators_paginated(
-        &self,
-        start_index: u64,
-    ) -> Result<Vec<IValidatorConfigV2::Validator>> {
-        let count = self.validator_count()?;
-        let cap = count.saturating_sub(start_index) as usize;
-        let mut out = Vec::with_capacity(cap);
-        for i in start_index..count {
-            if self.storage.gas_remaining() < GAS_PER_VALIDATOR {
-                break;
-            }
             out.push(self.read_validator_at(i)?);
         }
         Ok(out)

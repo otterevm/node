@@ -32,9 +32,6 @@ crate::sol! {
         // View functions
         // =====================================================================
 
-        /// Get validators starting from a given index (including deactivated)
-        function getValidators(uint64 startIndex) external view returns (Validator[] memory validators);
-
         /// Get only active validators (deactivatedAtHeight == 0)
         function getActiveValidators() external view returns (Validator[] memory validators);
 
