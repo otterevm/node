@@ -163,10 +163,6 @@ impl StorageCtx {
         Self::with_storage(|s| s.gas_used())
     }
 
-    pub fn gas_remaining(&self) -> u64 {
-        Self::with_storage(|s| s.gas_remaining())
-    }
-
     pub fn gas_refunded(&self) -> i64 {
         Self::with_storage(|s| s.gas_refunded())
     }
