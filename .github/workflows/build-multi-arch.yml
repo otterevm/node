@@ -126,24 +126,21 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=true
 
-      - name: Get short SHA
-        id: shortsha
-        run: echo "shortsha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
-
       - name: Build and push multi-arch Docker image
-        uses: docker/bake-action@v5
+        uses: docker/build-push-action@v5
         with:
-          files: |
-            ./docker-bake.hcl
-            ${{ steps.meta.outputs.bake-file }}
-          targets: otter
+          context: .
+          file: ./Dockerfile
+          target: otter
+          platforms: linux/amd64,linux/arm64
           push: true
-          set: |
-            *.cache-from=type=gha
-            *.cache-to=type=gha,mode=max
-        env:
-          VERGEN_GIT_SHA: ${{ github.sha }}
-          VERGEN_GIT_SHA_SHORT: ${{ steps.shortsha.outputs.shortsha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            RUST_PROFILE=release
+            RUST_FEATURES=jemalloc,otlp
 
   create-release:
     name: Create GitHub Release
