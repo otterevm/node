@@ -3,133 +3,173 @@ name: Build Multi-Architecture Binaries and Docker Images
 on:
   push:
     tags:
-      - 'v*' # Trigger only on version tags (e.g., v1.0.0)
+      - 'v*' # Only trigger on version tags (e.g., v1.0.0, v1.2.3)
 
 jobs:
+  # Check if the tag is on otterevm branch
+  check-branch:
+    name: Check Branch
+    runs-on: ubuntu-latest
+    outputs:
+      is-otterevm: ${{ steps.check.outputs.is-otterevm }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if tag is on otterevm branch
+        id: check
+        run: |
+          # Get the commit hash of the tag
+          TAG_COMMIT=$(git rev-list -n 1 ${{ github.ref }})
+          # Check if this commit is on otterevm branch
+          if git branch -a --contains $TAG_COMMIT | grep -q "otterevm"; then
+            echo "is-otterevm=true" >> $GITHUB_OUTPUT
+            echo "Tag is on otterevm branch"
+          else
+            echo "is-otterevm=false" >> $GITHUB_OUTPUT
+            echo "Tag is NOT on otterevm branch, skipping..."
+          fi
+
   build-binaries:
     name: Build Binaries (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    needs: check-branch
+    if: needs.check-branch.outputs.is-otterevm == 'true'
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: linux
             arch: amd64
+            binary_suffix: ""
+            runner: ubuntu-latest
+            features: "jemalloc,otlp"
           - target: aarch64-unknown-linux-gnu
             os: linux
             arch: arm64
-          - target: x86_64-apple-darwin
-            os: darwin
-            arch: amd64
+            binary_suffix: ""
+            runner: ubuntu-latest
+            features: "jemalloc,otlp"
           - target: aarch64-apple-darwin
             os: darwin
             arch: arm64
+            binary_suffix: ""
+            runner: macos-latest
+            features: "otlp"  # Disable jemalloc and asm-keccak for macOS
           - target: x86_64-pc-windows-msvc
             os: windows
-            arch: amd64
+            arch: x86
+            binary_suffix: ".exe"
+            runner: windows-latest
+            features: "otlp"  # Disable jemalloc and asm-keccak for Windows
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      
-      - name: Install cross-compilation tools
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          if [[ "${{ matrix.os }}" == "linux" ]]; then
-            if [[ "${{ matrix.arch }}" == "arm64" ]]; then
-              sudo apt-get install -y gcc-aarch64-linux-gnu
-              echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            fi
-          elif [[ "${{ matrix.os }}" == "darwin" ]]; then
-            rustup target add ${{ matrix.target }}
-          fi
-      
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
       - name: Build binary
+        shell: bash
         run: |
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            cargo build --target ${{ matrix.target }} --release --locked
-          else
-            cargo build --target ${{ matrix.target }} --release --locked
-          fi
-      
-      - name: Rename binary for release
-        run: |
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            mv target/${{ matrix.target }}/release/otterevm.exe target/${{ matrix.target }}/release/otterevm-${{ matrix.os }}-${{ matrix.arch }}.exe
-          else
-            mv target/${{ matrix.target }}/release/otterevm target/${{ matrix.target }}/release/otterevm-${{ matrix.os }}-${{ matrix.arch }}
-          fi
-      
+          cargo build --target ${{ matrix.target }} --release --bin otter --features "${{ matrix.features }}"
+          mv target/${{ matrix.target }}/release/otter${{ matrix.binary_suffix }} target/${{ matrix.target }}/release/otter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.binary_suffix }}
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: otterevm-${{ matrix.os }}-${{ matrix.arch }}
-          path: target/${{ matrix.target }}/release/otterevm-${{ matrix.os }}-${{ matrix.arch }}*
+          name: otter-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/otter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.binary_suffix }}
 
   build-docker-images:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
-    needs: build-binaries
+    needs: [check-branch, build-binaries]
+    if: needs.check-branch.outputs.is-otterevm == 'true'
     permissions:
       packages: write
       contents: read
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to Docker Hub
+
+      - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: otterevm/otterevm
+          images: ghcr.io/otterevm/node
           tags: |
-            type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=true
+
+      - name: Get short SHA
+        id: shortsha
+        run: echo "shortsha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
       - name: Build and push multi-arch Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/bake-action@v5
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
+          files: |
+            ./docker-bake.hcl
+            ${{ steps.meta.outputs.bake-file }}
+          targets: otter
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+        env:
+          VERGEN_GIT_SHA: ${{ github.sha }}
+          VERGEN_GIT_SHA_SHORT: ${{ steps.shortsha.outputs.shortsha }}
+
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-binaries, build-docker-images]
+    needs: [check-branch, build-binaries, build-docker-images]
+    if: needs.check-branch.outputs.is-otterevm == 'true'
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Download all binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./binaries
-      
+          pattern: otter-*
+
       - name: Prepare release assets
         run: |
           mkdir -p ./release-assets
-          find ./binaries -type f -executable -exec cp {} ./release-assets/ \;
-          chmod +x ./release-assets/*
-      
+          # Copy all files from artifacts
+          find ./binaries -type f -exec cp {} ./release-assets/ \;
+          # Make binaries executable (except .exe files)
+          find ./release-assets -type f ! -name "*.exe" -exec chmod +x {} \;
+          # List files for debugging
+          ls -la ./release-assets/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
