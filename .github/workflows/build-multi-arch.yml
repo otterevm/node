@@ -57,12 +57,13 @@ jobs:
             binary_suffix: ""
             runner: macos-latest
             features: "otlp"  # Disable jemalloc and asm-keccak for macOS
-          - target: x86_64-pc-windows-msvc
-            os: windows
-            arch: x86
-            binary_suffix: ".exe"
-            runner: windows-latest
-            features: "otlp"  # Disable jemalloc and asm-keccak for Windows
+          # Windows build disabled - codebase uses Unix-specific APIs
+          # - target: x86_64-pc-windows-msvc
+          #   os: windows
+          #   arch: x86
+          #   binary_suffix: ".exe"
+          #   runner: windows-latest
+          #   features: "otlp"
     steps:
       - uses: actions/checkout@v4
 
