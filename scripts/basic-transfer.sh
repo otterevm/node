@@ -21,7 +21,7 @@ RECIPIENT_ADDR=$(cast wallet new --json | jq -r '.[0].address')
 TESTUSD="0x20c0000000000000000000000000000000000000"
 
 echo "Funding sender address..."
-cast rpc tempo_fundAddress $SENDER_ADDR
+cast rpc otter_fundAddress $SENDER_ADDR
 sleep 2
 
 echo "Checking initial balances..."

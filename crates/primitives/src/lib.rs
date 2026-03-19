@@ -1,4 +1,4 @@
-//! Tempo primitive types
+//! OtterEVM primitive types
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]

@@ -10,6 +10,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[[bin]]
+name = "otter-xtask"
+path = "src/main.rs"
+
 [dependencies]
 tempo-chainspec.workspace = true
 tempo-contracts.workspace = true

@@ -1,4 +1,4 @@
-//! Tempo precompile implementations.
+//! OtterEVM precompile implementations.
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -76,7 +76,7 @@ pub fn input_cost(calldata_len: usize) -> u64 {
         .saturating_mul(INPUT_PER_WORD_COST as usize) as u64
 }
 
-/// Trait implemented by all Tempo precompile contract types.
+/// Trait implemented by all OtterEVM precompile contract types.
 ///
 /// Precompiles must provide a dispatcher that decodes the 4-byte function selector from calldata,
 /// ABI-decodes the arguments, and routes to the corresponding method.
@@ -92,7 +92,7 @@ pub trait Precompile {
     fn call(&mut self, calldata: &[u8], msg_sender: Address) -> PrecompileResult;
 }
 
-/// Returns the full Tempo precompiles for the given config.
+/// Returns the full OtterEVM precompiles for the given config.
 ///
 /// Pre-T1C hardforks use Prague precompiles, T1C+ uses Osaka precompiles.
 /// Tempo-specific precompiles are also registered via [`extend_tempo_precompiles`].

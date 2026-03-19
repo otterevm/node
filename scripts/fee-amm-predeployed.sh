@@ -24,7 +24,7 @@ echo "User wallet: $USER_ADDR"
 
 # Fund the user with all predeployed tokens
 echo "Funding user address with all predeployed tokens..."
-cast rpc tempo_fundAddress $USER_ADDR
+cast rpc otter_fundAddress $USER_ADDR
 sleep 2
 
 # Check user balances

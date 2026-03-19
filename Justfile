@@ -7,5 +7,5 @@ bump-reth commit:
 mod scripts
 
 [group('dev')]
-tempo-dev-up: scripts::tempo-dev-up
-tempo-dev-down: scripts::tempo-dev-down
+otter-dev-up: scripts::otter-dev-up
+otter-dev-down: scripts::otter-dev-down

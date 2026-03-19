@@ -1,10 +1,10 @@
-# `tempo-bench`
+# `otter-bench`
 
-`tempo-bench` is benchmarking suite for Tempo node components.
+`otter-bench` is benchmarking suite for OtterEVM node components.
 
 ## Installation
 
-Install `tempo` and `tempo-bench`
+Install `otter` and `otter-bench`
 
 ```bash
 cargo install --path bin/tempo-bench --profile maxperf
@@ -15,7 +15,7 @@ cargo install --path bin/tempo --profile maxperf
 ### Overview
 
 ```
-Usage: tempo-bench <COMMAND>
+Usage: otter-bench <COMMAND>
 
 Commands:
   run-max-tps       Run maximum TPS throughput benchmarking
@@ -31,7 +31,7 @@ Options:
 High throughput tx load testing
 
 ```
-Usage: tempo-bench run-max-tps [OPTIONS] --tps <TPS>
+Usage: otter-bench run-max-tps [OPTIONS] --tps <TPS>
 
 Options:
   -t, --tps <TPS>
@@ -115,7 +115,7 @@ Options:
       --faucet
           Fund accounts from the faucet before running the benchmark.
 
-          Calls tempo_fundAddress for each account.
+          Calls otter_fundAddress for each account.
 
       --clear-txpool
           Clear the transaction pool before running the benchmark.
@@ -125,7 +125,7 @@ Options:
       --use-2d-nonces
           Use 2D nonces instead of expiring nonces.
 
-          By default, tempo-bench uses expiring nonces (TIP-1009) which use a circular buffer
+          By default, otter-bench uses expiring nonces (TIP-1009) which use a circular buffer
           for replay protection, avoiding state bloat. Use this flag to switch to 2D nonces.
 
       --use-standard-nonces
@@ -143,31 +143,31 @@ Options:
 Run 15 second benchmark with 20k TPS:
 
 ```bash
-tempo-bench run-max-tps --duration 15 --tps 20000
+otter-bench run-max-tps --duration 15 --tps 20000
 ```
 
 Run benchmark on MacOS:
 
 ```bash
-tempo-bench run-max-tps --duration 15 --tps 20000 --disable-thread-pinning
+otter-bench run-max-tps --duration 15 --tps 20000 --disable-thread-pinning
 ```
 
 Run benchmark with less workers than the default:
 
 ```bash
-tempo-bench run-max-tps --duration 15 --tps 20 -w 1
+otter-bench run-max-tps --duration 15 --tps 20 -w 1
 ```
 
 Run benchmark with more accounts than the default:
 
 ```bash
-tempo-bench run-max-tps --duration 15 --tps 1000 -a 1000
+otter-bench run-max-tps --duration 15 --tps 1000 -a 1000
 ```
 
 Run benchmark against more than one node:
 
 ```bash
-tempo-bench run-max-tps --duration 15 --tps 20000 --target-urls http://node-1:8545 --target-urls http://node-2:8545
+otter-bench run-max-tps --duration 15 --tps 20000 --target-urls http://node-1:8545 --target-urls http://node-2:8545
 ```
 
 The benchmark will continuously output performance metrics including transaction generation rates, network throughput, queue lengths, and response times. As the total transaction count increases, the rate limiter will automatically scale up according to your configured thresholds.
@@ -189,11 +189,11 @@ just localnet 50000
 ### 3. Run max TPS benchmark
 
 ```bash
-tempo-bench run-max-tps --duration 15 --tps 20000 --faucet
+otter-bench run-max-tps --duration 15 --tps 20000 --faucet
 ```
 
 ### Sampling
 Use the following commands to run the node with [sampling](https://github.com/mstange/samply):
 ```bash
-	samply record --output tempo.samply -- just localnet 50000
+	samply record --output otter.samply -- just localnet 50000
 ```

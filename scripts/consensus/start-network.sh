@@ -31,7 +31,7 @@ CONFIGS=(
 start_validator() {
   local validator_id="$1"
   local config_file="$2"
-  local container_name="tempo-validator-$validator_id"
+  local container_name="otter-validator-$validator_id"
   local rpc_port=$((8545 + validator_id))
 
   echo "Starting $container_name with config $config_file..."
@@ -84,9 +84,9 @@ fi
 echo ""
 echo "=== Network Started ==="
 echo "Validators:"
-echo "  tempo-validator-0: http://localhost:8545"
-echo "  tempo-validator-1: http://localhost:8546"
-echo "  tempo-validator-2: http://localhost:8547"
-echo "  tempo-validator-3: http://localhost:8548"
+echo "  otter-validator-0: http://localhost:8545"
+echo "  otter-validator-1: http://localhost:8546"
+echo "  otter-validator-2: http://localhost:8547"
+echo "  otter-validator-3: http://localhost:8548"
 echo ""
 echo "To stop the network: $SCRIPT_DIR/stop-network.sh"

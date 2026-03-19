@@ -1,4 +1,4 @@
-//! Tempo consensus implementation.
+//! OtterEVM consensus implementation.
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -32,7 +32,7 @@ pub const TEMPO_SHARED_GAS_DIVISOR: u64 = 10;
 /// Maximum extra data size for Tempo blocks.
 pub const TEMPO_MAXIMUM_EXTRA_DATA_SIZE: usize = 10 * 1_024; // 10KiB
 
-/// Tempo consensus implementation.
+/// OtterEVM consensus implementation.
 #[derive(Debug, Clone)]
 pub struct TempoConsensus {
     /// Inner Ethereum consensus.

@@ -43,7 +43,7 @@ if [ "$BALANCE" = "0" ]; then
   echo "New test account: $TEST_ADDR"
 
   # Fund the new account
-  cast rpc tempo_fundAddress $TEST_ADDR >/dev/null 2>&1
+  cast rpc otter_fundAddress $TEST_ADDR >/dev/null 2>&1
   sleep 2
 
   # Verify funding worked

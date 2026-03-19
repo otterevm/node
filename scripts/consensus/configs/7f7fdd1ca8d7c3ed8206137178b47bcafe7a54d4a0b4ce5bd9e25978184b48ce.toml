@@ -17,10 +17,10 @@ fee_recipient = "0x0000000000000000000000000000000000000000"
 max_message_size_bytes = 1048576
 
 [peers]
-0x0c229e27a8c69e7afe86900dfbceab6ef6d207582c127a0d99fe9b3fb5a2068a = "tempo-validator-0:8000"
-0x2a685998ee44953a3eb0a5d316937f810a80bdcc952c0aa07b4d82b3fed459c2 = "tempo-validator-1:8000"
-0x7f7fdd1ca8d7c3ed8206137178b47bcafe7a54d4a0b4ce5bd9e25978184b48ce = "tempo-validator-2:8000"
-0xee1aa49a4459dfe813a3cf6eb882041230c7b2558469de81f87c9bf23bf10a03 = "tempo-validator-3:8000"
+0x0c229e27a8c69e7afe86900dfbceab6ef6d207582c127a0d99fe9b3fb5a2068a = "otter-validator-0:8000"
+0x2a685998ee44953a3eb0a5d316937f810a80bdcc952c0aa07b4d82b3fed459c2 = "otter-validator-1:8000"
+0x7f7fdd1ca8d7c3ed8206137178b47bcafe7a54d4a0b4ce5bd9e25978184b48ce = "otter-validator-2:8000"
+0xee1aa49a4459dfe813a3cf6eb882041230c7b2558469de81f87c9bf23bf10a03 = "otter-validator-3:8000"
 
 [timeouts]
 time_for_peer_response = "200ms"

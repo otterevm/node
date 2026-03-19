@@ -111,13 +111,13 @@ pub(crate) struct GenesisArgs {
     #[arg(long)]
     pub(crate) seed: Option<u64>,
 
-    /// Custom admin address for pathUSD token.
+    /// Custom admin address for pathFEE token.
     /// If not set, uses the first generated account.
     #[arg(long)]
-    pathusd_admin: Option<Address>,
+    pathfee_admin: Option<Address>,
 
     #[arg(long, default_value_t = u64::MAX)]
-    pathusd_amount: u64,
+    pathfee_amount: u64,
 
     /// Custom admin address for validator config.
     /// If not set, uses the first generated account.
@@ -237,7 +237,7 @@ impl GenesisArgs {
 
         // system contracts/precompiles must be initialized bottom up, if an init function (e.g. mint_pairwise_liquidity) uses another system contract/precompiles internally (tip403 registry), the registry must be initialized first.
 
-        let pathusd_admin = self.pathusd_admin.unwrap_or_else(|| addresses[0]);
+        let pathfee_admin = self.pathfee_admin.unwrap_or_else(|| addresses[0]);
         let validator_admin = self.validator_admin.unwrap_or_else(|| addresses[0]);
         let mut evm = setup_tempo_evm(self.chain_id);
 
@@ -251,8 +251,8 @@ impl GenesisArgs {
         println!("Initializing TIP20Factory");
         initialize_tip20_factory(&mut evm)?;
 
-        println!("Creating pathUSD through factory");
-        create_path_usd_token(pathusd_admin, &addresses, self.pathusd_amount, &mut evm)?;
+        println!("Creating pathFEE through factory");
+        create_path_usd_token(pathfee_admin, &addresses, self.pathfee_amount, &mut evm)?;
 
         let (alpha_token_address, beta_token_address, theta_token_address) =
             if !self.no_extra_tokens {
@@ -262,7 +262,7 @@ impl GenesisArgs {
                     "AlphaUSD",
                     "USD",
                     PATH_USD_ADDRESS,
-                    pathusd_admin,
+                    pathfee_admin,
                     &addresses,
                     U256::from(u64::MAX),
                     SaltOrAddress::Address(address!("20C0000000000000000000000000000000000001")),
@@ -274,7 +274,7 @@ impl GenesisArgs {
                     "BetaUSD",
                     "USD",
                     PATH_USD_ADDRESS,
-                    pathusd_admin,
+                    pathfee_admin,
                     &addresses,
                     U256::from(u64::MAX),
                     SaltOrAddress::Address(address!("20C0000000000000000000000000000000000002")),
@@ -286,7 +286,7 @@ impl GenesisArgs {
                     "ThetaUSD",
                     "USD",
                     PATH_USD_ADDRESS,
-                    pathusd_admin,
+                    pathfee_admin,
                     &addresses,
                     U256::from(u64::MAX),
                     SaltOrAddress::Address(address!("20C0000000000000000000000000000000000003")),
@@ -421,7 +421,7 @@ impl GenesisArgs {
                     alpha,
                     vec![PATH_USD_ADDRESS, beta, theta],
                     U256::from(10u64.pow(10)),
-                    pathusd_admin,
+                    pathfee_admin,
                     &mut evm,
                 );
             } else {

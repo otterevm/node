@@ -26,7 +26,7 @@ echo "User wallet: $USER_ADDR"
 
 # Fund the user with default tokens for gas
 echo "Funding user address with default tokens..."
-cast rpc tempo_fundAddress $USER_ADDR
+cast rpc otter_fundAddress $USER_ADDR
 sleep 2
 
 # Check initial balance
@@ -85,7 +85,7 @@ fi
 # Request more default tokens from faucet for liquidity
 echo "Requesting more default tokens from faucet for liquidity..."
 for i in {1..5}; do
-  cast rpc tempo_fundAddress $USER_ADDR > /dev/null 2>&1
+  cast rpc otter_fundAddress $USER_ADDR > /dev/null 2>&1
   sleep 1
 done
 
