@@ -25,10 +25,7 @@ use tempo_evm::TempoEvmConfig;
 #[cfg(test)]
 use tempo_precompiles::account_keychain::{AuthorizedKey, SpendingLimitState};
 use tempo_precompiles::{
-    account_keychain::{
-        AccountKeychain, MAX_CALL_SCOPES, MAX_RECIPIENTS_PER_SELECTOR,
-        MAX_SELECTOR_RULES_PER_SCOPE, is_constrained_tip20_selector,
-    },
+    account_keychain::{AccountKeychain, is_constrained_tip20_selector},
     nonce::{INonce, NonceManager},
     storage::Handler,
     tip20_factory::TIP20Factory,
@@ -77,6 +74,13 @@ pub const MAX_TOKEN_LIMITS: usize = 256;
 /// so that transactions with a future `valid_after` are not silently evicted before
 /// they become executable.
 pub const DEFAULT_AA_VALID_AFTER_MAX_SECS: u64 = 120;
+
+/// Maximum number of call scopes per account key.
+const MAX_KEYCHAIN_CALL_SCOPES: u8 = 64;
+/// Maximum number of selector rules per call scope.
+const MAX_KEYCHAIN_SELECTOR_RULES_PER_SCOPE: u8 = 64;
+/// Maximum number of recipients per selector rule.
+const MAX_KEYCHAIN_RECIPIENTS_PER_SELECTOR: u8 = 64;
 
 /// Validator for Tempo transactions.
 #[derive(Debug)]
@@ -193,7 +197,7 @@ where
             return Ok(Ok(()));
         };
 
-        if scopes.len() > MAX_CALL_SCOPES as usize {
+        if scopes.len() > MAX_KEYCHAIN_CALL_SCOPES as usize {
             return Ok(Err(TempoPoolTransactionError::Keychain(
                 "too many call scopes in key authorization",
             )));
@@ -202,6 +206,11 @@ where
         // Validate each scope as a unit so target and selector constraints stay grouped.
         let mut seen_targets = HashSet::with_capacity(scopes.len());
         for scope in scopes {
+            if scope.target.is_zero() {
+                return Ok(Err(TempoPoolTransactionError::Keychain(
+                    "call scope target cannot be the zero address",
+                )));
+            }
             if !seen_targets.insert(scope.target) {
                 return Ok(Err(TempoPoolTransactionError::Keychain(
                     "duplicate call scope targets are not allowed",
@@ -213,7 +222,7 @@ where
                 continue;
             }
 
-            if selector_rules.len() > MAX_SELECTOR_RULES_PER_SCOPE as usize {
+            if selector_rules.len() > MAX_KEYCHAIN_SELECTOR_RULES_PER_SCOPE as usize {
                 return Ok(Err(TempoPoolTransactionError::Keychain(
                     "too many selector rules in call scope",
                 )));
@@ -237,7 +246,7 @@ where
 
                 // Recipient-constrained rules only make sense for constrained TIP-20 selectors and
                 // must carry a de-duplicated recipient set.
-                if recipients.len() > MAX_RECIPIENTS_PER_SELECTOR as usize {
+                if recipients.len() > MAX_KEYCHAIN_RECIPIENTS_PER_SELECTOR as usize {
                     return Ok(Err(TempoPoolTransactionError::Keychain(
                         "too many recipients in selector rule",
                     )));
@@ -3586,7 +3595,7 @@ mod tests {
             let (user_signer, user_address) = generate_keypair();
 
             let mut scopes = Vec::new();
-            for _ in 0..=MAX_CALL_SCOPES {
+            for _ in 0..=MAX_KEYCHAIN_CALL_SCOPES {
                 scopes.push(CallScope {
                     target: Address::random(),
                     selector_rules: vec![],
