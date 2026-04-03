@@ -88,6 +88,9 @@ jobs:
             artifact_name: otter-linux-x64
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download binary artifact
         uses: actions/download-artifact@v4
         with:
