@@ -104,19 +104,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-rc') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') }}
-
       - name: Build and push Docker image
         uses: docker/bake-action@v5
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
         with:
           push: true
           targets: otter
@@ -124,8 +115,7 @@ jobs:
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
             *.platform=${{ matrix.platform }}
-            *.tags=${{ steps.meta.outputs.tags }}
-            *.labels=${{ steps.meta.outputs.labels }}
+            otter.tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_VERSION }}
 
   # ==========================================
   # Create GitHub Release
