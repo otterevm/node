@@ -64,6 +64,7 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Build binary
+        shell: bash
         run: |
           # jemalloc doesn't support Windows, so exclude it for Windows builds
           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
