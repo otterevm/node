@@ -36,11 +36,6 @@ jobs:
             target: aarch64-apple-darwin
             binary: otter
             artifact_name: otter-macos-arm64
-          # Windows x64
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            binary: otter.exe
-            artifact_name: otter-windows-x64
 
     steps:
       - name: Checkout code
@@ -64,14 +59,8 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Build binary
-        shell: bash
         run: |
-          # jemalloc doesn't support Windows, so exclude it for Windows builds
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            cargo build --release --bin otter --target ${{ matrix.target }} --features "asm-keccak,otlp"
-          else
-            cargo build --release --bin otter --target ${{ matrix.target }} --features "asm-keccak,jemalloc,otlp"
-          fi
+          cargo build --release --bin otter --target ${{ matrix.target }} --features "asm-keccak,jemalloc,otlp"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
