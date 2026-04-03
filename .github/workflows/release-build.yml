@@ -109,7 +109,6 @@ jobs:
         with:
           context: .
           file: Dockerfile.release
-          platforms: ${{ matrix.platform }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
