@@ -75,7 +75,6 @@ jobs:
   docker-build:
     name: Build Docker Image ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    needs: build-binaries
     strategy:
       fail-fast: false
       matrix:
