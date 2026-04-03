@@ -75,24 +75,24 @@ jobs:
   docker-build:
     name: Build Docker Image ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
+    needs: build-binaries
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
-            docker_arch: arm64
+            artifact_name: otter-linux-arm64
           - platform: linux/amd64
             runner: ubuntu-24.04
-            docker_arch: amd64
+            artifact_name: otter-linux-x64
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        if: matrix.docker_arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: .
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -105,17 +105,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/bake-action@v5
-        env:
-          TAG_VERSION: ${{ github.ref_name }}
+        uses: docker/build-push-action@v6
         with:
+          context: .
+          file: Dockerfile.release
+          platforms: ${{ matrix.platform }}
           push: true
-          targets: otter
-          set: |
-            *.cache-from=type=gha
-            *.cache-to=type=gha,mode=max
-            *.platform=${{ matrix.platform }}
-            otter.tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_VERSION }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ==========================================
   # Create GitHub Release
