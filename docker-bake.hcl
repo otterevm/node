@@ -58,3 +58,8 @@ target "tempo-xtask" {
   inherits = ["_common", "docker-metadata"]
   target = "tempo-xtask"
 }
+
+target "otter" {
+  inherits = ["_common", "docker-metadata"]
+  target = "otter"
+}

@@ -117,19 +117,14 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(github.ref, '-rc') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/bake-action@v5
         with:
-          context: .
-          file: Dockerfile
-          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            RUST_PROFILE=profiling
-            RUST_FEATURES=asm-keccak,jemalloc,otlp
+          targets: otter
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+            *.platform=${{ matrix.platform }}
 
   # ==========================================
   # Create GitHub Release
