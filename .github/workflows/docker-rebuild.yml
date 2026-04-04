@@ -1,0 +1,107 @@
+name: Rebuild Docker Images Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Workflow run ID that has the binary artifacts'
+        required: true
+        type: string
+      tag:
+        description: 'Tag to use for Docker image'
+        required: true
+        default: 'v1.5.1'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  rebuild-docker:
+    name: Rebuild Docker Images
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Linux ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: otter-linux-arm64
+          path: binaries/arm64
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: otter-linux-x64
+          path: binaries/amd64
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded binaries
+        run: |
+          echo "=== ARM64 binary ==="
+          ls -lh binaries/arm64/
+          file binaries/arm64/otter || echo "File not found or not executable"
+          
+          echo "=== AMD64 binary ==="
+          ls -lh binaries/amd64/
+          file binaries/amd64/otter || echo "File not found or not executable"
+
+      - name: Prepare multi-arch build context
+        run: |
+          mkdir -p docker-context/amd64 docker-context/arm64
+          cp binaries/amd64/otter docker-context/amd64/otter
+          cp binaries/arm64/otter docker-context/arm64/otter
+          echo "=== Build context ==="
+          ls -lh docker-context/amd64/ docker-context/arm64/
+
+      - name: Write Dockerfile
+        run: |
+          cat > docker-context/Dockerfile << 'DOCKERFILE'
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /data
+
+COPY ${TARGETARCH}/otter /usr/local/bin/otter
+RUN chmod +x /usr/local/bin/otter
+
+ENTRYPOINT ["/usr/local/bin/otter"]
+DOCKERFILE
+          
+          echo "=== Dockerfile ==="
+          cat docker-context/Dockerfile
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker-context
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
