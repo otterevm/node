@@ -66,35 +66,35 @@ jobs:
         run: |
           # Create Dockerfile for amd64
           cat > docker-context/Dockerfile.amd64 << 'EOF'
-FROM debian:trixie-slim
+          FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /data
+          WORKDIR /data
 
-COPY amd64/otter /usr/local/bin/otter
-RUN chmod +x /usr/local/bin/otter
+          COPY amd64/otter /usr/local/bin/otter
+          RUN chmod +x /usr/local/bin/otter
 
-ENTRYPOINT ["/usr/local/bin/otter"]
-EOF
+          ENTRYPOINT ["/usr/local/bin/otter"]
+          EOF
 
           # Create Dockerfile for arm64
           cat > docker-context/Dockerfile.arm64 << 'EOF'
-FROM debian:trixie-slim
+          FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /data
+          WORKDIR /data
 
-COPY arm64/otter /usr/local/bin/otter
-RUN chmod +x /usr/local/bin/otter
+          COPY arm64/otter /usr/local/bin/otter
+          RUN chmod +x /usr/local/bin/otter
 
-ENTRYPOINT ["/usr/local/bin/otter"]
-EOF
+          ENTRYPOINT ["/usr/local/bin/otter"]
+          EOF
 
           echo "=== Dockerfile.amd64 ==="
           cat docker-context/Dockerfile.amd64
