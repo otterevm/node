@@ -132,10 +132,23 @@ jobs:
       contents: write
 
     steps:
-      - name: Download all artifacts
+      - name: Download Linux ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: otter-linux-arm64
+          path: artifacts/otter-linux-arm64
+
+      - name: Download Linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: otter-linux-x64
+          path: artifacts/otter-linux-x64
+
+      - name: Download macOS ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: otter-macos-arm64
+          path: artifacts/otter-macos-arm64
 
       - name: Prepare release binaries
         run: |
