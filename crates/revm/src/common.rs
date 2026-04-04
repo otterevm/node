@@ -194,7 +194,7 @@ pub trait TempoStateAccess<M = ()> {
         Ok(DEFAULT_FEE_TOKEN)
     }
 
-    /// Checks if the given TIP20 token has USD currency.
+    /// Checks if the given TIP20 token has FEE currency.
     ///
     /// IMPORTANT: Caller must ensure `fee_token` has a valid TIP20 prefix.
     fn is_tip20_usd(&mut self, spec: TempoHardfork, fee_token: Address) -> TempoResult<bool>
@@ -204,7 +204,7 @@ pub trait TempoStateAccess<M = ()> {
         self.with_read_only_storage_ctx(spec, || {
             // SAFETY: caller must ensure prefix is already checked
             let token = TIP20Token::from_address_unchecked(fee_token);
-            Ok(token.currency.len()? == 3 && token.currency.read()?.as_str() == "USD")
+            Ok(token.currency.len()? == 3 && token.currency.read()?.as_str() == "FEE")
         })
     }
 
@@ -218,7 +218,7 @@ pub trait TempoStateAccess<M = ()> {
             return Ok(false);
         }
 
-        // Ensure the currency is USD
+        // Ensure the currency is FEE
         self.is_tip20_usd(spec, fee_token)
     }
 
@@ -676,11 +676,11 @@ mod tests {
 
         // Short string encoding: left-aligned data + length*2 in LSB
         let cases: &[(U256, bool, &str)] = &[
-            // "USD" = 0x555344, len=3, LSB=6 -> true
+            // "FEE" = 0x464545, len=3, LSB=6 -> true
             (
-                uint!(0x5553440000000000000000000000000000000000000000000000000000000006_U256),
+                uint!(0x4645450000000000000000000000000000000000000000000000000000000006_U256),
                 true,
-                "USD",
+                "FEE",
             ),
             // "EUR" = 0x455552, len=3, LSB=6 -> false (wrong content)
             (
@@ -688,11 +688,11 @@ mod tests {
                 false,
                 "EUR",
             ),
-            // "US" = 0x5553, len=2, LSB=4 -> false (wrong length)
+            // "FE" = 0x4645, len=2, LSB=4 -> false (wrong length)
             (
-                uint!(0x5553000000000000000000000000000000000000000000000000000000000004_U256),
+                uint!(0x4645000000000000000000000000000000000000000000000000000000000004_U256),
                 false,
-                "US",
+                "FE",
             ),
             // empty -> false
             (U256::ZERO, false, "empty"),

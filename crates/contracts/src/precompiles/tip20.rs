@@ -6,8 +6,8 @@ use alloy_sol_types::{SolCall, SolType};
 /// Decimal precision for all TIP-20 tokens.
 pub const DECIMALS: u8 = 6;
 
-/// USD currency string constant.
-pub const USD_CURRENCY: &str = "USD";
+/// FEE currency string constant.
+pub const USD_CURRENCY: &str = "FEE";
 
 /// Full list of ISO 4217 currency codes.
 pub const ISO4217_CODES: &[&str] = &[

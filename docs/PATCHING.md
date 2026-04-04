@@ -47,18 +47,93 @@ Client identity and versioning have been updated to reflect OtterEVM branding:
   - Line 109: Pyroscope default application name
   - Line 208: `.about("OtterEVM")`
 
-### 3. Currency Identifier
+### 3. Currency Identifier (`USD` → `FEE`)
 
-Fee token currency identifier uses `'FEE'` instead of `'USD'` for OtterEVM's native fee system.
+Fee token currency identifier uses `"FEE"` instead of `"USD"` for OtterEVM's native fee system.
+This is the most impactful patch — it touches validation logic, constants, test data, and test utilities.
 
-**Modified Files:**
-- `crates/precompiles/src/tip20/mod.rs` - Currency validation and handling
-- `crates/revm/src/common.rs` - Fee token validation logic (line 207)
-- `xtask/src/genesis_args.rs` - Genesis configuration
+#### 3a. Root Constant
 
-**Impact:**
-- Currency checks in `is_tip20_usd()` validate against `"USD"` for Fee AMM compatibility
-- Genesis token creation uses appropriate currency identifiers
+| File | Change |
+|------|--------|
+| `crates/contracts/src/precompiles/tip20.rs` | `USD_CURRENCY` constant: `"USD"` → `"FEE"` |
+
+This constant is used throughout the codebase by `validate_usd_currency()`, the TIP-20 factory,
+and the Fee AMM. Changing it propagates to most validation paths automatically.
+
+#### 3b. Validation Logic (hardcoded checks)
+
+| File | Change |
+|------|--------|
+| `crates/revm/src/common.rs` | `is_tip20_usd()`: hardcoded `== "USD"` → `== "FEE"` |
+| `crates/revm/src/common.rs` | `is_valid_fee_token()`: comment "Ensure the currency is USD" → "FEE" |
+
+`is_tip20_usd()` is called from `crates/revm/src/handler.rs` during transaction execution
+and from `is_valid_fee_token()` during transaction pool validation. If this check is wrong,
+**all ERC-20 transfers and Tempo AA transactions will fail** with `InvalidFeeToken`.
+
+#### 3c. Test Utilities
+
+| File | Change |
+|------|--------|
+| `crates/precompiles/src/test_util.rs` | `path_usd_inner()`: `create_token_reserved_address(..., "USD", ...)` → `"FEE"` |
+| `crates/precompiles/src/test_util.rs` | `create()` default currency: `"USD"` → `"FEE"` |
+
+These are the test helpers used by `TIP20Setup::path_usd()` and `TIP20Setup::create()`.
+If not updated, **most precompile and EVM tests will fail**.
+
+#### 3d. Test Data (hex-encoded currency values)
+
+Solidity short-string encoding for `"FEE"` = `0x4645450000000000000000000000000000000000000000000000000000000006`  
+(Previously `"USD"` = `0x5553440000000000000000000000000000000000000000000000000000000006`)
+
+| File | What to change |
+|------|----------------|
+| `crates/revm/src/common.rs` | `test_is_tip20_usd()` test case hex values |
+| `crates/transaction-pool/src/validator.rs` | All `usd_currency_value` definitions (~4 occurrences) |
+
+#### 3e. Test Assertions and Currency Parameters
+
+| File | What to change |
+|------|----------------|
+| `crates/precompiles/src/tip20_factory/mod.rs` | All `currency: "USD".to_string()` → `"FEE"` in tests (~6 occurrences) |
+| `crates/precompiles/src/tip20_factory/mod.rs` | All `"USD"` 3rd param in `create_token_reserved_address()` calls (~9 occurrences) |
+| `crates/precompiles/src/tip20/mod.rs` | `currency: "USD".to_string()` in tests → `"FEE"` |
+| `crates/precompiles/src/tip20/dispatch.rs` | `assert_eq!(currency, "USD")` → `"FEE"` |
+| `crates/precompiles/src/tip_fee_manager/amm.rs` | Test token names/variable names referencing USD |
+
+#### 3f. Genesis Configuration
+
+| File | Change |
+|------|--------|
+| `xtask/src/genesis_args.rs` | Genesis token creation uses `"FEE"` currency |
+
+#### 3g. Comments and Doc Strings
+
+Update any doc comments referencing "USD" in validation context to "FEE":
+- `crates/precompiles/src/tip20/mod.rs` — `validate_usd_currency()` doc comment
+- `crates/precompiles/src/tip_fee_manager/mod.rs` — inline comments
+- `crates/precompiles/src/tip_fee_manager/amm.rs` — function doc comments
+- `crates/precompiles/src/tip20_factory/mod.rs` — inline comments
+
+> **NOTE:** Function names like `is_tip20_usd`, `validate_usd_currency`, `USD_CURRENCY` are
+> intentionally NOT renamed to minimize diff size and merge conflicts with upstream.
+> Only the string values and comments are changed.
+
+#### Quick Verification After Patching
+
+```bash
+# Search for remaining "USD" in validation code (should return 0 matches)
+grep -rn '"USD"' crates/contracts/src/precompiles/tip20.rs \
+  crates/revm/src/common.rs \
+  crates/precompiles/src/test_util.rs \
+  crates/precompiles/src/tip20/dispatch.rs
+
+# Run key test suites
+cargo test -p tempo-revm
+cargo test -p tempo-precompiles
+cargo test -p tempo-transaction-pool
+```
 
 ### 4. Removed GitHub Workflows
 
@@ -220,6 +295,12 @@ The following files frequently conflict during merges:
 | `version.rs` | Client name | Keep ours (OtterEVM) |
 | `main.rs` | CLI branding | Keep ours |
 | `tip20/mod.rs` | Currency checks | Keep ours (FEE) |
+| `contracts/src/precompiles/tip20.rs` | `USD_CURRENCY` constant | Keep ours (`"FEE"`) |
+| `revm/src/common.rs` | Currency validation | Keep ours (`"FEE"`) |
+| `precompiles/src/test_util.rs` | Test currency defaults | Keep ours (`"FEE"`) |
+| `precompiles/src/tip20_factory/mod.rs` | Test currency params | Keep ours (`"FEE"`) |
+| `precompiles/src/tip20/dispatch.rs` | Test assertions | Keep ours (`"FEE"`) |
+| `transaction-pool/src/validator.rs` | Test hex currency values | Keep ours (FEE hex) |
 | Workflow files | Deletions | Keep deleted |
 
 ## Troubleshooting
@@ -262,5 +343,5 @@ Check that these files have correct values:
 
 ---
 
-**Last Updated:** 2026-04-03  
+**Last Updated:** 2026-04-04  
 **Maintained By:** OtterEVM Team
