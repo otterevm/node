@@ -64,7 +64,18 @@ jobs:
 
       - name: Write Dockerfile
         run: |
-          printf 'FROM debian:trixie-slim\n\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n    ca-certificates \\\n    && rm -rf /var/lib/apt/lists/*\n\nWORKDIR /data\n\nCOPY $${TARGETARCH}/otter /usr/local/bin/otter\nRUN chmod +x /usr/local/bin/otter\n\nENTRYPOINT ["/usr/local/bin/otter"]\n' > docker-context/Dockerfile
+          echo 'FROM debian:trixie-slim' > docker-context/Dockerfile
+          echo '' >> docker-context/Dockerfile
+          echo 'RUN apt-get update && apt-get install -y --no-install-recommends \' >> docker-context/Dockerfile
+          echo '    ca-certificates \' >> docker-context/Dockerfile
+          echo '    && rm -rf /var/lib/apt/lists/*' >> docker-context/Dockerfile
+          echo '' >> docker-context/Dockerfile
+          echo 'WORKDIR /data' >> docker-context/Dockerfile
+          echo '' >> docker-context/Dockerfile
+          echo 'COPY ${TARGETARCH}/otter /usr/local/bin/otter' >> docker-context/Dockerfile
+          echo 'RUN chmod +x /usr/local/bin/otter' >> docker-context/Dockerfile
+          echo '' >> docker-context/Dockerfile
+          echo 'ENTRYPOINT ["/usr/local/bin/otter"]' >> docker-context/Dockerfile
           echo "=== Dockerfile ==="
           cat docker-context/Dockerfile
 
