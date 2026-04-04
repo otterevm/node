@@ -73,32 +73,52 @@ jobs:
   # Build and Push Docker Images
   # ==========================================
   docker-build:
-    name: Build Docker Image ${{ matrix.platform }}
-    runs-on: ${{ matrix.runner }}
+    name: Build and Push Docker Images
+    runs-on: ubuntu-24.04
     needs: build-binaries
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            artifact_name: otter-linux-arm64
-          - platform: linux/amd64
-            runner: ubuntu-24.04
-            artifact_name: otter-linux-x64
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download binary artifact
+      - name: Download Linux ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: .
+          name: otter-linux-arm64
+          path: binaries/arm64
+
+      - name: Download Linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: otter-linux-x64
+          path: binaries/amd64
+
+      - name: Prepare multi-arch build context
+        run: |
+          mkdir -p docker-context/amd64 docker-context/arm64
+          cp binaries/amd64/otter docker-context/amd64/otter
+          cp binaries/arm64/otter docker-context/arm64/otter
+          # Create Dockerfile that uses TARGETARCH
+          cat > docker-context/Dockerfile <<'EOF'
+          FROM debian:trixie-slim
+          
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+          
+          WORKDIR /data
+          
+          COPY ${TARGETARCH}/otter /usr/local/bin/otter
+          RUN chmod +x /usr/local/bin/otter
+          
+          ENTRYPOINT ["/usr/local/bin/otter"]
+          EOF
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -110,11 +130,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: Dockerfile.release
+          context: ./docker-context
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
