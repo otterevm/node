@@ -96,26 +96,63 @@ jobs:
           name: otter-linux-x64
           path: binaries/amd64
 
+      - name: Verify downloaded binaries
+        run: |
+          echo "=== ARM64 binary ==="
+          ls -lh binaries/arm64/
+          file binaries/arm64/otter || echo "File not found or not executable"
+          
+          echo "=== AMD64 binary ==="
+          ls -lh binaries/amd64/
+          file binaries/amd64/otter || echo "File not found or not executable"
+
       - name: Prepare multi-arch build context
         run: |
           mkdir -p docker-context/amd64 docker-context/arm64
           cp binaries/amd64/otter docker-context/amd64/otter
           cp binaries/arm64/otter docker-context/arm64/otter
-          # Create Dockerfile that uses TARGETARCH
-          cat > docker-context/Dockerfile <<'EOF'
+          echo "=== Build context ==="
+          ls -lh docker-context/amd64/ docker-context/arm64/
+
+      - name: Write Dockerfiles
+        run: |
+          # Create Dockerfile for amd64
+          cat > docker-context/Dockerfile.amd64 << 'EOF'
           FROM debian:trixie-slim
-          
+
           RUN apt-get update && apt-get install -y --no-install-recommends \
               ca-certificates \
               && rm -rf /var/lib/apt/lists/*
-          
+
           WORKDIR /data
-          
-          COPY ${TARGETARCH}/otter /usr/local/bin/otter
+
+          COPY amd64/otter /usr/local/bin/otter
           RUN chmod +x /usr/local/bin/otter
-          
+
           ENTRYPOINT ["/usr/local/bin/otter"]
           EOF
+
+          # Create Dockerfile for arm64
+          cat > docker-context/Dockerfile.arm64 << 'EOF'
+          FROM debian:trixie-slim
+
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /data
+
+          COPY arm64/otter /usr/local/bin/otter
+          RUN chmod +x /usr/local/bin/otter
+
+          ENTRYPOINT ["/usr/local/bin/otter"]
+          EOF
+
+          echo "=== Dockerfile.amd64 ==="
+          cat docker-context/Dockerfile.amd64
+          echo ""
+          echo "=== Dockerfile.arm64 ==="
+          cat docker-context/Dockerfile.arm64
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -130,16 +167,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push multi-arch Docker image
+      - name: Build and push Docker image for amd64
         uses: docker/build-push-action@v6
         with:
           context: ./docker-context
-          platforms: linux/amd64,linux/arm64
+          file: ./docker-context/Dockerfile.amd64
+          platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build and push Docker image for arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker-context
+          file: ./docker-context/Dockerfile.arm64
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create and push manifest list
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-arm64
 
   # ==========================================
   # Create GitHub Release
