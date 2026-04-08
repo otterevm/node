@@ -1179,10 +1179,10 @@ where
                         // Extract the signature type from the inner signature to validate it matches
                         // the key_type stored in the keychain. This prevents using a signature of one
                         // type to authenticate as a key registered with a different type.
-                        // Only validate signature type on T3+ to maintain backward compatibility
+                        // Only validate signature type on T1+ to maintain backward compatibility
                         // with historical blocks during re-execution.
                         let sig_type = spec
-                            .is_t3()
+                            .is_t1()
                             .then_some(keychain_sig.signature.signature_type().into());
 
                         let key = keychain
