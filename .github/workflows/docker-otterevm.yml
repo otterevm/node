@@ -1,0 +1,145 @@
+name: Docker Build (OtterEVM)
+
+permissions: {}
+
+on:
+  push:
+    branches:
+      - main
+      - "rc/*"
+    tags:
+      - "v*.*.*"
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      custom_tag:
+        description: "Custom image tag (e.g., 1.5.4-beta1)"
+        type: string
+        default: ""
+      build_otterevm:
+        description: "Build otterevm image"
+        type: boolean
+        default: true
+      build_bench:
+        description: "Build tempo-bench image"
+        type: boolean
+        default: false
+      build_sidecar:
+        description: "Build tempo-sidecar image"
+        type: boolean
+        default: false
+      build_xtask:
+        description: "Build tempo-xtask image"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "5 9 * * *"
+    - cron: "30 20 * * *"
+
+env:
+  REGISTRY: ghcr.io/otterevm
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: depot-ubuntu-latest-16
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
+
+      - id: shortsha
+        run: echo "shortsha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Set default targets
+        id: targets
+        shell: bash
+        run: |
+          TARGETS=""
+          if [[ "${{ github.event.inputs.build_otterevm }}" == "true" || "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            TARGETS="otterevm"
+          fi
+          if [[ "${{ github.event.inputs.build_bench }}" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS,}tempo-bench"
+          fi
+          if [[ "${{ github.event.inputs.build_sidecar }}" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS,}tempo-sidecar"
+          fi
+          if [[ "${{ github.event.inputs.build_xtask }}" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS,}tempo-xtask"
+          fi
+          # Default to otterevm if nothing specified
+          if [[ -z "$TARGETS" && "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGETS="otterevm"
+          fi
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push otterevm
+        if: contains(steps.targets.outputs.targets, 'otterevm')
+        uses: depot/bake-action@1d58c2668346981089b088b7ef36755b206b20e9 # v1.13.0
+        with:
+          files: docker-bake.hcl
+          targets: otterevm
+          push: true
+          set: |
+            otterevm.tags=${{ env.REGISTRY }}/node:${{ github.event.inputs.custom_tag || 'sha-${{ steps.shortsha.outputs.shortsha }}' }}
+            otterevm.platforms=linux/amd64,linux/arm64
+        env:
+          VERGEN_GIT_SHA: ${{ github.sha }}
+          VERGEN_GIT_SHA_SHORT: ${{ steps.shortsha.outputs.shortsha }}
+
+      - name: Build and push tempo-bench
+        if: contains(steps.targets.outputs.targets, 'tempo-bench')
+        uses: depot/bake-action@1d58c2668346981089b088b7ef36755b206b20e9 # v1.13.0
+        with:
+          files: docker-bake.hcl
+          targets: tempo-bench
+          push: true
+          set: |
+            tempo-bench.tags=${{ env.REGISTRY }}/tempo-bench:${{ github.event.inputs.custom_tag || 'sha-${{ steps.shortsha.outputs.shortsha }}' }}
+            tempo-bench.platforms=linux/amd64,linux/arm64
+        env:
+          VERGEN_GIT_SHA: ${{ github.sha }}
+          VERGEN_GIT_SHA_SHORT: ${{ steps.shortsha.outputs.shortsha }}
+
+      - name: Build and push tempo-sidecar
+        if: contains(steps.targets.outputs.targets, 'tempo-sidecar')
+        uses: depot/bake-action@1d58c2668346981089b088b7ef36755b206b20e9 # v1.13.0
+        with:
+          files: docker-bake.hcl
+          targets: tempo-sidecar
+          push: true
+          set: |
+            tempo-sidecar.tags=${{ env.REGISTRY }}/tempo-sidecar:${{ github.event.inputs.custom_tag || 'sha-${{ steps.shortsha.outputs.shortsha }}' }}
+            tempo-sidecar.platforms=linux/amd64,linux/arm64
+        env:
+          VERGEN_GIT_SHA: ${{ github.sha }}
+          VERGEN_GIT_SHA_SHORT: ${{ steps.shortsha.outputs.shortsha }}
+
+      - name: Build and push tempo-xtask
+        if: contains(steps.targets.outputs.targets, 'tempo-xtask')
+        uses: depot/bake-action@1d58c2668346981089b088b7ef36755b206b20e9 # v1.13.0
+        with:
+          files: docker-bake.hcl
+          targets: tempo-xtask
+          push: true
+          set: |
+            tempo-xtask.tags=${{ env.REGISTRY }}/tempo-xtask:${{ github.event.inputs.custom_tag || 'sha-${{ steps.shortsha.outputs.shortsha }}' }}
+            tempo-xtask.platforms=linux/amd64,linux/arm64
+        env:
+          VERGEN_GIT_SHA: ${{ github.sha }}
+          VERGEN_GIT_SHA_SHORT: ${{ steps.shortsha.outputs.shortsha }}
