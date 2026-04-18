@@ -153,6 +153,7 @@ jobs:
           shasum -a 256 "${{ steps.prepare.outputs.archive_path }}" > "${{ steps.prepare.outputs.archive_name }}.sha256"
 
       - name: GPG sign archive
+        if: ${{ secrets.GPG_SIGNING_KEY != '' }}
         shell: bash
         env:
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
@@ -171,7 +172,7 @@ jobs:
             ${{ steps.prepare.outputs.archive_path }}
             ${{ steps.prepare.outputs.archive_name }}.sha256
             ${{ steps.prepare.outputs.archive_name }}.asc
-          if-no-files-found: error
+          if-no-files-found: ignore
 
   create-release:
     name: Create Release
