@@ -7,7 +7,7 @@ variable "VERGEN_GIT_SHA_SHORT" {
 }
 
 group "default" {
-  targets = ["tempo", "tempo-bench", "tempo-sidecar", "tempo-xtask"]
+  targets = ["otterevm", "tempo-bench", "tempo-sidecar", "tempo-xtask"]
 }
 
 target "docker-metadata" {}
@@ -39,9 +39,9 @@ target "_common" {
   platforms = ["linux/amd64", "linux/arm64"]
 }
 
-target "tempo" {
+target "otterevm" {
   inherits = ["_common", "docker-metadata"]
-  target = "tempo"
+  target = "otterevm"
 }
 
 target "tempo-bench" {

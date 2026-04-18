@@ -741,7 +741,7 @@ mod tests {
         // Setup PATH_USD as a valid fee token with USD currency and always-allow transfer policy
         // USD_CURRENCY_SLOT_VALUE: "USD" left-padded with length marker (3 bytes * 2 = 6)
         let usd_currency_value =
-            uint!(0x5553440000000000000000000000000000000000000000000000000000000006_U256);
+            uint!(0x4645450000000000000000000000000000000000000000000000000000000006_U256);
         // transfer_policy_id is packed at byte offset 20 in slot 7, so we need to shift
         // policy_id=1 left by 160 bits (20 * 8) to position it correctly
         let transfer_policy_id_packed =
@@ -2277,9 +2277,9 @@ mod tests {
     fn test_paused_token_is_invalid_fee_token() {
         let fee_token = address!("20C0000000000000000000000000000000000001");
 
-        // "USD" = 0x555344, stored in high bytes with length 6 (3*2) in LSB
+        // "FEE" = 0x464545, stored in high bytes with length 6 (3*2) in LSB
         let usd_currency_value =
-            uint!(0x5553440000000000000000000000000000000000000000000000000000000006_U256);
+            uint!(0x4645450000000000000000000000000000000000000000000000000000000006_U256);
 
         let provider =
             MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));
@@ -2406,9 +2406,9 @@ mod tests {
         // Use a TIP20-prefixed address for the fee token
         let paused_validator_token = address!("20C0000000000000000000000000000000000001");
 
-        // "USD" = 0x555344, stored in high bytes with length 6 (3*2) in LSB
+        // "FEE" = 0x464545, stored in high bytes with length 6 (3*2) in LSB
         let usd_currency_value =
-            uint!(0x5553440000000000000000000000000000000000000000000000000000000006_U256);
+            uint!(0x4645450000000000000000000000000000000000000000000000000000000006_U256);
 
         let provider =
             MockEthProvider::default().with_chain_spec(Arc::unwrap_or_clone(MODERATO.clone()));

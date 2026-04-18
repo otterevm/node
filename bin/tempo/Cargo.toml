@@ -1,7 +1,7 @@
 [package]
-name = "tempo"
-description = "Tempo node implementation"
-default-run = "tempo"
+name = "otterevm"
+description = "OtterEVM node implementation"
+default-run = "otterevm"
 
 version.workspace = true
 edition.workspace = true
@@ -100,7 +100,7 @@ pyroscope_pprofrs = { workspace = true, optional = true }
 tracy-client = { workspace = true, optional = true }
 
 [[bin]]
-name = "tempo"
+name = "otterevm"
 path = "src/main.rs"
 
 [features]

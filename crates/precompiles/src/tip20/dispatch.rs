@@ -542,7 +542,7 @@ mod tests {
             let result = token.call(&calldata, caller)?;
             assert_eq!(result.gas_used, 0);
             let currency = String::abi_decode(&result.bytes)?;
-            assert_eq!(currency, "USD");
+            assert_eq!(currency, "FEE");
 
             // Test totalSupply()
             let total_supply_call = ITIP20::totalSupplyCall {};

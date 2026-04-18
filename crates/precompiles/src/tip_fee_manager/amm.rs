@@ -212,7 +212,7 @@ impl TipFeeManager {
     ///
     /// On first deposit the pool is initialized with equal reserves and [`MIN_LIQUIDITY`] is
     /// permanently locked. Subsequent deposits mint pro-rata to existing supply. Both tokens
-    /// must be distinct, USD-denominated TIP-20s.
+    /// must be distinct, FEE-denominated TIP-20s.
     ///
     /// NOTE: Validators who also provide liquidity have an information advantage over non-validator
     /// LPs. Because validators choose their preferred fee token and control transaction inclusion
@@ -222,7 +222,7 @@ impl TipFeeManager {
     /// # Errors
     /// - `IdenticalAddresses` — `user_token` equals `validator_token`
     /// - `InvalidAmount` — `amount_validator_token` is zero or exceeds `u128`
-    /// - `InvalidCurrency` — either token is not USD-denominated
+    /// - `InvalidCurrency` — either token is not FEE-denominated
     /// - `InsufficientLiquidity` — initial deposit ≤ `MIN_LIQUIDITY`, or zero liquidity minted
     /// - `InvalidSwapCalculation` — pro-rata arithmetic fails
     /// - `UnderOverflow` — supply or balance overflow
@@ -350,7 +350,7 @@ impl TipFeeManager {
     /// # Errors
     /// - `IdenticalAddresses` — `user_token` equals `validator_token`
     /// - `InvalidAmount` — `liquidity` is zero or amounts exceed `u128`
-    /// - `InvalidCurrency` — either token is not USD-denominated
+    /// - `InvalidCurrency` — either token is not FEE-denominated
     /// - `InsufficientLiquidity` — caller's balance < `liquidity`, or remaining reserve would
     ///   violate the pending reservation (T1C+)
     /// - `InsufficientReserves` — pool reserves underflow after withdrawal
@@ -698,7 +698,7 @@ mod tests {
             let eur_token = TIP20Setup::create("EuroToken", "EUR", admin)
                 .currency("EUR")
                 .apply()?;
-            let usd_token = TIP20Setup::create("USDToken", "USD", admin).apply()?;
+            let usd_token = TIP20Setup::create("FEEToken", "FEE", admin).apply()?;
             let mut amm = TipFeeManager::new();
 
             let result = amm.mint(
@@ -736,7 +736,7 @@ mod tests {
             let eur_token = TIP20Setup::create("EuroToken", "EUR", admin)
                 .currency("EUR")
                 .apply()?;
-            let usd_token = TIP20Setup::create("USDToken", "USD", admin).apply()?;
+            let usd_token = TIP20Setup::create("FEEToken", "FEE", admin).apply()?;
             let mut amm = TipFeeManager::new();
 
             let result = amm.burn(

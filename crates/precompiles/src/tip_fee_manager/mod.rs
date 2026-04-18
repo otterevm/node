@@ -70,13 +70,13 @@ impl TipFeeManager {
     /// Sets the caller's preferred fee token as a validator.
     ///
     /// Rejects the call if `sender` is the current block's beneficiary (prevents mid-block
-    /// fee-token changes) or if the token is not a valid USD-denominated TIP-20 registered in
+    /// fee-token changes) or if the token is not a valid FEE-denominated TIP-20 registered in
     /// [`TIP20Factory`].
     ///
     /// # Errors
     /// - `InvalidToken` — token is not a deployed TIP-20 in [`TIP20Factory`]
     /// - `CannotChangeWithinBlock` — `sender` equals the current block `beneficiary`
-    /// - `InvalidCurrency` — token is not USD-denominated
+    /// - `InvalidCurrency` — token is not FEE-denominated
     pub fn set_validator_token(
         &mut self,
         sender: Address,
@@ -107,12 +107,12 @@ impl TipFeeManager {
         ))
     }
 
-    /// Sets the caller's preferred fee token as a user. Must be a valid USD-denominated TIP-20
+    /// Sets the caller's preferred fee token as a user. Must be a valid FEE-denominated TIP-20
     /// registered in [`TIP20Factory`].
     ///
     /// # Errors
     /// - `InvalidToken` — token is not a deployed TIP-20 in [`TIP20Factory`]
-    /// - `InvalidCurrency` — token is not USD-denominated
+    /// - `InvalidCurrency` — token is not FEE-denominated
     pub fn set_user_token(
         &mut self,
         sender: Address,
@@ -549,16 +549,16 @@ mod tests {
         let validator = Address::random();
         let beneficiary = Address::random();
         StorageCtx::enter(&mut storage, || {
-            // Create a non-USD token
-            let non_usd_token = TIP20Setup::create("NonUSD", "EUR", admin)
+            // Create a non-FEE token
+            let non_fee_token = TIP20Setup::create("NonFEE", "EUR", admin)
                 .currency("EUR")
                 .apply()?;
 
             let mut fee_manager = TipFeeManager::new();
 
-            // Try to set non-USD as user token - should fail
+            // Try to set non-FEE as user token - should fail
             let call = IFeeManager::setUserTokenCall {
-                token: non_usd_token.address(),
+                token: non_fee_token.address(),
             };
             let result = fee_manager.set_user_token(user, call);
             assert!(matches!(
@@ -566,9 +566,9 @@ mod tests {
                 Err(TempoPrecompileError::TIP20(TIP20Error::InvalidCurrency(_)))
             ));
 
-            // Try to set non-USD as validator token - should also fail
+            // Try to set non-FEE as validator token - should also fail
             let call = IFeeManager::setValidatorTokenCall {
-                token: non_usd_token.address(),
+                token: non_fee_token.address(),
             };
             let result = fee_manager.set_validator_token(validator, call, beneficiary);
             assert!(matches!(

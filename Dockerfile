@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked,id=sccache-${TARGETARCH} \
     RUSTFLAGS="-C link-arg=-fuse-ld=mold ${EXTRA_RUSTFLAGS}" \
     cargo build --profile ${RUST_PROFILE} \
-        --bin tempo --features "${RUST_FEATURES}" \
+        --bin otterevm --features "${RUST_FEATURES}" \
         --bin tempo-bench \
         --bin tempo-sidecar \
         --bin tempo-xtask
@@ -30,11 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /data
 
-# tempo
-FROM base AS tempo
+# otterevm
+FROM base AS otterevm
 ARG RUST_PROFILE=profiling
-COPY --from=builder /app/target/${RUST_PROFILE}/tempo /usr/local/bin/tempo
-ENTRYPOINT ["/usr/local/bin/tempo"]
+COPY --from=builder /app/target/${RUST_PROFILE}/otterevm /usr/local/bin/otterevm
+ENTRYPOINT ["/usr/local/bin/otterevm"]
 
 # tempo-sidecar
 FROM base AS tempo-sidecar

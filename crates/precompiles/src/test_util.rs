@@ -160,13 +160,13 @@ impl TIP20Setup {
 
     /// Create a new token via factory. Ensures that `pathUSD` and `TIP20Factory` are initialized.
     ///
-    /// Defaults to `currency: "USD"`, `quote_token: pathUSD`
+    /// Defaults to `currency: "FEE"`, `quote_token: pathUSD`
     pub fn create(name: &'static str, symbol: &'static str, admin: Address) -> Self {
         Self {
             action: Action::CreateToken {
                 name,
                 symbol,
-                currency: "USD".into(),
+                currency: "FEE".into(),
             },
             admin: Some(admin),
             ..Default::default()
@@ -189,7 +189,7 @@ impl TIP20Setup {
         self
     }
 
-    /// Set the token currency (default: "USD"). Only applies to new tokens.
+    /// Set the token currency (default: "FEE"). Only applies to new tokens.
     pub fn currency(mut self, currency: impl Into<String>) -> Self {
         if let Action::CreateToken {
             currency: ref mut c,
@@ -270,7 +270,7 @@ impl TIP20Setup {
             PATH_USD_ADDRESS,
             "pathUSD",
             "pathUSD",
-            "USD",
+            "FEE",
             Address::ZERO,
             admin,
         )?;

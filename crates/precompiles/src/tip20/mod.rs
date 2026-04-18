@@ -45,11 +45,11 @@ pub const U128_MAX: U256 = uint!(0xffffffffffffffffffffffffffffffff_U256);
 
 use tempo_contracts::precompiles::DECIMALS as TIP20_DECIMALS;
 
-/// Validates that the given token's currency is `"USD"`.
+/// Validates that the given token's currency is `"FEE"`.
 ///
 /// # Errors
 /// - `InvalidToken` — address does not have the TIP-20 prefix
-/// - `InvalidCurrency` — token currency is not `"USD"`
+/// - `InvalidCurrency` — token currency is not `"FEE"`
 pub fn validate_usd_currency(token: Address) -> Result<()> {
     if TIP20Token::from_address(token)?.currency()? != USD_CURRENCY {
         return Err(TIP20Error::invalid_currency().into());
@@ -140,7 +140,7 @@ impl TIP20Token {
         Ok(TIP20_DECIMALS)
     }
 
-    /// Returns the token's currency denomination (e.g. `"USD"`).
+    /// Returns the token's currency denomination (e.g. `"FEE"`).
     pub fn currency(&self) -> Result<String> {
         self.currency.read()
     }
@@ -2259,7 +2259,7 @@ pub(crate) mod tests {
                 ITIP20Factory::createTokenCall {
                     name: "Test Token".to_string(),
                     symbol: "TEST".to_string(),
-                    currency: "USD".to_string(),
+                    currency: "FEE".to_string(),
                     quoteToken: crate::PATH_USD_ADDRESS,
                     admin: sender,
                     salt: B256::random(),
@@ -2365,8 +2365,8 @@ pub(crate) mod tests {
                 .currency("EUR")
                 .apply()?;
 
-            // USD token with non-USD quote token should fail
-            TIP20Setup::create("USDToken", "USD", admin)
+            // FEE token with non-FEE quote token should fail
+            TIP20Setup::create("FEEToken", "FEE", admin)
                 .quote_token(eur_token.address)
                 .expect_tip20_err(TIP20Error::invalid_quote_token());
 

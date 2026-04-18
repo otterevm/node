@@ -122,7 +122,7 @@ impl TIP20Factory {
             return Err(TIP20Error::invalid_quote_token().into());
         }
 
-        // If token is USD, its quote token must also be USD
+        // If token is FEE, its quote token must also be FEE
         if call.currency == USD_CURRENCY
             && TIP20Token::from_address(call.quoteToken)?.currency()? != USD_CURRENCY
         {
@@ -197,7 +197,7 @@ impl TIP20Factory {
             if address == PATH_USD_ADDRESS || !self.is_tip20(quote_token)? {
                 return Err(TIP20Error::invalid_quote_token().into());
             }
-            // If token is USD, its quote token must also be USD
+            // If token is FEE, its quote token must also be FEE
             if currency == USD_CURRENCY
                 && TIP20Token::from_address(quote_token)?.currency()? != USD_CURRENCY
             {
@@ -366,7 +366,7 @@ mod tests {
             let call1 = ITIP20Factory::createTokenCall {
                 name: "Test Token 1".to_string(),
                 symbol: "TEST1".to_string(),
-                currency: "USD".to_string(),
+                currency: "FEE".to_string(),
                 quoteToken: path_usd.address(),
                 admin: sender,
                 salt: salt1,
@@ -374,7 +374,7 @@ mod tests {
             let call2 = ITIP20Factory::createTokenCall {
                 name: "Test Token 2".to_string(),
                 symbol: "TEST2".to_string(),
-                currency: "USD".to_string(),
+                currency: "FEE".to_string(),
                 quoteToken: path_usd.address(),
                 admin: sender,
                 salt: salt2,
@@ -431,7 +431,7 @@ mod tests {
             let invalid_call = ITIP20Factory::createTokenCall {
                 name: "Test Token".to_string(),
                 symbol: "TEST".to_string(),
-                currency: "USD".to_string(),
+                currency: "FEE".to_string(),
                 quoteToken: Address::random(),
                 admin: sender,
                 salt: B256::random(),
@@ -460,7 +460,7 @@ mod tests {
             let invalid_call = ITIP20Factory::createTokenCall {
                 name: "USD Token".to_string(),
                 symbol: "USDT".to_string(),
-                currency: "USD".to_string(),
+                currency: "FEE".to_string(),
                 quoteToken: eur_token.address(),
                 admin: sender,
                 salt: B256::random(),
@@ -489,7 +489,7 @@ mod tests {
             let invalid_call = ITIP20Factory::createTokenCall {
                 name: "Test Token".to_string(),
                 symbol: "TEST".to_string(),
-                currency: "USD".to_string(),
+                currency: "FEE".to_string(),
                 quoteToken: non_existent_tip20,
                 admin: sender,
                 salt: B256::random(),
@@ -516,7 +516,7 @@ mod tests {
             let create_token_call = ITIP20Factory::createTokenCall {
                 name: "Test Token".to_string(),
                 symbol: "TEST".to_string(),
-                currency: "USD".to_string(),
+                currency: "FEE".to_string(),
                 quoteToken: PATH_USD_ADDRESS,
                 admin: sender,
                 salt,
@@ -548,7 +548,7 @@ mod tests {
                 Address::random(), // No TIP20 prefix
                 "Test",
                 "TST",
-                "USD",
+                "FEE",
                 Address::ZERO,
                 admin,
             );
@@ -575,7 +575,7 @@ mod tests {
                 PATH_USD_ADDRESS,
                 "pathUSD",
                 "pathUSD",
-                "USD",
+                "FEE",
                 Address::ZERO,
                 admin,
             )?;
@@ -584,7 +584,7 @@ mod tests {
                 PATH_USD_ADDRESS,
                 "pathUSD",
                 "pathUSD",
-                "USD",
+                "FEE",
                 Address::ZERO,
                 admin,
             );
@@ -617,7 +617,7 @@ mod tests {
                 address!("20C0000000000000000000000000000000000001"), // reserved address
                 "Test USD",
                 "TUSD",
-                "USD",
+                "FEE",
                 eur_token.address(),
                 admin,
             );
@@ -647,7 +647,7 @@ mod tests {
                 non_reserved,
                 "Test",
                 "TST",
-                "USD",
+                "FEE",
                 PATH_USD_ADDRESS,
                 admin,
             );
@@ -675,7 +675,7 @@ mod tests {
                 PATH_USD_ADDRESS,
                 "pathUSD",
                 "pathUSD",
-                "USD",
+                "FEE",
                 address!("20C0000000000000000000000000000000000001"),
                 admin,
             );
@@ -691,7 +691,7 @@ mod tests {
                 PATH_USD_ADDRESS,
                 "pathUSD",
                 "pathUSD",
-                "USD",
+                "FEE",
                 Address::ZERO,
                 admin,
             )?;
@@ -713,7 +713,7 @@ mod tests {
                 address!("20C0000000000000000000000000000000000001"),
                 "testUSD",
                 "testUSD",
-                "USD",
+                "FEE",
                 Address::ZERO,
                 admin,
             )?;
@@ -722,7 +722,7 @@ mod tests {
                 PATH_USD_ADDRESS,
                 "pathUSD",
                 "pathUSD",
-                "USD",
+                "FEE",
                 other_usd,
                 admin,
             );
@@ -737,7 +737,7 @@ mod tests {
                 PATH_USD_ADDRESS,
                 "pathUSD",
                 "pathUSD",
-                "USD",
+                "FEE",
                 Address::ZERO,
                 admin,
             )?;

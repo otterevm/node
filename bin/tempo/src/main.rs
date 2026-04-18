@@ -285,7 +285,7 @@ fn main() -> eyre::Result<()> {
     defaults::init_defaults();
 
     let mut cli = match TempoCli::command()
-        .about("Tempo")
+        .about("OtterEVM")
         .try_get_matches_from(std::env::args_os())
         .and_then(|matches| TempoCli::from_arg_matches(&matches))
     {
