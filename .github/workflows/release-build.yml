@@ -24,18 +24,18 @@ jobs:
           # Linux ARM64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            binary: otter
-            artifact_name: otter-linux-arm64
+            binary: otterevm
+            artifact_name: otterevm-linux-arm64
           # Linux x64
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            binary: otter
-            artifact_name: otter-linux-x64
+            binary: otterevm
+            artifact_name: otterevm-linux-x64
           # macOS ARM64 (Apple Silicon)
           - os: macos-14
             target: aarch64-apple-darwin
-            binary: otter
-            artifact_name: otter-macos-arm64
+            binary: otterevm
+            artifact_name: otterevm-macos-arm64
 
     steps:
       - name: Checkout code
@@ -60,7 +60,7 @@ jobs:
 
       - name: Build binary
         run: |
-          cargo build --release --bin otter --target ${{ matrix.target }} --features "asm-keccak,jemalloc,otlp"
+          cargo build --release --bin otterevm --target ${{ matrix.target }} --features "asm-keccak,jemalloc,otlp"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -87,30 +87,30 @@ jobs:
       - name: Download Linux ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          name: otter-linux-arm64
+          name: otterevm-linux-arm64
           path: binaries/arm64
 
       - name: Download Linux x64 binary
         uses: actions/download-artifact@v4
         with:
-          name: otter-linux-x64
+          name: otterevm-linux-x64
           path: binaries/amd64
 
       - name: Verify downloaded binaries
         run: |
           echo "=== ARM64 binary ==="
           ls -lh binaries/arm64/
-          file binaries/arm64/otter || echo "File not found or not executable"
-          
+          file binaries/arm64/otterevm || echo "File not found or not executable"
+
           echo "=== AMD64 binary ==="
           ls -lh binaries/amd64/
-          file binaries/amd64/otter || echo "File not found or not executable"
+          file binaries/amd64/otterevm || echo "File not found or not executable"
 
       - name: Prepare multi-arch build context
         run: |
           mkdir -p docker-context/amd64 docker-context/arm64
-          cp binaries/amd64/otter docker-context/amd64/otter
-          cp binaries/arm64/otter docker-context/arm64/otter
+          cp binaries/amd64/otterevm docker-context/amd64/otterevm
+          cp binaries/arm64/otterevm docker-context/arm64/otterevm
           echo "=== Build context ==="
           ls -lh docker-context/amd64/ docker-context/arm64/
 
@@ -126,10 +126,10 @@ jobs:
 
           WORKDIR /data
 
-          COPY amd64/otter /usr/local/bin/otter
-          RUN chmod +x /usr/local/bin/otter
+          COPY amd64/otterevm /usr/local/bin/otterevm
+          RUN chmod +x /usr/local/bin/otterevm
 
-          ENTRYPOINT ["/usr/local/bin/otter"]
+          ENTRYPOINT ["/usr/local/bin/otterevm"]
           EOF
 
           # Create Dockerfile for arm64
@@ -142,10 +142,10 @@ jobs:
 
           WORKDIR /data
 
-          COPY arm64/otter /usr/local/bin/otter
-          RUN chmod +x /usr/local/bin/otter
+          COPY arm64/otterevm /usr/local/bin/otterevm
+          RUN chmod +x /usr/local/bin/otterevm
 
-          ENTRYPOINT ["/usr/local/bin/otter"]
+          ENTRYPOINT ["/usr/local/bin/otterevm"]
           EOF
 
           echo "=== Dockerfile.amd64 ==="
@@ -212,27 +212,27 @@ jobs:
       - name: Download Linux ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          name: otter-linux-arm64
-          path: artifacts/otter-linux-arm64
+          name: otterevm-linux-arm64
+          path: artifacts/otterevm-linux-arm64
 
       - name: Download Linux x64 binary
         uses: actions/download-artifact@v4
         with:
-          name: otter-linux-x64
-          path: artifacts/otter-linux-x64
+          name: otterevm-linux-x64
+          path: artifacts/otterevm-linux-x64
 
       - name: Download macOS ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          name: otter-macos-arm64
-          path: artifacts/otter-macos-arm64
+          name: otterevm-macos-arm64
+          path: artifacts/otterevm-macos-arm64
 
       - name: Prepare release binaries
         run: |
           cd artifacts
           mkdir -p release
           # Rename and compress binaries
-          for dir in otter-*/; do
+          for dir in otterevm-*/; do
             platform=$(basename "$dir")
             binary=$(find "$dir" -type f | head -n 1)
             if [[ "$platform" == *"windows"* ]]; then
