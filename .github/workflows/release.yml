@@ -86,18 +86,18 @@ jobs:
       fail-fast: false
       matrix:
         binary:
-          - name: tempo
+          - name: otterevm
             features: "asm-keccak,jemalloc,otlp"
           - name: tempo-bench
             features: ""
           - name: tempo-sidecar
             features: ""
         platform:
-          - os: depot-ubuntu-latest-16
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-          - os: depot-ubuntu-latest-arm-16
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          - os: depot-macos-15
+          - os: macos-14
             target: aarch64-apple-darwin
 
     steps:
@@ -183,7 +183,7 @@ jobs:
     name: Create Release
     needs: [get-version, build-release]
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
